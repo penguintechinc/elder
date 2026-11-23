@@ -17,6 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from apps.runworker.elder_sdk_bundle import sdk_file_for_runtime
 from apps.runworker.runtimes import CONTAINER_TMP_DIR, RuntimeSpec, get_runtime
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,15 @@ _PROTECTED_ENV_KEYS = frozenset(
         "ELDER_ARTIFACT_URL",
         "ELDER_ARTIFACT_SHA256",
         "ELDER_ARTIFACT_FILENAME",
+        "ELDER_SDK_FILENAME",
+        "ELDER_SDK_CONTENT",
+        "ELDER_GATEWAY_URL",
+        "ELDER_GATEWAY_TOKEN",
+        "ELDER_API_URL",
+        "ELDER_API_TOKEN",
+        "ELDER_INTERNAL_TOKEN",
+        "JWT_SECRET_KEY",
+        "SECRET_KEY",
         "HOME",
         "TMPDIR",
         "PATH",
@@ -72,6 +82,11 @@ _INIT_FETCH_SCRIPT = (
     "    f.write(data)\n"
     "with open('/workspace/input.json', 'w', encoding='utf-8') as f:\n"
     "    f.write(input_json)\n"
+    "sdk_filename = os.environ.get('ELDER_SDK_FILENAME', '').strip()\n"
+    "sdk_content = os.environ.get('ELDER_SDK_CONTENT', '')\n"
+    "if sdk_filename and sdk_content:\n"
+    "    with open(f'/workspace/{sdk_filename}', 'w', encoding='utf-8') as f:\n"
+    "        f.write(sdk_content)\n"
 )
 
 
@@ -92,6 +107,9 @@ class RunJobRequest:
     code_sha256: str | None = None
     storage_backend: str = "database"
     use_init_container: bool = False
+    granted_scopes: tuple[str, ...] = ()
+    allowed_egress_domains: tuple[str, ...] = ()
+    elder_api_token: str = field(default="", repr=False)
 
 
 @dataclass(frozen=True)
@@ -174,6 +192,8 @@ def _base_labels(
     ]
     if exec_label:
         labels["elder.penguintech.io/execution-id"] = exec_label
+    if request.granted_scopes:
+        labels["elder.penguintech.io/elder-api-access"] = "true"
     return labels
 
 
@@ -183,7 +203,7 @@ def build_configmap_manifest(
     namespace: str = "elder-runs",
     configmap_name: str | None = None,
 ) -> dict[str, Any]:
-    """Build the ephemeral ConfigMap holding the user script and input JSON."""
+    """Build the ephemeral ConfigMap holding the user script, input JSON, and SDK."""
     spec = get_runtime(request.runtime)
     name = configmap_name or sanitize_k8s_name(
         request.execution_id, prefix="elder-run-cm-"
@@ -192,6 +212,14 @@ def build_configmap_manifest(
         request.input_data if request.input_data is not None else {},
         separators=(",", ":"),
     )
+    data: dict[str, str] = {
+        spec.filename: request.code,
+        "input.json": input_payload,
+    }
+    sdk_entry = sdk_file_for_runtime(spec.name)
+    if sdk_entry is not None:
+        sdk_filename, sdk_source = sdk_entry
+        data[sdk_filename] = sdk_source
     return {
         "apiVersion": "v1",
         "kind": "ConfigMap",
@@ -200,10 +228,7 @@ def build_configmap_manifest(
             "namespace": namespace,
             "labels": _base_labels(request, spec),
         },
-        "data": {
-            spec.filename: request.code,
-            "input.json": input_payload,
-        },
+        "data": data,
     }
 
 
@@ -333,20 +358,26 @@ def build_job_manifest(
 
     if use_init_fetch:
         fetch_image = get_runtime("python").image
+        init_env: list[dict[str, str]] = [
+            {"name": "ELDER_ARTIFACT_URL", "value": request.code_url or ""},
+            {
+                "name": "ELDER_ARTIFACT_SHA256",
+                "value": request.code_sha256 or "",
+            },
+            {"name": "ELDER_ARTIFACT_FILENAME", "value": spec.filename},
+            {"name": "ELDER_RUN_INPUT", "value": input_json},
+        ]
+        sdk_entry = sdk_file_for_runtime(spec.name)
+        if sdk_entry is not None:
+            sdk_filename, sdk_source = sdk_entry
+            init_env.append({"name": "ELDER_SDK_FILENAME", "value": sdk_filename})
+            init_env.append({"name": "ELDER_SDK_CONTENT", "value": sdk_source})
         pod_spec["initContainers"] = [
             {
                 "name": "fetch-artifact",
                 "image": fetch_image,
                 "command": ["python3", "-c", _INIT_FETCH_SCRIPT],
-                "env": [
-                    {"name": "ELDER_ARTIFACT_URL", "value": request.code_url},
-                    {
-                        "name": "ELDER_ARTIFACT_SHA256",
-                        "value": request.code_sha256 or "",
-                    },
-                    {"name": "ELDER_ARTIFACT_FILENAME", "value": spec.filename},
-                    {"name": "ELDER_RUN_INPUT", "value": input_json},
-                ],
+                "env": init_env,
                 "securityContext": {
                     "runAsNonRoot": True,
                     "runAsUser": NONROOT_UID,

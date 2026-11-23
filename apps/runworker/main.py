@@ -34,6 +34,7 @@ from apps.runworker.k8s_runner import (
     RunJobRequest,
     clamp_log_flush_interval,
 )
+from apps.runworker.sandbox_runner import SandboxRunner
 
 logger = logging.getLogger("apps.runworker")
 
@@ -103,6 +104,7 @@ class RunWorkerConfig:
     http_timeout_seconds: float = 30.0
     s3_fetch_mode: str = "worker"  # "worker" (zero-egress pods) | "init_container"
     log_flush_interval_seconds: float = DEFAULT_LOG_FLUSH_INTERVAL_SECONDS
+    runner_backend: str = "auto"  # "auto" | "sandbox" | "k8s_job"
 
     @classmethod
     def from_env(cls) -> RunWorkerConfig:
@@ -134,6 +136,10 @@ class RunWorkerConfig:
         log_flush_interval = clamp_log_flush_interval(
             float(raw_flush_interval) if raw_flush_interval else None
         )
+        raw_backend = (os.getenv("RUNS_RUNNER_BACKEND") or "auto").strip().lower()
+        runner_backend = (
+            raw_backend if raw_backend in ("auto", "sandbox", "k8s_job") else "auto"
+        )
         return cls(
             elder_api_url=api_url,
             elder_internal_token=token,
@@ -150,10 +156,23 @@ class RunWorkerConfig:
             http_timeout_seconds=http_timeout,
             s3_fetch_mode=s3_fetch_mode,
             log_flush_interval_seconds=log_flush_interval,
+            runner_backend=runner_backend,
         )
 
 
 CONFIGMAP_MAX_CODE_BYTES = 900 * 1024  # Safe margin below K8s 1 MiB etcd limit
+
+
+def _parse_str_tuple(raw: Any) -> tuple[str, ...]:
+    """Normalize a list/tuple/set or delimited string into a clean tuple of strings."""
+    if raw is None:
+        return ()
+    if isinstance(raw, str):
+        parts = [p.strip() for p in raw.replace(",", " ").split() if p.strip()]
+        return tuple(parts)
+    if isinstance(raw, (list, tuple, set)):
+        return tuple(str(v).strip() for v in raw if str(v).strip())
+    return ()
 
 
 def _request_from_payload(item: dict[str, Any]) -> RunJobRequest:
@@ -171,6 +190,9 @@ def _request_from_payload(item: dict[str, Any]) -> RunJobRequest:
     memory_mb = int(item.get("memory_mb") or DEFAULT_MEMORY_MB)
     env = item.get("env") or item.get("env_vars")
     env_dict = env if isinstance(env, dict) else {}
+    granted_scopes = _parse_str_tuple(item.get("granted_scopes"))
+    allowed_egress_domains = _parse_str_tuple(item.get("allowed_egress_domains"))
+    elder_api_token = str(item.get("elder_api_token") or "")
     return RunJobRequest(
         execution_id=execution_id,
         runtime=runtime,
@@ -184,30 +206,63 @@ def _request_from_payload(item: dict[str, Any]) -> RunJobRequest:
         code_url=code_url,
         code_sha256=code_sha256,
         storage_backend=storage_backend,
+        granted_scopes=granted_scopes,
+        allowed_egress_domains=allowed_egress_domains,
+        elder_api_token=elder_api_token,
     )
 
 
 class RunWorkerService:
-    """Async polling service that runs claimed Elder Runs executions in K8s."""
+    """Async polling service that runs claimed Elder Runs executions."""
 
     def __init__(
         self,
         config: RunWorkerConfig,
         *,
-        runner: K8sRunner | None = None,
+        runner: Any | None = None,
+        sandbox_runner: SandboxRunner | None = None,
+        k8s_runner: K8sRunner | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self.config = config
-        self.runner = runner or K8sRunner(
+        self._explicit_runner = runner
+        self.sandbox_runner = sandbox_runner or SandboxRunner(
+            elder_api_url=config.elder_api_url,
+        )
+        self.k8s_runner = k8s_runner or K8sRunner(
             namespace=config.execution_namespace,
             runtime_class_name=config.runtime_class_name or None,
         )
+        if runner is not None:
+            self.runner = runner
+        elif config.runner_backend == "sandbox":
+            self.runner = self.sandbox_runner
+        else:
+            self.runner = self.k8s_runner
         self._external_client = http_client is not None
         self._client = http_client or httpx.AsyncClient(
             timeout=config.http_timeout_seconds,
         )
         self._semaphore = asyncio.Semaphore(config.max_concurrent)
         self._stop_event = asyncio.Event()
+
+    def select_runner(self, req: RunJobRequest) -> Any:
+        """Select the runner backend for ``req`` based on ``RUNS_RUNNER_BACKEND``."""
+        if self._explicit_runner is not None:
+            return self._explicit_runner
+        backend = (self.config.runner_backend or "auto").strip().lower()
+        if backend == "sandbox":
+            return self.sandbox_runner
+        if backend == "k8s_job":
+            return self.k8s_runner
+        # "auto": prefer warm SandboxRunner when runtime binary is installed locally.
+        if self.sandbox_runner.can_execute(
+            req.runtime,
+            code_url=req.code_url,
+            code=req.code,
+        ):
+            return self.sandbox_runner
+        return self.k8s_runner
 
     def _auth_headers(self) -> dict[str, str]:
         """Build internal auth headers without ever logging token values."""
@@ -310,12 +365,18 @@ class RunWorkerService:
         response.raise_for_status()
         return True
 
-    async def _resolve_artifact(self, req: RunJobRequest) -> RunJobRequest:
+    async def _resolve_artifact(
+        self,
+        req: RunJobRequest,
+        *,
+        target_runner: Any | None = None,
+    ) -> RunJobRequest:
         """Fetch and verify S3-backed code when ``code_url`` is supplied."""
         if not req.code_url:
             return req
 
-        if self.config.s3_fetch_mode == "init_container":
+        is_sandbox = isinstance(target_runner, SandboxRunner)
+        if not is_sandbox and self.config.s3_fetch_mode == "init_container":
             return replace(req, use_init_container=True)
 
         response = await self._client.get(req.code_url)
@@ -329,8 +390,14 @@ class RunWorkerService:
                     f"expected {req.code_sha256}, got {actual_sha256}"
                 )
 
-        if len(raw_bytes) > CONFIGMAP_MAX_CODE_BYTES:
+        if not is_sandbox and len(raw_bytes) > CONFIGMAP_MAX_CODE_BYTES:
             return replace(req, use_init_container=True)
+
+        if raw_bytes.startswith(b"\x00asm") or req.code_url.lower().split("?", 1)[
+            0
+        ].endswith(".wasm"):
+            encoded = f"base64:{base64.b64encode(raw_bytes).decode('ascii')}"
+            return replace(req, code=encoded, use_init_container=False)
 
         return replace(req, code=raw_bytes.decode("utf-8"), use_init_container=False)
 
@@ -358,9 +425,13 @@ class RunWorkerService:
                     )
 
             try:
-                resolved_req = await self._resolve_artifact(req)
+                selected_runner = self.select_runner(req)
+                resolved_req = await self._resolve_artifact(
+                    req,
+                    target_runner=selected_runner,
+                )
                 result = await asyncio.to_thread(
-                    self.runner.execute,
+                    selected_runner.execute,
                     resolved_req,
                     on_logs=_on_logs,
                     log_flush_interval=self.config.log_flush_interval_seconds,
@@ -426,6 +497,7 @@ class RunWorkerService:
                 "execution_namespace": self.config.execution_namespace,
                 "cluster": self.config.worker_cluster or "default",
                 "runtime_class": self.config.runtime_class_name or "default",
+                "runner_backend": self.config.runner_backend,
                 "max_concurrent": self.config.max_concurrent,
                 "token_configured": bool(
                     self.config.elder_internal_token or self.config.jwt_secret_key

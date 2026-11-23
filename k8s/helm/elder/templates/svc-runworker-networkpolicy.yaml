@@ -90,4 +90,42 @@ spec:
   endpointSelector: {}
   ingress: []
   egress: []
+---
+# Label-scoped CiliumNetworkPolicy allowing ONLY elder-runs pods explicitly
+# labeled elder.penguintech.io/elder-api-access: "true" (granted_scopes non-empty)
+# egress to hub-api:5000 (plus cluster DNS to resolve hub-api). Unprivileged
+# pods without this label remain locked at egress: [].
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: elder-runs-api-access
+  namespace: {{ $execNs }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-runworker" .) | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      elder.penguintech.io/elder-api-access: "true"
+  ingress: []
+  egress:
+    # DNS (CoreDNS / kube-dns) for resolving hub-api service name
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Elder hub-api only (targetPort 5000)
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.namespace }}
+            {{- include "elder.componentSelectorLabels" (list "hub-api" .) | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: {{ (index .Values "hub-api").service.targetPort | default 5000 | quote }}
+              protocol: TCP
 {{- end }}
