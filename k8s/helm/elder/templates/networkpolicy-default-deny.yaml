@@ -15,7 +15,7 @@ policies selecting a pod, so folding it into the broader same-namespace/
 DNS/datastore allows here would silently widen that deliberate lockdown.
 */}}
 {{- if .Values.networkPolicy.enabled }}
-{{- $notFlowsInvoker := list (dict "key" "app.kubernetes.io/component" "operator" "NotIn" "values" (list "svc-flows-invoker" "hub-mcp")) }}
+{{- $notFlowsInvoker := list (dict "key" "app.kubernetes.io/component" "operator" "NotIn" "values" (list "svc-flows-invoker" "hub-mcp" "svc-runworker")) }}
 ---
 # Baseline: deny all ingress + egress for every pod in the namespace unless
 # a more specific allow policy below (or flows-invoker's own policy) grants it.

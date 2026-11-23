@@ -633,6 +633,60 @@ svc-flows-invoker:
   networkPolicy:
     enabled: true
 
+# Runs Worker Service — isolated Kubernetes serverless function runner for
+# Elder Runs (v4.0.x). Completely decoupled from Elder's DB/Redis so it can
+# run inside Elder's cluster OR in a remote Kubernetes cluster.
+svc-runworker:
+  enabled: false
+  image:
+    repository: elder/svc-runworker
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  # Dedicated namespace where per-execution Kubernetes Jobs run.
+  executionNamespace: "elder-runs"
+  createExecutionNamespace: true
+  # Optional RuntimeClass (e.g. "kata") for VM-isolated function pods.
+  runtimeClassName: ""
+  # Secret holding ELDER_INTERNAL_TOKEN (never hardcoded in values/manifests).
+  internalTokenSecret:
+    name: "svc-runworker-token"
+    key: "token"
+    optional: true
+  env:
+    ELDER_API_URL: "http://hub-api:5000"
+    RUNS_WORKER_CLUSTER: ""
+    RUNS_POLL_INTERVAL_SECONDS: "3"
+    RUNS_MAX_CONCURRENT: "5"
+    LOG_LEVEL: "INFO"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+  healthcheck:
+    enabled: true
+    initialDelaySeconds: 20
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  # Dedicated CiliumNetworkPolicy for svc-runworker + default-deny egress for
+  # function pods in executionNamespace.
+  networkPolicy:
+    enabled: true
+
 # Ingress configuration
 ingress:
   enabled: false

@@ -1,0 +1,5 @@
+# Elder Runs Worker (svc-runworker) dependencies
+# Compile with:
+#   uv pip compile --generate-hashes apps/runworker/requirements.in -o apps/runworker/requirements.txt
+httpx>=0.27.2,<1.0
+kubernetes>=31.0.0,<37.0

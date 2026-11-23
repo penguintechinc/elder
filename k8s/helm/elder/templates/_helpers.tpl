@@ -106,7 +106,7 @@ must keep pulling from their own registry (docker.io).
 {{- define "elder.image" -}}
 {{- $component := index . 0 -}}
 {{- $context := index . 1 -}}
-{{- $isAppImage := or (eq $component "hub-webui") (eq $component "hub-api") (eq $component "hub-mcp") (eq $component "svc-scanner") (eq $component "svc-integrations") (eq $component "svc-worker") (eq $component "svc-flows-invoker") -}}
+{{- $isAppImage := or (eq $component "hub-webui") (eq $component "hub-api") (eq $component "hub-mcp") (eq $component "svc-scanner") (eq $component "svc-integrations") (eq $component "svc-worker") (eq $component "svc-flows-invoker") (eq $component "svc-runworker") -}}
 {{- $registry := "" -}}
 {{- if $isAppImage -}}
 {{- $registry = $context.Values.global.imageRegistry -}}
