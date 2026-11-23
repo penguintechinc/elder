@@ -47,7 +47,6 @@ interface EditFormState {
   timeout_seconds: string;
   memory_mb: string;
   schedule_cron: string;
-  execution_namespace: string;
   worker_cluster: string;
   granted_scopes: string[];
   allowed_egress_domains: string;
@@ -100,7 +99,6 @@ export default function RunDetail() {
       timeout_seconds: String(fn.timeout_seconds ?? 30),
       memory_mb: String(fn.memory_mb ?? 256),
       schedule_cron: fn.schedule_cron || "",
-      execution_namespace: fn.execution_namespace || "elder-runs",
       worker_cluster: fn.worker_cluster || "",
       granted_scopes: fn.granted_scopes ?? [],
       allowed_egress_domains: formatEgressDomains(fn.allowed_egress_domains),
@@ -183,7 +181,6 @@ export default function RunDetail() {
       memory_mb:
         Number.isFinite(parsedMemory) && parsedMemory > 0 ? parsedMemory : 256,
       schedule_cron: form.schedule_cron.trim() || null,
-      execution_namespace: form.execution_namespace.trim() || "elder-runs",
       worker_cluster: form.worker_cluster.trim() || null,
       granted_scopes: form.granted_scopes,
       allowed_egress_domains: parseEgressDomains(form.allowed_egress_domains),
@@ -534,49 +531,29 @@ export default function RunDetail() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label
-                  htmlFor="detail-fn-namespace"
-                  className="block text-sm font-medium text-slate-300 mb-1"
-                >
-                  Execution Namespace
-                </label>
-                <input
-                  id="detail-fn-namespace"
-                  type="text"
-                  value={form.execution_namespace}
-                  onChange={(e) =>
-                    setForm((prev) =>
-                      prev
-                        ? { ...prev, execution_namespace: e.target.value }
-                        : prev,
-                    )
-                  }
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm font-mono text-slate-100 focus:outline-none focus:border-amber-400"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="detail-fn-cluster"
-                  className="block text-sm font-medium text-slate-300 mb-1"
-                >
-                  Worker Cluster
-                </label>
-                <input
-                  id="detail-fn-cluster"
-                  type="text"
-                  value={form.worker_cluster}
-                  onChange={(e) =>
-                    setForm((prev) =>
-                      prev ? { ...prev, worker_cluster: e.target.value } : prev,
-                    )
-                  }
-                  placeholder="Optional (default cluster)"
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm font-mono text-slate-100 focus:outline-none focus:border-amber-400"
-                />
-              </div>
+            <div>
+              <label
+                htmlFor="detail-fn-cluster"
+                className="block text-sm font-medium text-slate-300 mb-1"
+              >
+                Worker Cluster (optional)
+              </label>
+              <input
+                id="detail-fn-cluster"
+                type="text"
+                value={form.worker_cluster}
+                onChange={(e) =>
+                  setForm((prev) =>
+                    prev ? { ...prev, worker_cluster: e.target.value } : prev,
+                  )
+                }
+                placeholder="Optional (default cluster)"
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm font-mono text-slate-100 focus:outline-none focus:border-amber-400"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Routes this CodeRun to a remote worker pool configured under
+                Administration → Workers. Execution namespace is operator-managed.
+              </p>
             </div>
 
             <CodeRunPermissionsEditor

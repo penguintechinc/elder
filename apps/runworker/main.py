@@ -400,12 +400,20 @@ class RunWorkerService:
             f"{self.config.elder_api_url}"
             f"/api/v1/runs/internal/executions/{execution_id}/result"
         )
+        status_map = {
+            "succeeded": "completed",
+            "success": "completed",
+            "timeout": "timed_out",
+        }
+        normalized_status = status_map.get(result.status, result.status)
         body: dict[str, Any] = {
-            "status": result.status,
+            "status": normalized_status,
             "exit_code": result.exit_code,
+            "stdout_log": result.logs,
             "logs": result.logs,
             "output": result.output,
             "duration_ms": result.duration_ms,
+            "error_message": result.error,
             "error": result.error,
             "worker_id": self.config.worker_id,
         }
@@ -478,6 +486,21 @@ class RunWorkerService:
 
             try:
                 selected_runner = self.select_runner(req)
+                backend_label = type(selected_runner).__name__
+                try:
+                    await self.flush_logs(
+                        req.execution_id,
+                        f"[elder] Worker {self.config.worker_id} starting {req.runtime} "
+                        f"execution ({backend_label}) — warming up...\n",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(
+                        "runworker_startup_log_flush_failed",
+                        extra={
+                            "execution_id": req.execution_id,
+                            "error": str(exc),
+                        },
+                    )
                 resolved_req = await self._resolve_artifact(
                     req,
                     target_runner=selected_runner,
