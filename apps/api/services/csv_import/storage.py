@@ -7,9 +7,9 @@ Wasabi, or AWS S3) without writing to local disk or storing blobs in Postgres,
 records the ``storage_key`` and ``file_sha256`` on ``csv_import_jobs``, and
 returns ``202 Accepted``.
 
-The ``svc-csv-importer`` batch CronJob later downloads the object, verifies
-its SHA-256 digest, imports rows in batches, and deletes the S3 object on
-completion.
+The ``svc-worker`` CSV import consumer (triggered via Valkey/Redis queue with a
+periodic DB fallback sweep) later downloads the object, verifies its SHA-256
+digest, imports rows in batches, and deletes the S3 object on completion.
 """
 
 from __future__ import annotations
@@ -22,6 +22,10 @@ from typing import Any
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+# Valkey/Redis list key used to dispatch queued CSV import job_ids from hub-api
+# to svc-worker (LPUSH by hub-api, BRPOP by svc-worker).
+CSV_IMPORT_QUEUE_KEY = "elder:csv_import:queue"
 
 
 @dataclass(frozen=True)

@@ -403,6 +403,13 @@ class Settings(BaseSettings):
         description="Database connection pool size",
     )
 
+    # Async CSV Batch Importer Configuration (runs inside svc-worker)
+    csv_import_poll_interval_seconds: int = Field(
+        default=60,
+        ge=1,
+        description="Polling interval in seconds for S3-backed async CSV batch imports",
+    )
+
     # Health Check & Monitoring
     health_check_port: int = Field(
         default=8000,

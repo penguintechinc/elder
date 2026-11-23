@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import sys
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -28,14 +31,22 @@ from apps.api.modules.infrastructure.models.organization import (  # noqa: F401
     Organization,
 )
 from apps.api.services.csv_import.storage import (
+    CSV_IMPORT_QUEUE_KEY,
     CsvImportStorage,
     build_csv_import_key,
     compute_csv_sha256,
 )
 from apps.worker.csv_import_batch import (
+    claim_job_by_id,
     claim_pending_jobs,
     process_claimed_job,
+    process_job_by_id,
+    reset_unconfigured_log_state,
+    run_batch_once,
     run_once,
+)
+from apps.worker.csv_import_batch import (
+    main as csv_import_batch_main,
 )
 
 
@@ -371,6 +382,57 @@ class TestCsvImportRoutesAsyncAndJobs:
             body = await res.get_json()
             assert body == {"resource": "vulnerabilities", "imported": 1}
 
+    @pytest.mark.asyncio
+    async def test_post_pushes_job_id_to_valkey_queue_and_tolerates_redis_failure(
+        self, sqlite_db: Any
+    ) -> None:
+        fake_client = _InMemoryS3Client()
+        storage = CsvImportStorage(bucket="elder-imports", s3_client=fake_client)
+        app = _make_test_app(sqlite_db, tenant_id=1, testing=False)
+        mock_redis = MagicMock()
+        app.redis_client = mock_redis
+        mock_user = MagicMock(id=10, is_superuser=False, username="importer")
+
+        cve1 = f"CVE-2026-{uuid4().hex[:6].upper()}"
+        csv_payload = (
+            "cve_id,title,severity,cvss_score,description,published_at\n"
+            f"{cve1},Queue Push Vuln,high,8.0,Desc,2026-10-01\n"
+        )
+
+        with (
+            patch("apps.api.auth.decorators.get_current_user", return_value=mock_user),
+            patch(
+                "apps.api.api.v1.csv_import.get_csv_import_storage",
+                return_value=storage,
+            ),
+        ):
+            client = app.test_client()
+            res = await client.post(
+                "/api/v1/import/vulnerabilities",
+                json={"csv_text": csv_payload},
+            )
+            assert res.status_code == 202
+            body = await res.get_json()
+            mock_redis.lpush.assert_called_once_with(
+                CSV_IMPORT_QUEUE_KEY, body["job_id"]
+            )
+
+            # Best-effort: Valkey hiccup must not fail the persisted 202 job
+            mock_redis.lpush.side_effect = RuntimeError("valkey unavailable")
+            res2 = await client.post(
+                "/api/v1/import/vulnerabilities",
+                json={"csv_text": csv_payload},
+            )
+            assert res2.status_code == 202
+            body2 = await res2.get_json()
+            row = (
+                sqlite_db(sqlite_db.csv_import_jobs.job_id == body2["job_id"])
+                .select()
+                .first()
+            )
+            assert row is not None
+            assert row.status == "pending"
+
 
 class TestCsvImportBatchWorker:
     """Verify CronJob claim, batched DB insert, SHA-256 tamper handling, and S3 cleanup."""
@@ -535,6 +597,281 @@ class TestCsvImportBatchWorker:
         assert job_row.error_message == "CSV validation failed"
         assert isinstance(job_row.errors_json, list) and len(job_row.errors_json) >= 3
         assert stored.storage_key in fake_client.deleted_keys
+
+    def test_run_batch_once_skips_cleanly_and_logs_once_when_s3_unconfigured(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for var in (
+            "CSV_IMPORT_S3_BUCKET",
+            "ELDER_S3_BUCKET",
+            "RUNS_S3_BUCKET",
+            "DATABASE_URL",
+        ):
+            monkeypatch.delenv(var, raising=False)
+        reset_unconfigured_log_state()
+
+        with patch("apps.worker.csv_import_batch.logger") as mock_logger:
+            rc1 = run_batch_once()
+            rc2 = run_batch_once()
+
+        assert rc1 == 0
+        assert rc2 == 0
+        info_events = [call.args[0] for call in mock_logger.info.call_args_list]
+        assert info_events.count("csv_import_batch_s3_unconfigured_skip") == 1
+        mock_logger.error.assert_not_called()
+
+    def test_cli_once_is_noop_without_s3_unless_require_s3_passed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for var in (
+            "CSV_IMPORT_S3_BUCKET",
+            "ELDER_S3_BUCKET",
+            "RUNS_S3_BUCKET",
+            "DATABASE_URL",
+        ):
+            monkeypatch.delenv(var, raising=False)
+        reset_unconfigured_log_state()
+
+        fake_logger_mod = SimpleNamespace(
+            configure_logging=lambda: None,
+            get_logger=lambda name=None: MagicMock(),
+        )
+        with patch.dict(
+            sys.modules,
+            {
+                "apps.worker.utils": SimpleNamespace(logger=fake_logger_mod),
+                "apps.worker.utils.logger": fake_logger_mod,
+            },
+        ):
+            assert csv_import_batch_main(["--once"]) == 0
+            assert csv_import_batch_main(["--once", "--require-s3"]) == 1
+
+    def test_run_batch_once_uses_caller_db_without_closing_it(
+        self, sqlite_db: Any
+    ) -> None:
+        fake_client = _InMemoryS3Client()
+        storage = CsvImportStorage(bucket="elder-imports", s3_client=fake_client)
+        reset_unconfigured_log_state()
+
+        rc = run_batch_once(
+            db=sqlite_db,
+            storage=storage,
+            limit=5,
+            batch_size=50,
+            worker_id="svc-worker-test",
+        )
+        assert rc == 0
+        # Caller-owned DB remains usable (not closed by run_batch_once)
+        assert sqlite_db(sqlite_db.tenants.id == 1).select().first() is not None
+
+    def test_claim_and_process_job_by_id_is_atomic_and_idempotent(
+        self, sqlite_db: Any
+    ) -> None:
+        fake_client = _InMemoryS3Client()
+        storage = CsvImportStorage(bucket="elder-imports", s3_client=fake_client)
+        reset_unconfigured_log_state()
+
+        job_id = "csvimp-byid001"
+        cve = f"CVE-2026-{uuid4().hex[:6].upper()}"
+        stored = storage.put_csv(
+            tenant_id=1,
+            resource="vulnerabilities",
+            job_id=job_id,
+            csv_text=(
+                "cve_id,title,severity,cvss_score,description,published_at\n"
+                f"{cve},ById Vuln,medium,6.2,Desc,2026-10-01\n"
+            ),
+        )
+        sqlite_db.csv_import_jobs.insert(
+            job_id=job_id,
+            tenant_id=1,
+            resource="vulnerabilities",
+            filename="byid.csv",
+            storage_backend="s3",
+            storage_key=stored.storage_key,
+            file_sha256=stored.file_sha256,
+            file_size_bytes=stored.file_size_bytes,
+            status="pending",
+            total_rows=1,
+            imported_count=0,
+            skipped_count=0,
+            created_at=datetime.now(UTC),
+        )
+        sqlite_db.commit()
+
+        status = process_job_by_id(
+            job_id,
+            db=sqlite_db,
+            storage=storage,
+            worker_id="svc-worker-q1",
+        )
+        assert status == "completed"
+        assert stored.storage_key in fake_client.deleted_keys
+
+        # Second claim/process for the same job_id is a clean no-op
+        assert claim_job_by_id(sqlite_db, job_id, worker_id="svc-worker-q2") is None
+        assert (
+            process_job_by_id(
+                job_id,
+                db=sqlite_db,
+                storage=storage,
+                worker_id="svc-worker-q2",
+            )
+            is None
+        )
+
+
+@contextmanager
+def _import_worker_service():
+    """Import ``WorkerService``, stubbing worker-only deps if absent in API env."""
+    stub_modules: dict[str, Any] = {}
+    if importlib.util.find_spec("aiocron") is None:
+        stub_modules["aiocron"] = MagicMock()
+    if importlib.util.find_spec("pydantic_settings") is None:
+        fake_settings = SimpleNamespace(
+            csv_import_poll_interval_seconds=60,
+            database_url=None,
+            database_read_url=None,
+            db_pool_size=10,
+            redis_url="redis://localhost:6379/0",
+            health_check_port=8000,
+            log_level="INFO",
+            log_format="json",
+        )
+        fake_logger_mod = SimpleNamespace(
+            configure_logging=lambda: None,
+            get_logger=lambda name=None: MagicMock(),
+        )
+        stub_modules["apps.worker.config"] = SimpleNamespace(
+            settings=SimpleNamespace(settings=fake_settings)
+        )
+        stub_modules["apps.worker.config.settings"] = SimpleNamespace(
+            settings=fake_settings
+        )
+        stub_modules["apps.worker.utils"] = SimpleNamespace(logger=fake_logger_mod)
+        stub_modules["apps.worker.utils.logger"] = fake_logger_mod
+    with patch.dict(sys.modules, stub_modules):
+        from apps.worker.main import WorkerService
+
+        yield WorkerService
+
+
+class TestSvcWorkerCsvImportRegistration:
+    """Verify svc-worker registers and runs the periodic CSV batch importer loop."""
+
+    def test_poll_interval_defaults_to_60_and_reads_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        with _import_worker_service() as WorkerService:
+            monkeypatch.delenv("CSV_IMPORT_POLL_INTERVAL_SECONDS", raising=False)
+            assert WorkerService._get_csv_import_poll_interval() == 60
+
+            monkeypatch.setenv("CSV_IMPORT_POLL_INTERVAL_SECONDS", "15")
+            assert WorkerService._get_csv_import_poll_interval() == 15
+
+            monkeypatch.setenv("CSV_IMPORT_POLL_INTERVAL_SECONDS", "not-an-int")
+            assert WorkerService._get_csv_import_poll_interval() == 60
+
+    @pytest.mark.asyncio
+    async def test_worker_service_starts_and_stops_csv_import_loop(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import asyncio
+        from unittest.mock import AsyncMock
+
+        monkeypatch.setenv("CSV_IMPORT_POLL_INTERVAL_SECONDS", "60")
+        called = asyncio.Event()
+
+        def _fake_run_batch_once(**kwargs: Any) -> int:
+            called.set()
+            return 0
+
+        with _import_worker_service() as WorkerService:
+            with (
+                patch.object(WorkerService, "_init_database", return_value=None),
+                patch.object(WorkerService, "_init_jobbus", new_callable=AsyncMock),
+                patch.object(
+                    WorkerService, "_service_node_heartbeat", new_callable=AsyncMock
+                ),
+                patch.object(
+                    WorkerService, "_setup_scheduled_syncs", return_value=None
+                ),
+                patch(
+                    "apps.worker.main.run_batch_once",
+                    side_effect=_fake_run_batch_once,
+                ) as mock_batch,
+            ):
+                svc = WorkerService()
+                await svc.start()
+                try:
+                    assert svc.csv_import_task is not None
+                    await asyncio.wait_for(called.wait(), timeout=2.0)
+                    assert mock_batch.call_count >= 1
+                finally:
+                    await svc.stop()
+
+                assert svc.csv_import_task.done()
+
+    @pytest.mark.asyncio
+    async def test_worker_service_consumes_valkey_queue_via_brpop(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import asyncio
+        from unittest.mock import AsyncMock
+
+        monkeypatch.setenv("CSV_IMPORT_S3_BUCKET", "elder-imports")
+        monkeypatch.setenv("CSV_IMPORT_POLL_INTERVAL_SECONDS", "60")
+
+        popped_event = asyncio.Event()
+        processed_ids: list[str] = []
+
+        async def _fake_brpop(key: str, timeout: int = 5):
+            assert key == CSV_IMPORT_QUEUE_KEY
+            if not popped_event.is_set():
+                return (key.encode("utf-8"), b"csvimp-queued-42")
+            await asyncio.sleep(0.05)
+            return None
+
+        def _fake_process_job_by_id(job_id: str, **kwargs: Any) -> str:
+            processed_ids.append(job_id)
+            popped_event.set()
+            return "completed"
+
+        fake_redis = MagicMock()
+        fake_redis.brpop = AsyncMock(side_effect=_fake_brpop)
+        fake_redis.close = AsyncMock()
+
+        with _import_worker_service() as WorkerService:
+
+            async def _fake_init_jobbus(self: Any) -> None:
+                self.redis = fake_redis
+
+            with (
+                patch.object(WorkerService, "_init_database", return_value=None),
+                patch.object(WorkerService, "_init_jobbus", _fake_init_jobbus),
+                patch.object(
+                    WorkerService, "_service_node_heartbeat", new_callable=AsyncMock
+                ),
+                patch.object(
+                    WorkerService, "_setup_scheduled_syncs", return_value=None
+                ),
+                patch("apps.worker.main.run_batch_once", return_value=0),
+                patch(
+                    "apps.worker.main.process_job_by_id",
+                    side_effect=_fake_process_job_by_id,
+                ),
+            ):
+                svc = WorkerService()
+                await svc.start()
+                try:
+                    assert svc.csv_import_queue_task is not None
+                    await asyncio.wait_for(popped_event.wait(), timeout=2.0)
+                    assert processed_ids == ["csvimp-queued-42"]
+                finally:
+                    await svc.stop()
+
+                assert svc.csv_import_queue_task.done()
+                assert svc.csv_import_task is not None and svc.csv_import_task.done()
 
 
 class TestMigration049CsvImportJobs:

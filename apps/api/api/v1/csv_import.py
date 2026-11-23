@@ -26,7 +26,10 @@ from apps.api.services.csv_import.processor import (
     process_csv_text,
     validate_csv_structure,
 )
-from apps.api.services.csv_import.storage import get_csv_import_storage
+from apps.api.services.csv_import.storage import (
+    CSV_IMPORT_QUEUE_KEY,
+    get_csv_import_storage,
+)
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.tenant_scoping import get_current_tenant_id
@@ -282,6 +285,7 @@ async def import_csv_resource(resource: str):
     if storage.is_configured:
         job_id = f"csvimp-{uuid4().hex[:16]}"
         created_by_id = getattr(current_user, "id", None) if current_user else None
+        redis_client = getattr(current_app, "redis_client", None)
 
         def upload_and_enqueue() -> dict[str, Any]:
             stored = storage.put_csv(
@@ -313,6 +317,16 @@ async def import_csv_resource(resource: str):
                 created_at=now,
             )
             db.commit()
+            if redis_client is not None:
+                try:
+                    redis_client.lpush(CSV_IMPORT_QUEUE_KEY, job_id)
+                except Exception as redis_exc:  # noqa: BLE001
+                    logger.warning(
+                        "csv_import_queue_push_failed",
+                        job_id=job_id,
+                        queue=CSV_IMPORT_QUEUE_KEY,
+                        error=str(redis_exc),
+                    )
             return {
                 "job_id": job_id,
                 "status": "pending",
