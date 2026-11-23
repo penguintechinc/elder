@@ -3220,18 +3220,48 @@ class ApiClient {
     return response.data;
   }
 
-  async importCsvResource(resource: string, fileOrText: File | string) {
+  async importCsvResource(
+    resource: string,
+    fileOrText: File | string,
+  ): Promise<CsvImportResponse> {
     if (typeof fileOrText === "string") {
-      const response = await this.client.post(`/import/${resource}`, {
-        csv_text: fileOrText,
-      });
+      const response = await this.client.post<CsvImportResponse>(
+        `/import/${resource}`,
+        {
+          csv_text: fileOrText,
+        },
+      );
       return response.data;
     }
     const formData = new FormData();
     formData.append("file", fileOrText);
-    const response = await this.client.post(`/import/${resource}`, formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+    const response = await this.client.post<CsvImportResponse>(
+      `/import/${resource}`,
+      formData,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+      },
+    );
+    return response.data;
+  }
+
+  async getCsvImportJobs(params?: {
+    resource?: string;
+    status?: CsvImportJobStatus;
+    limit?: number;
+    offset?: number;
+  }): Promise<CsvImportJobsResponse> {
+    const response = await this.client.get<CsvImportJobsResponse>(
+      "/import/jobs",
+      { params },
+    );
+    return response.data;
+  }
+
+  async getCsvImportJob(jobId: string): Promise<CsvImportJob> {
+    const response = await this.client.get<CsvImportJob>(
+      `/import/jobs/${encodeURIComponent(jobId)}`,
+    );
     return response.data;
   }
 
@@ -4456,6 +4486,63 @@ export interface AIResearchResponse {
   citations: AIResearchCitation[];
   tool_count: number;
   enabled_modules: string[];
+}
+
+export type CsvImportJobStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed";
+
+export type CsvImportJobError =
+  | string
+  | {
+      row?: number;
+      field?: string;
+      message?: string;
+      error?: string;
+    };
+
+export interface CsvImportJob {
+  id?: number;
+  job_id: string;
+  resource: string;
+  status: CsvImportJobStatus;
+  filename?: string | null;
+  storage_backend?: string | null;
+  storage_key?: string | null;
+  file_sha256?: string | null;
+  total_rows?: number;
+  imported_count?: number;
+  skipped_count?: number;
+  error_count?: number;
+  errors?: CsvImportJobError[];
+  error_message?: string | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface CsvImportJobsResponse {
+  items: CsvImportJob[];
+  jobs?: CsvImportJob[];
+  total?: number;
+}
+
+export interface CsvImportResponse {
+  resource?: string;
+  imported?: number;
+  skipped?: number;
+  job_id?: string;
+  status?: CsvImportJobStatus;
+  storage_backend?: string;
+  storage_key?: string;
+  file_sha256?: string;
+  total_rows?: number;
+  filename?: string | null;
+  message?: string;
+  errors?: CsvImportJobError[];
 }
 
 export const api = new ApiClient();
