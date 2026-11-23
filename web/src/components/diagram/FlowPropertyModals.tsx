@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MarkerType, type Node, type Edge } from "@xyflow/react";
-import { X } from "lucide-react";
+import { Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import SearchableSelect from "@/components/SearchableSelect";
 import {
@@ -69,12 +69,16 @@ interface NodePropertyModalProps {
   node: Node | null;
   onClose: () => void;
   onSave: (updatedNode: Node) => void;
+  onDelete?: (nodeId: string) => void;
+  variant?: "modal" | "sidebar";
 }
 
 export function NodePropertyModal({
   node,
   onClose,
   onSave,
+  onDelete,
+  variant = "modal",
 }: NodePropertyModalProps) {
   const [label, setLabel] = useState("");
   const [color, setColor] = useState("#1f2937");
@@ -133,6 +137,187 @@ export function NodePropertyModal({
     });
   };
 
+  const formBody = (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label
+          htmlFor="flow-node-label"
+          className="block text-xs font-semibold text-slate-200 mb-1"
+        >
+          Display Text
+        </label>
+        <input
+          id="flow-node-label"
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+          placeholder="Object label"
+        />
+      </div>
+
+      <div>
+        <label
+          htmlFor="flow-node-color-hex"
+          className="block text-xs font-semibold text-slate-200 mb-2"
+        >
+          Box Color
+        </label>
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          {PRIMARY_12_COLORS.map((c) => (
+            <button
+              key={c.hex}
+              type="button"
+              onClick={() => setColor(c.hex)}
+              title={c.name}
+              aria-label={`Set box color ${c.name}`}
+              className={`w-6 h-6 rounded border-2 transition-transform ${
+                color.toLowerCase() === c.hex.toLowerCase()
+                  ? "border-amber-400 scale-110"
+                  : "border-slate-600"
+              }`}
+              style={{ backgroundColor: c.hex }}
+            />
+          ))}
+          <button
+            type="button"
+            onClick={() => setColor("transparent")}
+            className={`px-2 py-1 text-xs rounded border ${
+              color === "transparent"
+                ? "border-amber-400 text-amber-300 bg-slate-900"
+                : "border-slate-600 text-slate-300 bg-slate-900/50"
+            }`}
+          >
+            Transparent
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={
+              color.startsWith("#") && color.length === 7 ? color : "#1f2937"
+            }
+            onChange={(e) => setColor(e.target.value)}
+            aria-label="Custom box color picker"
+            className="w-9 h-8 rounded border border-slate-600 bg-slate-900 cursor-pointer"
+          />
+          <input
+            id="flow-node-color-hex"
+            type="text"
+            value={color}
+            onChange={(e) => setColor(e.target.value)}
+            placeholder="#1f2937 or transparent"
+            className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label
+          htmlFor="flow-node-resource-category"
+          className="block text-xs font-semibold text-slate-200 mb-1"
+        >
+          Associate Resource Category
+        </label>
+        <select
+          id="flow-node-resource-category"
+          value={resourceCategory}
+          onChange={(e) => {
+            setResourceCategory(e.target.value as ResourceCategory);
+            setResourceId("");
+          }}
+          className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+        >
+          {RESOURCE_CATEGORY_OPTIONS.map((opt) => (
+            <option key={opt.value || "none"} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {resourceCategory && (
+        <div>
+          <span className="block text-xs font-semibold text-slate-200 mb-1">
+            Resource
+          </span>
+          <SearchableSelect
+            options={categoryResources}
+            value={resourceId}
+            onChange={(val) => setResourceId(String(val))}
+            isLoading={loadingResources}
+            placeholder="Search and select resource..."
+            allowClear
+            ariaLabel="Associate resource"
+          />
+          {resourcesError && (
+            <p className="text-xs text-rose-400 mt-1">
+              Failed to load resources for this category.
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2 pt-3 border-t border-slate-700">
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-3.5 py-1.5 text-xs rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200"
+        >
+          {variant === "sidebar" ? "Close" : "Cancel"}
+        </button>
+        <button
+          type="submit"
+          className="px-3.5 py-1.5 text-xs rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold"
+        >
+          Apply
+        </button>
+      </div>
+    </form>
+  );
+
+  if (variant === "sidebar") {
+    return (
+      <aside
+        aria-label="Object Inspector"
+        className="w-72 md:w-80 xl:w-96 bg-slate-800 border-l border-slate-700 flex flex-col shrink-0 overflow-hidden text-white"
+      >
+        <div className="p-3.5 border-b border-slate-700 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-wider font-semibold text-amber-400">
+              Object Properties
+            </div>
+            <h2 className="text-sm font-bold text-slate-100 truncate">
+              {label || "Edit Object"}
+            </h2>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(node.id)}
+                aria-label="Delete object"
+                title="Delete object"
+                className="p-1.5 rounded text-rose-400 hover:text-rose-300 hover:bg-slate-700"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700"
+              aria-label="Close object inspector"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3.5">{formBody}</div>
+      </aside>
+    );
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto"
@@ -154,160 +339,32 @@ export function NodePropertyModal({
             <X className="w-4 h-4" />
           </button>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="flow-node-label"
-              className="block text-sm font-medium text-slate-300 mb-1"
-            >
-              Display Text
-            </label>
-            <input
-              id="flow-node-label"
-              type="text"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-              placeholder="Object label"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="flow-node-color-hex"
-              className="block text-sm font-medium text-slate-300 mb-2"
-            >
-              Box Color
-            </label>
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              {PRIMARY_12_COLORS.map((c) => (
-                <button
-                  key={c.hex}
-                  type="button"
-                  onClick={() => setColor(c.hex)}
-                  title={c.name}
-                  aria-label={`Set box color ${c.name}`}
-                  className={`w-6 h-6 rounded border-2 transition-transform ${
-                    color.toLowerCase() === c.hex.toLowerCase()
-                      ? "border-amber-400 scale-110"
-                      : "border-slate-600"
-                  }`}
-                  style={{ backgroundColor: c.hex }}
-                />
-              ))}
-              <button
-                type="button"
-                onClick={() => setColor("transparent")}
-                className={`px-2 py-1 text-xs rounded border ${
-                  color === "transparent"
-                    ? "border-amber-400 text-amber-300 bg-slate-900"
-                    : "border-slate-600 text-slate-300 bg-slate-900/50"
-                }`}
-              >
-                Transparent
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={
-                  color.startsWith("#") && color.length === 7
-                    ? color
-                    : "#1f2937"
-                }
-                onChange={(e) => setColor(e.target.value)}
-                aria-label="Custom box color picker"
-                className="w-9 h-9 rounded border border-slate-700 bg-slate-900 cursor-pointer"
-              />
-              <input
-                id="flow-node-color-hex"
-                type="text"
-                value={color}
-                onChange={(e) => setColor(e.target.value)}
-                placeholder="#1f2937 or transparent"
-                className="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-amber-500"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label
-              htmlFor="flow-node-resource-category"
-              className="block text-sm font-medium text-slate-300 mb-1"
-            >
-              Associate Resource Category
-            </label>
-            <select
-              id="flow-node-resource-category"
-              value={resourceCategory}
-              onChange={(e) => {
-                setResourceCategory(e.target.value as ResourceCategory);
-                setResourceId("");
-              }}
-              className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-            >
-              {RESOURCE_CATEGORY_OPTIONS.map((opt) => (
-                <option key={opt.value || "none"} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {resourceCategory && (
-            <div>
-              <span className="block text-sm font-medium text-slate-300 mb-1">
-                Resource
-              </span>
-              <SearchableSelect
-                options={categoryResources}
-                value={resourceId}
-                onChange={(val) => setResourceId(String(val))}
-                isLoading={loadingResources}
-                placeholder="Search and select resource..."
-                allowClear
-                ariaLabel="Associate resource"
-              />
-              {resourcesError && (
-                <p className="text-xs text-rose-400 mt-1">
-                  Failed to load resources for this category.
-                </p>
-              )}
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2 pt-3 border-t border-slate-700">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm rounded bg-slate-700 hover:bg-slate-600 text-slate-200"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 text-sm rounded bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold"
-            >
-              Apply
-            </button>
-          </div>
-        </form>
+        {formBody}
       </div>
     </div>
   );
+}
+
+export function NodePropertySidebar(
+  props: Omit<NodePropertyModalProps, "variant">,
+) {
+  return <NodePropertyModal {...props} variant="sidebar" />;
 }
 
 interface EdgePropertyModalProps {
   edge: Edge | null;
   onClose: () => void;
   onSave: (updatedEdge: Edge) => void;
+  onDelete?: (edgeId: string) => void;
+  variant?: "modal" | "sidebar";
 }
 
 export function EdgePropertyModal({
   edge,
   onClose,
   onSave,
+  onDelete,
+  variant = "modal",
 }: EdgePropertyModalProps) {
   const [label, setLabel] = useState("");
   const [lineType, setLineType] = useState("virtual");
@@ -423,6 +480,253 @@ export function EdgePropertyModal({
     toast.success("Line updated");
   };
 
+  const formBody = (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label
+          htmlFor="flow-edge-label"
+          className="block text-xs font-semibold text-slate-200 mb-1"
+        >
+          Line Label (optional, defaults to Type · Speed · Provider)
+        </label>
+        <input
+          id="flow-edge-label"
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="e.g. Primary Fiber Uplink"
+          className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-3">
+        <div>
+          <span className="block text-xs font-semibold text-slate-200 mb-1">
+            Line Type
+          </span>
+          <SearchableSelect
+            options={LINE_TYPE_OPTIONS}
+            value={lineType}
+            onChange={(val) => setLineType(String(val))}
+            placeholder="virtual, ethernet, oc3..."
+            allowCustom
+            allowClear
+            ariaLabel="Line Type"
+          />
+        </div>
+
+        <div>
+          <span className="block text-xs font-semibold text-slate-200 mb-1">
+            Speed
+          </span>
+          <SearchableSelect
+            options={LINE_SPEED_OPTIONS}
+            value={speed}
+            onChange={(val) => setSpeed(String(val))}
+            placeholder="1Gbps, 10Gbps, 155Mbps..."
+            allowCustom
+            allowClear
+            ariaLabel="Speed"
+          />
+        </div>
+
+        <div>
+          <span className="block text-xs font-semibold text-slate-200 mb-1">
+            Provider
+          </span>
+          <SearchableSelect
+            options={LINE_PROVIDER_OPTIONS}
+            value={provider}
+            onChange={(val) => setProvider(String(val))}
+            placeholder="CenturyLink / Lumen, AT&T, AWS..."
+            allowCustom
+            allowClear
+            ariaLabel="Provider"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label
+              htmlFor="flow-edge-direction"
+              className="block text-xs font-semibold text-slate-200 mb-1"
+            >
+              Arrow Direction
+            </label>
+            <select
+              id="flow-edge-direction"
+              value={arrowDirection}
+              onChange={(e) =>
+                setArrowDirection(e.target.value as ArrowDirection)
+              }
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+            >
+              <option value="right">Right (→)</option>
+              <option value="left">Left (←)</option>
+              <option value="both">Both (↔)</option>
+              <option value="none">None (—)</option>
+            </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="flow-edge-style"
+              className="block text-xs font-semibold text-slate-200 mb-1"
+            >
+              Line Style
+            </label>
+            <select
+              id="flow-edge-style"
+              value={lineStyle}
+              onChange={(e) => setLineStyle(e.target.value as LineStyle)}
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+            >
+              <option value="solid">Solid</option>
+              <option value="dashed">Dashed</option>
+              <option value="dotted">Dotted</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label
+          htmlFor="flow-edge-color-hex"
+          className="block text-xs font-semibold text-slate-200 mb-2"
+        >
+          Line Color
+        </label>
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          {PRIMARY_12_COLORS.map((c) => (
+            <button
+              key={c.hex}
+              type="button"
+              onClick={() => setColor(c.hex)}
+              title={c.name}
+              aria-label={`Set line color ${c.name}`}
+              className={`w-6 h-6 rounded border-2 transition-transform ${
+                color.toLowerCase() === c.hex.toLowerCase()
+                  ? "border-amber-400 scale-110"
+                  : "border-slate-600"
+              }`}
+              style={{ backgroundColor: c.hex }}
+            />
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={
+              color.startsWith("#") && color.length === 7 ? color : "#F59E0B"
+            }
+            onChange={(e) => setColor(e.target.value)}
+            aria-label="Custom line color picker"
+            className="w-9 h-8 rounded border border-slate-600 bg-slate-900 cursor-pointer"
+          />
+          <input
+            id="flow-edge-color-hex"
+            type="text"
+            value={color}
+            onChange={(e) => setColor(e.target.value)}
+            placeholder="#F59E0B"
+            className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
+          />
+        </div>
+      </div>
+
+      <label className="inline-flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={animated}
+          onChange={(e) => setAnimated(e.target.checked)}
+          className="rounded border-slate-600 bg-slate-900 text-amber-500 focus:ring-amber-500"
+        />
+        <span>Animated flow</span>
+      </label>
+
+      <div>
+        <label
+          htmlFor="flow-edge-metadata"
+          className="block text-xs font-semibold text-slate-200 mb-1"
+        >
+          Metadata (JSON)
+        </label>
+        <textarea
+          id="flow-edge-metadata"
+          rows={3}
+          value={metadataText}
+          onChange={(e) => {
+            setMetadataText(e.target.value);
+            setMetadataError(null);
+          }}
+          placeholder='{"circuit_id": "CKT-1234", "vlan": 100}'
+          className="w-full font-mono bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+        />
+        {metadataError && (
+          <p className="text-xs text-rose-400 mt-1">{metadataError}</p>
+        )}
+      </div>
+
+      <div className="flex justify-end gap-2 pt-3 border-t border-slate-700">
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-3.5 py-1.5 text-xs rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200"
+        >
+          {variant === "sidebar" ? "Close" : "Cancel"}
+        </button>
+        <button
+          type="submit"
+          className="px-3.5 py-1.5 text-xs rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold"
+        >
+          Apply
+        </button>
+      </div>
+    </form>
+  );
+
+  if (variant === "sidebar") {
+    return (
+      <aside
+        aria-label="Line Inspector"
+        className="w-72 md:w-80 xl:w-96 bg-slate-800 border-l border-slate-700 flex flex-col shrink-0 overflow-hidden text-white"
+      >
+        <div className="p-3.5 border-b border-slate-700 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-wider font-semibold text-amber-400">
+              Line Properties
+            </div>
+            <h2 className="text-sm font-bold text-slate-100 truncate">
+              {label || "Edit Line Details"}
+            </h2>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(edge.id)}
+                aria-label="Delete line"
+                title="Delete line"
+                className="p-1.5 rounded text-rose-400 hover:text-rose-300 hover:bg-slate-700"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700"
+              aria-label="Close line inspector"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3.5">{formBody}</div>
+      </aside>
+    );
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto"
@@ -444,209 +748,14 @@ export function EdgePropertyModal({
             <X className="w-4 h-4" />
           </button>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="flow-edge-label"
-              className="block text-sm font-medium text-slate-300 mb-1"
-            >
-              Line Label (optional, defaults to Type · Speed · Provider)
-            </label>
-            <input
-              id="flow-edge-label"
-              type="text"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. Primary Fiber Uplink"
-              className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <span className="block text-sm font-medium text-slate-300 mb-1">
-                Line Type
-              </span>
-              <SearchableSelect
-                options={LINE_TYPE_OPTIONS}
-                value={lineType}
-                onChange={(val) => setLineType(String(val))}
-                placeholder="virtual, ethernet, oc3..."
-                allowCustom
-                allowClear
-                ariaLabel="Line Type"
-              />
-            </div>
-
-            <div>
-              <span className="block text-sm font-medium text-slate-300 mb-1">
-                Speed
-              </span>
-              <SearchableSelect
-                options={LINE_SPEED_OPTIONS}
-                value={speed}
-                onChange={(val) => setSpeed(String(val))}
-                placeholder="1Gbps, 10Gbps, 155Mbps..."
-                allowCustom
-                allowClear
-                ariaLabel="Speed"
-              />
-            </div>
-
-            <div className="sm:col-span-2">
-              <span className="block text-sm font-medium text-slate-300 mb-1">
-                Provider
-              </span>
-              <SearchableSelect
-                options={LINE_PROVIDER_OPTIONS}
-                value={provider}
-                onChange={(val) => setProvider(String(val))}
-                placeholder="CenturyLink / Lumen, AT&T, AWS..."
-                allowCustom
-                allowClear
-                ariaLabel="Provider"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="flow-edge-direction"
-                className="block text-sm font-medium text-slate-300 mb-1"
-              >
-                Arrow Direction
-              </label>
-              <select
-                id="flow-edge-direction"
-                value={arrowDirection}
-                onChange={(e) =>
-                  setArrowDirection(e.target.value as ArrowDirection)
-                }
-                className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-              >
-                <option value="right">Right (→)</option>
-                <option value="left">Left (←)</option>
-                <option value="both">Both (↔)</option>
-                <option value="none">None (—)</option>
-              </select>
-            </div>
-
-            <div>
-              <label
-                htmlFor="flow-edge-style"
-                className="block text-sm font-medium text-slate-300 mb-1"
-              >
-                Line Style
-              </label>
-              <select
-                id="flow-edge-style"
-                value={lineStyle}
-                onChange={(e) => setLineStyle(e.target.value as LineStyle)}
-                className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-              >
-                <option value="solid">Solid</option>
-                <option value="dashed">Dashed</option>
-                <option value="dotted">Dotted</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label
-              htmlFor="flow-edge-color-hex"
-              className="block text-sm font-medium text-slate-300 mb-2"
-            >
-              Line Color
-            </label>
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              {PRIMARY_12_COLORS.map((c) => (
-                <button
-                  key={c.hex}
-                  type="button"
-                  onClick={() => setColor(c.hex)}
-                  title={c.name}
-                  aria-label={`Set line color ${c.name}`}
-                  className={`w-6 h-6 rounded border-2 transition-transform ${
-                    color.toLowerCase() === c.hex.toLowerCase()
-                      ? "border-amber-400 scale-110"
-                      : "border-slate-600"
-                  }`}
-                  style={{ backgroundColor: c.hex }}
-                />
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={
-                  color.startsWith("#") && color.length === 7
-                    ? color
-                    : "#F59E0B"
-                }
-                onChange={(e) => setColor(e.target.value)}
-                aria-label="Custom line color picker"
-                className="w-9 h-9 rounded border border-slate-700 bg-slate-900 cursor-pointer"
-              />
-              <input
-                id="flow-edge-color-hex"
-                type="text"
-                value={color}
-                onChange={(e) => setColor(e.target.value)}
-                placeholder="#F59E0B"
-                className="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-amber-500"
-              />
-            </div>
-          </div>
-
-          <label className="inline-flex items-center gap-2 text-sm text-slate-300">
-            <input
-              type="checkbox"
-              checked={animated}
-              onChange={(e) => setAnimated(e.target.checked)}
-            />
-            <span>Animated flow</span>
-          </label>
-
-          <div>
-            <label
-              htmlFor="flow-edge-metadata"
-              className="block text-sm font-medium text-slate-300 mb-1"
-            >
-              Metadata (JSON)
-            </label>
-            <textarea
-              id="flow-edge-metadata"
-              rows={3}
-              value={metadataText}
-              onChange={(e) => {
-                setMetadataText(e.target.value);
-                setMetadataError(null);
-              }}
-              placeholder='{"circuit_id": "CKT-1234", "vlan": 100}'
-              className="w-full font-mono bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-            />
-            {metadataError && (
-              <p className="text-xs text-red-400 mt-1">{metadataError}</p>
-            )}
-          </div>
-
-          <div className="flex justify-end gap-2 pt-3 border-t border-slate-700">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm rounded bg-slate-700 hover:bg-slate-600 text-slate-200"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 text-sm rounded bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold"
-            >
-              Apply
-            </button>
-          </div>
-        </form>
+        {formBody}
       </div>
     </div>
   );
+}
+
+export function EdgePropertySidebar(
+  props: Omit<EdgePropertyModalProps, "variant">,
+) {
+  return <EdgePropertyModal {...props} variant="sidebar" />;
 }

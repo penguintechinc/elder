@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { NodePropertyModal } from "./FlowPropertyModals";
+import {
+  NodePropertyModal,
+  EdgePropertySidebar,
+  NodePropertySidebar,
+} from "./FlowPropertyModals";
 import { fetchCategoryResources } from "./resourceLookup";
 import NodeInspector from "@/components/playbooks/NodeInspector";
 import type {
@@ -194,5 +198,42 @@ describe("FlowPropertyModals & NodeInspector resource lookup", () => {
         }),
       );
     });
+  });
+
+  it("renders EdgePropertySidebar and NodePropertySidebar as right-hand sidebars without modal dialogs", () => {
+    const onSaveEdge = vi.fn();
+    const onDeleteEdge = vi.fn();
+
+    wrap(
+      <EdgePropertySidebar
+        edge={{ id: "e1", source: "a", target: "b", label: "Uplink" }}
+        onClose={vi.fn()}
+        onSave={onSaveEdge}
+        onDelete={onDeleteEdge}
+      />,
+    );
+
+    expect(screen.getByLabelText("Line Inspector")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/Line Label/i), {
+      target: { value: "Primary Fiber" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(onSaveEdge).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "e1", label: "Primary Fiber" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete line" }));
+    expect(onDeleteEdge).toHaveBeenCalledWith("e1");
+
+    wrap(
+      <NodePropertySidebar
+        node={{ id: "n2", position: { x: 0, y: 0 }, data: { label: "Router" } }}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Object Inspector")).toBeTruthy();
   });
 });

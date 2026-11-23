@@ -27,8 +27,8 @@ import { Save, Trash2, ArrowLeft, Users, Search, X } from "lucide-react";
 import api from "@/lib/api";
 import VillageIdBadge from "@/components/VillageIdBadge";
 import {
-  NodePropertyModal,
-  EdgePropertyModal,
+  NodePropertySidebar,
+  EdgePropertySidebar,
   type ResourceCategory,
 } from "@/components/diagram/FlowPropertyModals";
 import { useDiagramCollaboration } from "@/hooks/useDiagramCollaboration";
@@ -568,6 +568,7 @@ function DiagramEditorContent() {
   const handleNodeDoubleClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
       setEditingNode(node);
+      setEditingEdge(null);
     },
     [],
   );
@@ -575,6 +576,7 @@ function DiagramEditorContent() {
   const handleEdgeDoubleClick = useCallback(
     (_event: React.MouseEvent, edge: Edge) => {
       setEditingEdge(edge);
+      setEditingNode(null);
     },
     [],
   );
@@ -632,7 +634,7 @@ function DiagramEditorContent() {
   }
 
   return (
-    <div className="h-screen bg-slate-900 flex flex-col relative">
+    <div className="h-[100dvh] w-full bg-slate-900 flex flex-col relative overflow-hidden">
       <RemoteCursors cursors={collaborators} />
       {/* Toolbar */}
       <div className="bg-slate-800 border-b border-slate-700 p-4 flex items-center justify-between gap-4 relative z-10">
@@ -722,46 +724,100 @@ function DiagramEditorContent() {
       </div>
 
       {/* Canvas */}
-      <div
-        className="flex-1 relative"
-        onMouseMove={(e) => {
-          // Send cursor position in screen coordinates
-          sendCursor(e.clientX, e.clientY);
-        }}
-      >
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeDoubleClick={handleNodeDoubleClick}
-          onEdgeDoubleClick={handleEdgeDoubleClick}
-          nodeTypes={nodeTypes}
-          fitView
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div
+          className="flex-1 relative min-w-0"
+          onMouseMove={(e) => {
+            // Send cursor position in screen coordinates
+            sendCursor(e.clientX, e.clientY);
+          }}
         >
-          <Background
-            variant={BackgroundVariant.Dots}
-            color="#475569"
-            gap={12}
-          />
-          <Controls />
-          <MiniMap />
-          <Panel
-            position="bottom-left"
-            className="bg-slate-800 border border-slate-700 rounded-lg p-3"
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={handleNodeDoubleClick}
+            onEdgeClick={handleEdgeDoubleClick}
+            onPaneClick={() => {
+              setEditingNode(null);
+              setEditingEdge(null);
+            }}
+            onNodeDoubleClick={handleNodeDoubleClick}
+            onEdgeDoubleClick={handleEdgeDoubleClick}
+            nodeTypes={nodeTypes}
+            fitView
           >
-            <div className="flex gap-2">
-              <button
-                onClick={deleteSelectedNodes}
-                className="flex items-center gap-2 bg-red-900 hover:bg-red-800 text-red-200 px-3 py-1 rounded text-sm transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-                Delete
-              </button>
-            </div>
-          </Panel>
-        </ReactFlow>
+            <Background
+              variant={BackgroundVariant.Dots}
+              color="#475569"
+              gap={12}
+            />
+            <Controls />
+            <MiniMap />
+            <Panel
+              position="bottom-left"
+              className="bg-slate-800 border border-slate-700 rounded-lg p-3"
+            >
+              <div className="flex gap-2">
+                <button
+                  onClick={deleteSelectedNodes}
+                  className="flex items-center gap-2 bg-red-900 hover:bg-red-800 text-red-200 px-3 py-1 rounded text-sm transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              </div>
+            </Panel>
+          </ReactFlow>
+        </div>
+
+        {editingNode && (
+          <NodePropertySidebar
+            node={editingNode}
+            onClose={() => setEditingNode(null)}
+            onDelete={(nodeId) => {
+              const updatedNodes = nodes.filter((n) => n.id !== nodeId);
+              const updatedEdges = edges.filter(
+                (ed) => ed.source !== nodeId && ed.target !== nodeId,
+              );
+              setNodes(updatedNodes);
+              setEdges(updatedEdges);
+              sendDrawingChange(updatedNodes, updatedEdges);
+              setEditingNode(null);
+            }}
+            onSave={(updatedNode) => {
+              const updatedNodes = nodes.map((n) =>
+                n.id === updatedNode.id ? updatedNode : n,
+              );
+              setNodes(updatedNodes);
+              sendDrawingChange(updatedNodes, edges);
+              setEditingNode(updatedNode);
+            }}
+          />
+        )}
+
+        {!editingNode && editingEdge && (
+          <EdgePropertySidebar
+            edge={editingEdge}
+            onClose={() => setEditingEdge(null)}
+            onDelete={(edgeId) => {
+              const updatedEdges = edges.filter((ed) => ed.id !== edgeId);
+              setEdges(updatedEdges);
+              sendDrawingChange(nodes, updatedEdges);
+              setEditingEdge(null);
+            }}
+            onSave={(updatedEdge) => {
+              const updatedEdges = edges.map((ed) =>
+                ed.id === updatedEdge.id ? updatedEdge : ed,
+              );
+              setEdges(updatedEdges);
+              sendDrawingChange(nodes, updatedEdges);
+              setEditingEdge(updatedEdge);
+            }}
+          />
+        )}
       </div>
 
       {showIconSearch && (
@@ -793,32 +849,6 @@ function DiagramEditorContent() {
           </div>
         </div>
       )}
-
-      <NodePropertyModal
-        node={editingNode}
-        onClose={() => setEditingNode(null)}
-        onSave={(updatedNode) => {
-          const updatedNodes = nodes.map((n) =>
-            n.id === updatedNode.id ? updatedNode : n,
-          );
-          setNodes(updatedNodes);
-          sendDrawingChange(updatedNodes, edges);
-          setEditingNode(null);
-        }}
-      />
-
-      <EdgePropertyModal
-        edge={editingEdge}
-        onClose={() => setEditingEdge(null)}
-        onSave={(updatedEdge) => {
-          const updatedEdges = edges.map((ed) =>
-            ed.id === updatedEdge.id ? updatedEdge : ed,
-          );
-          setEdges(updatedEdges);
-          sendDrawingChange(nodes, updatedEdges);
-          setEditingEdge(null);
-        }}
-      />
     </div>
   );
 }

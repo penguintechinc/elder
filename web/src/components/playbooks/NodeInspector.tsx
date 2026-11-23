@@ -1175,7 +1175,7 @@ export default function NodeInspector({
   return (
     <aside
       aria-label="Node Inspector"
-      className="w-96 bg-slate-800 border-l border-slate-700 flex flex-col shrink-0 overflow-hidden"
+      className="w-72 md:w-80 xl:w-96 bg-slate-800 border-l border-slate-700 flex flex-col shrink-0 overflow-hidden"
     >
       {/* Header */}
       <div className="p-3.5 border-b border-slate-700 flex items-center justify-between gap-2">
