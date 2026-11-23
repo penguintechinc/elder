@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import {
   ArrowLeft,
@@ -49,7 +49,9 @@ interface TimelineStep {
 }
 
 const ACTIVE_STATUSES = new Set(["pending", "running", "queued"]);
-const FAILED_STATUSES = new Set(["failed", "error", "timeout"]);
+const CANCELLABLE_STATUSES = new Set(["pending", "running"]);
+const FAILED_STATUSES = new Set(["failed", "error", "timeout", "timed_out"]);
+const CANCELLED_STATUSES = new Set(["cancelled", "canceled"]);
 const COMPLETED_STATUSES = new Set(["completed", "success"]);
 const POLL_INTERVAL_MS = 10_000;
 
@@ -82,34 +84,42 @@ function buildTimelineSteps(
   const isPending = status === "pending" || status === "queued";
   const isRunning = status === "running";
   const isFailed = FAILED_STATUSES.has(status);
-  const isTimedOut = status === "timeout";
+  const isTimedOut = status === "timeout" || status === "timed_out";
+  const isCancelled = CANCELLED_STATUSES.has(status);
   const isFinished = COMPLETED_STATUSES.has(status);
-  const isTerminal = isFinished || isFailed;
+  const isTerminal = isFinished || isFailed || isCancelled;
   const hasClaim = Boolean(execution.worker_id || execution.started_at);
 
   const queuedState: StepState =
     isPending && !hasClaim ? "active" : "completed";
 
-  const claimedState: StepState = isTerminal || isRunning
-    ? "completed"
-    : hasClaim
-      ? "active"
-      : "pending";
+  const claimedState: StepState =
+    isCancelled && !hasClaim
+      ? "pending"
+      : isTerminal || isRunning
+        ? "completed"
+        : hasClaim
+          ? "active"
+          : "pending";
 
   const runningState: StepState = isRunning
     ? "active"
-    : isTerminal
-      ? "completed"
-      : "pending";
+    : isCancelled && !hasClaim
+      ? "pending"
+      : isTerminal
+        ? "completed"
+        : "pending";
 
-  const finalLabel = isTimedOut
-    ? "Timed Out"
-    : isFailed
-      ? "Failed"
-      : "Finished";
+  const finalLabel = isCancelled
+    ? "Cancelled"
+    : isTimedOut
+      ? "Timed Out"
+      : isFailed
+        ? "Failed"
+        : "Finished";
   const finalState: StepState = isFinished
     ? "completed"
-    : isFailed
+    : isFailed || isCancelled
       ? "failed"
       : "pending";
 
@@ -220,6 +230,7 @@ function StepIcon({ state }: { state: StepState }) {
 
 export default function RunExecutionDetail() {
   const { executionId } = useParams<{ executionId: string }>();
+  const queryClient = useQueryClient();
   const [autoPollEnabled, setAutoPollEnabled] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [copiedSha256, setCopiedSha256] = useState(false);
@@ -244,8 +255,38 @@ export default function RunExecutionDetail() {
     },
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: () => {
+      if (!executionId) {
+        return Promise.reject(new Error("Missing execution ID"));
+      }
+      return api.cancelRunExecution(executionId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["run-execution", executionId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["run-executions"] });
+      toast.success("Execution cancelled");
+    },
+    onError: (err: unknown) => {
+      const apiErr = err as {
+        response?: { data?: { error?: string } };
+        message?: string;
+      };
+      toast.error(
+        apiErr?.response?.data?.error ||
+          apiErr?.message ||
+          "Failed to cancel execution",
+      );
+    },
+  });
+
   const execution = (rawExecution ?? null) as RunExecutionDetailRecord | null;
   const isActive = isExecutionActive(execution?.status);
+  const canCancel = CANCELLABLE_STATUSES.has(
+    (execution?.status || "").toLowerCase(),
+  );
 
   useEffect(() => {
     if (!isActive) return;
@@ -352,6 +393,26 @@ export default function RunExecutionDetail() {
                     </>
                   )}
                 </button>
+
+                {canCancel && (
+                  <button
+                    type="button"
+                    data-testid="cancel-execution-btn"
+                    onClick={() => cancelMutation.mutate()}
+                    disabled={cancelMutation.isPending}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-700 hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed text-white border border-rose-600 transition-colors"
+                  >
+                    {cancelMutation.isPending ? (
+                      <Loader2
+                        className="w-3.5 h-3.5 animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5" aria-hidden="true" />
+                    )}
+                    {cancelMutation.isPending ? "Cancelling..." : "Cancel"}
+                  </button>
+                )}
               </>
             )}
 

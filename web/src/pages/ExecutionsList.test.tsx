@@ -215,4 +215,33 @@ describe("ExecutionsList", () => {
       expect(screen.getByTestId("source-badge").textContent).toBe("Playbook");
     });
   });
+
+  it("links rows with source_type coderun (no source field) to /runs/executions/<id>", async () => {
+    vi.mocked(api.listAllStreamExecutions).mockResolvedValue({
+      data: [
+        {
+          id: 9,
+          execution_id: "exec-coderun-999",
+          source_type: "coderun",
+          function_id: 12,
+          stream_name: "nightly-sync",
+          runtime: "python",
+          status: "completed",
+          created_at: "2026-08-07T12:00:00Z",
+        } as unknown as Record<string, unknown>,
+      ],
+      total: 1,
+      page: 1,
+      per_page: 50,
+    });
+
+    renderExecutionsList();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("source-badge").textContent).toBe("CodeRun");
+      expect(screen.getByTestId("view-details-btn").getAttribute("href")).toBe(
+        "/runs/executions/exec-coderun-999",
+      );
+    });
+  });
 });

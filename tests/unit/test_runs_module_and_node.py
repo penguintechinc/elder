@@ -64,8 +64,14 @@ class TestRunsModuleAndRegistry:
             "completed",
             "failed",
             "timed_out",
+            "cancelled",
         }
-        assert TERMINAL_EXECUTION_STATUSES == {"completed", "failed", "timed_out"}
+        assert TERMINAL_EXECUTION_STATUSES == {
+            "completed",
+            "failed",
+            "timed_out",
+            "cancelled",
+        }
         assert TRIGGER_TYPES == {"manual", "schedule", "stream"}
 
     def test_runs_module_registered_in_manifest(self) -> None:
@@ -752,3 +758,122 @@ class TestRunsLiveLogsAndEnrichedDetail:
                 assert resp_missing.status_code == 404
         finally:
             db.close()
+
+    @pytest.mark.asyncio
+    async def test_cancel_execution_endpoint(self, tmp_path: Path) -> None:
+        from datetime import UTC, datetime
+
+        app, db, auth_state, t1, t2 = self._build_app_and_db(tmp_path)
+        try:
+            # Insert a pending execution (no started_at)
+            func_row = db(db.run_functions.tenant_id == t1).select().first()
+            db.run_executions.insert(
+                tenant_id=t1,
+                execution_id="exec-pending-003",
+                function_id=func_row.id,
+                status="pending",
+                trigger_type="manual",
+                created_at=datetime.now(UTC),
+            )
+            db.commit()
+
+            with patch(
+                "apps.api.auth.decorators.get_current_user",
+                side_effect=lambda: auth_state["user"],
+            ):
+                client = app.test_client()
+
+                # Cancel running execution -> 200 with duration_ms computed
+                resp_run = await client.post(
+                    "/api/v1/runs/executions/exec-live-001/cancel"
+                )
+                assert resp_run.status_code == 200
+                body_run = await resp_run.get_json()
+                assert body_run["execution_id"] == "exec-live-001"
+                assert body_run["status"] == "cancelled"
+                assert body_run["error_message"] == "Cancelled by user"
+                assert body_run["completed_at"] is not None
+                assert isinstance(body_run["duration_ms"], int)
+                assert body_run["duration_ms"] >= 0
+                assert body_run["function_name"] == "nightly-report"
+
+                # Cancelling again (already cancelled) -> 409
+                resp_again = await client.post(
+                    "/api/v1/runs/executions/exec-live-001/cancel"
+                )
+                assert resp_again.status_code == 409
+
+                # Cancel pending execution -> 200 with duration_ms None
+                resp_pend = await client.post(
+                    "/api/v1/runs/executions/exec-pending-003/cancel"
+                )
+                assert resp_pend.status_code == 200
+                body_pend = await resp_pend.get_json()
+                assert body_pend["status"] == "cancelled"
+                assert body_pend["error_message"] == "Cancelled by user"
+                assert body_pend["duration_ms"] is None
+
+                # Cancel already completed execution -> 409
+                resp_done = await client.post(
+                    "/api/v1/runs/executions/exec-done-002/cancel"
+                )
+                assert resp_done.status_code == 409
+
+                # Missing execution -> 404
+                resp_missing = await client.post(
+                    "/api/v1/runs/executions/exec-does-not-exist/cancel"
+                )
+                assert resp_missing.status_code == 404
+
+                # Cross-tenant execution -> 404
+                auth_state["tenant_id"] = t2
+                auth_state["user"].tenant_id = t2
+                auth_state["claims"]["tenant"] = t2
+                resp_other = await client.post(
+                    "/api/v1/runs/executions/exec-done-002/cancel"
+                )
+                assert resp_other.status_code == 404
+        finally:
+            db.close()
+
+    def test_unified_execution_serializers_include_source_field(self) -> None:
+        from datetime import UTC, datetime
+        from types import SimpleNamespace
+
+        from apps.api.modules.streams.routes.streams import (
+            _serialize_coderun_execution,
+            _serialize_webhook_delivery,
+        )
+
+        now = datetime.now(UTC)
+        run_row = SimpleNamespace(
+            id=1,
+            execution_id="exec-cr-1",
+            function_id=42,
+            status="completed",
+            trigger_type="manual",
+            started_at=now,
+            completed_at=now,
+            created_at=now,
+            duration_ms=120,
+            error_message=None,
+        )
+        fn_row = SimpleNamespace(name="enrich-alerts", runtime="python")
+        cr_payload = _serialize_coderun_execution(run_row, fn_row)
+        assert cr_payload["source"] == "coderun"
+        assert cr_payload["source_type"] == "coderun"
+
+        wh_delivery = SimpleNamespace(
+            id=9,
+            webhook_id=3,
+            event_type="alert.fired",
+            http_status=200,
+            status="success",
+            delivered_at=now,
+            created_at=now,
+            error_message=None,
+        )
+        wh_row = SimpleNamespace(name="PagerDuty")
+        wh_payload = _serialize_webhook_delivery(wh_delivery, wh_row)
+        assert wh_payload["source"] == "webhook"
+        assert wh_payload["source_type"] == "webhook"

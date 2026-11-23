@@ -324,7 +324,9 @@ export default function ExecutionsList() {
         {!isLoading && executions.length > 0 && (
           <div className="space-y-3">
             {executions.map((exec) => {
-              const source = normalizeSource(exec.source);
+              const source = normalizeSource(
+                exec.source || (exec as { source_type?: string }).source_type,
+              );
               const sourceBadge = getSourceBadge(source);
               const playbookId = exec.playbook_id ?? exec.stream_id;
               const detailPath = getDetailPath(exec, source);
