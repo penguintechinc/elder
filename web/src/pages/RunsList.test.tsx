@@ -103,7 +103,7 @@ describe("RunsList", () => {
     renderRunsList();
 
     await waitFor(() => {
-      expect(screen.getByText("Runs (Serverless Functions)")).toBeTruthy();
+      expect(screen.getByText("CodeRuns (Serverless Functions)")).toBeTruthy();
       expect(screen.getByText("enrich-alerts")).toBeTruthy();
       expect(screen.getByText("audit-inventory")).toBeTruthy();
       expect(screen.getByText("fast-packet-parser")).toBeTruthy();
@@ -142,12 +142,18 @@ describe("RunsList", () => {
     renderRunsList();
 
     await waitFor(() => {
-      expect(screen.getByText("New Function")).toBeTruthy();
+      expect(screen.getByText("New CodeRun")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("New Function"));
+    fireEvent.click(screen.getByText("New CodeRun"));
 
     expect(screen.getByRole("dialog")).toBeTruthy();
+
+    const timeoutInput = screen.getByLabelText(
+      "Timeout (seconds)",
+    ) as HTMLInputElement;
+    expect(timeoutInput.getAttribute("max")).toBe("300");
+    expect(screen.getByText("Max 300s (5 min)")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "sync-dns-records" },
@@ -158,7 +164,7 @@ describe("RunsList", () => {
     fireEvent.change(screen.getByLabelText("Runtime"), {
       target: { value: "python" },
     });
-    fireEvent.change(screen.getByLabelText("Timeout (seconds)"), {
+    fireEvent.change(timeoutInput, {
       target: { value: "45" },
     });
     fireEvent.change(screen.getByLabelText("Memory (MB)"), {
@@ -175,7 +181,7 @@ describe("RunsList", () => {
     expect(codeInput.value).toContain("def handler");
 
     const submitButtons = screen.getAllByRole("button", {
-      name: "Create Function",
+      name: "Create CodeRun",
     });
     fireEvent.click(submitButtons[submitButtons.length - 1]);
 

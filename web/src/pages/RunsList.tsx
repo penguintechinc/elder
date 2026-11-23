@@ -82,25 +82,25 @@ export default function RunsList() {
   const createMutation = useMutation({
     mutationFn: (payload: RunFunctionInput) => api.createRunFunction(payload),
     onSuccess: (created) => {
-      toast.success(`Created function "${created.name}"`);
+      toast.success(`Created CodeRun "${created.name}"`);
       queryClient.invalidateQueries({ queryKey: ["run-functions"] });
       setIsCreateOpen(false);
       setForm(DEFAULT_CREATE_FORM);
       setCodeEditedManually(false);
     },
     onError: () => {
-      toast.error("Failed to create function");
+      toast.error("Failed to create CodeRun");
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteRunFunction(id),
     onSuccess: () => {
-      toast.success("Function deleted");
+      toast.success("CodeRun deleted");
       queryClient.invalidateQueries({ queryKey: ["run-functions"] });
     },
     onError: () => {
-      toast.error("Failed to delete function");
+      toast.error("Failed to delete CodeRun");
     },
   });
 
@@ -117,7 +117,7 @@ export default function RunsList() {
       queryClient.invalidateQueries({ queryKey: ["run-executions"] });
     },
     onError: () => {
-      toast.error("Failed to invoke function");
+      toast.error("Failed to invoke CodeRun");
     },
     onSettled: () => {
       setInvokingId(null);
@@ -149,11 +149,15 @@ export default function RunsList() {
     e.preventDefault();
     const trimmedName = form.name.trim();
     if (!trimmedName) {
-      toast.error("Function name is required");
+      toast.error("CodeRun name is required");
       return;
     }
 
     const parsedTimeout = Number.parseInt(form.timeout_seconds, 10);
+    if (Number.isFinite(parsedTimeout) && parsedTimeout > 300) {
+      toast.error("Timeout cannot exceed 300 seconds (5 min)");
+      return;
+    }
     const parsedMemory = Number.parseInt(form.memory_mb, 10);
 
     const payload: RunFunctionInput = {
@@ -163,7 +167,7 @@ export default function RunsList() {
       code: form.code,
       timeout_seconds:
         Number.isFinite(parsedTimeout) && parsedTimeout > 0
-          ? parsedTimeout
+          ? Math.min(parsedTimeout, 300)
           : 30,
       memory_mb:
         Number.isFinite(parsedMemory) && parsedMemory > 0 ? parsedMemory : 256,
@@ -182,11 +186,11 @@ export default function RunsList() {
           <div>
             <h1 className="text-3xl font-bold text-amber-400 flex items-center gap-2.5">
               <Terminal className="w-7 h-7" aria-hidden="true" />
-              Runs (Serverless Functions)
+              CodeRuns (Serverless Functions)
             </h1>
             <p className="text-slate-400 mt-2">
-              Execute serverless functions in isolated rootless containers
-              (Node.js, Rust, Python, Go, Ruby) via{" "}
+              Execute CodeRuns in isolated rootless containers (Node.js, Rust,
+              Python, Go, Ruby) via{" "}
               <code className="text-amber-300 font-mono text-xs bg-slate-800 px-1.5 py-0.5 rounded">
                 svc-runworker
               </code>
@@ -198,7 +202,7 @@ export default function RunsList() {
             className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-900 px-4 py-2 rounded-lg font-semibold transition-colors"
           >
             <Plus className="w-5 h-5" aria-hidden="true" />
-            New Function
+            New CodeRun
           </button>
         </div>
 
@@ -246,8 +250,8 @@ export default function RunsList() {
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search functions..."
-              aria-label="Search functions"
+              placeholder="Search CodeRuns..."
+              aria-label="Search CodeRuns"
               className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-amber-400"
             />
           </div>
@@ -258,31 +262,31 @@ export default function RunsList() {
             role="alert"
             className="bg-red-900/80 border border-red-700 text-red-100 px-4 py-3 rounded-lg mb-6"
           >
-            Failed to load functions. Please try again.
+            Failed to load CodeRuns. Please try again.
           </div>
         )}
 
         {isLoading && (
           <div className="flex justify-center items-center py-12">
-            <div className="text-amber-400">Loading functions...</div>
+            <div className="text-amber-400">Loading CodeRuns...</div>
           </div>
         )}
 
         {!isLoading && !error && functions.length === 0 && (
           <div className="text-center py-16 bg-slate-800 rounded-lg border border-slate-700">
             <h2 className="text-xl font-semibold text-amber-400 mb-2">
-              No functions found
+              No CodeRuns found
             </h2>
             <p className="text-slate-400 mb-6">
-              Create your first serverless function to run isolated workloads
-              with svc-runworker
+              Create your first CodeRun to execute isolated workloads with
+              svc-runworker
             </p>
             <button
               type="button"
               onClick={handleOpenCreate}
               className="bg-amber-500 hover:bg-amber-600 text-slate-900 px-6 py-2 rounded-lg font-semibold transition-colors"
             >
-              Create Function
+              Create CodeRun
             </button>
           </div>
         )}
@@ -418,7 +422,7 @@ export default function RunsList() {
                 id="create-run-modal-title"
                 className="text-lg font-semibold text-amber-400"
               >
-                Create Function
+                Create CodeRun
               </h2>
               <button
                 type="button"
@@ -493,7 +497,7 @@ export default function RunsList() {
                       description: e.target.value,
                     }))
                   }
-                  placeholder="Optional summary of what this function does"
+                  placeholder="Optional summary of what this CodeRun does"
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-amber-400"
                 />
               </div>
@@ -530,7 +534,7 @@ export default function RunsList() {
                     id="run-fn-timeout"
                     type="number"
                     min={1}
-                    max={3600}
+                    max={300}
                     value={form.timeout_seconds}
                     onChange={(e) =>
                       setForm((prev) => ({
@@ -540,6 +544,9 @@ export default function RunsList() {
                     }
                     className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-amber-400"
                   />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Max 300s (5 min)
+                  </p>
                 </div>
 
                 <div>
@@ -646,7 +653,7 @@ export default function RunsList() {
                   disabled={createMutation.isPending}
                   className="px-5 py-2 rounded-lg text-sm font-semibold bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-900 transition-colors"
                 >
-                  {createMutation.isPending ? "Creating..." : "Create Function"}
+                  {createMutation.isPending ? "Creating..." : "Create CodeRun"}
                 </button>
               </div>
             </form>

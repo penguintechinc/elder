@@ -102,6 +102,39 @@ function resolveNavSection(moduleId: string, moduleGroup: string, href: string):
   return moduleGroup;
 }
 
+/** Explicit item order for the Workstreams sidebar section; Executions is always last. */
+const WORKSTREAMS_HREF_ORDER: readonly string[] = [
+  "/webhooks",
+  "/streams",
+  "/streams/approvals",
+  "/runs",
+  "/backups",
+  "/csv-templates",
+];
+const WORKSTREAMS_LAST_HREF = "/streams/executions";
+
+/** Explicit item order for the Work Management (issues) sidebar section. */
+const WORK_MANAGEMENT_HREF_ORDER: readonly string[] = [
+  "/on-call-rotations",
+  "/projects",
+  "/issues",
+  "/milestones",
+  "/labels",
+];
+
+function workstreamsSortRank(href: string): number {
+  if (href === WORKSTREAMS_LAST_HREF) {
+    return WORKSTREAMS_HREF_ORDER.length + 1;
+  }
+  const idx = WORKSTREAMS_HREF_ORDER.indexOf(href);
+  return idx === -1 ? WORKSTREAMS_HREF_ORDER.length : idx;
+}
+
+function workManagementSortRank(href: string): number {
+  const idx = WORK_MANAGEMENT_HREF_ORDER.indexOf(href);
+  return idx === -1 ? WORK_MANAGEMENT_HREF_ORDER.length : idx;
+}
+
 /**
  * Get navigation categories for enabled modules: one collapsible section per
  * sidebar group (with Resources split into Infrastructure, Software, and Security).
@@ -131,6 +164,20 @@ export function navFor(enabledModuleIds: Set<string>): MenuCategory[] {
         }
       }
     }
+  }
+
+  const workstreamsBucket = buckets.get("workstreams");
+  if (workstreamsBucket && workstreamsBucket.length > 1) {
+    workstreamsBucket.sort(
+      (a, b) => workstreamsSortRank(a.href) - workstreamsSortRank(b.href),
+    );
+  }
+
+  const issuesBucket = buckets.get("issues");
+  if (issuesBucket && issuesBucket.length > 1) {
+    issuesBucket.sort(
+      (a, b) => workManagementSortRank(a.href) - workManagementSortRank(b.href),
+    );
   }
 
   const out: MenuCategory[] = [];
