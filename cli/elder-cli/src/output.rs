@@ -31,10 +31,16 @@ const PREFERRED_COLUMNS: &[&str] = &[
     "method",
     "path",
     "name",
+    "worker_type",
     "runtime",
     "title",
     "slug",
     "status",
+    "cluster",
+    "last_heartbeat_at",
+    "hostname",
+    "version",
+    "token_prefix",
     "trigger_type",
     "is_enabled",
     "storage_backend",
@@ -373,5 +379,63 @@ mod tests {
         assert!(json_out.contains("\"storage_backend\": \"s3\""));
         assert!(json_out.contains("\"storage_key\": \"runs/7/42/v1/code.py\""));
         assert!(json_out.contains("\"code_sha256\": \"deadbeef1234\""));
+    }
+
+    #[test]
+    fn prioritizes_remote_worker_fleet_columns_in_table_output() {
+        let payload = json!({
+            "items": [{
+                "id": "wrk-01",
+                "tenant_id": 7,
+                "name": "dal2-runworker-01",
+                "worker_type": "runworker",
+                "status": "online",
+                "cluster": "dal2-alpha",
+                "last_heartbeat_at": "2026-11-23T22:00:00Z",
+                "hostname": "runworker-pod-01",
+                "version": "4.0.12",
+                "token_prefix": "ewrk_9a8b",
+                "is_enabled": true,
+                "created_at": "2026-11-20T12:00:00Z"
+            }],
+            "total": 1
+        });
+
+        let items = extract_table_rows(&payload).unwrap();
+        let cols = select_columns(items);
+        assert_eq!(
+            cols,
+            vec![
+                "id",
+                "name",
+                "worker_type",
+                "status",
+                "cluster",
+                "last_heartbeat_at",
+                "hostname",
+                "version",
+            ]
+        );
+
+        let without_hostname = json!({
+            "items": [{
+                "id": "wrk-02",
+                "name": "edge-scanner-01",
+                "worker_type": "scanner",
+                "status": "offline",
+                "cluster": "edge-west",
+                "token_prefix": "ewrk_1c2d",
+                "created_at": "2026-11-20T12:00:00Z"
+            }],
+            "total": 1
+        });
+        let items2 = extract_table_rows(&without_hostname).unwrap();
+        let cols2 = select_columns(items2);
+        assert!(cols2.contains(&"token_prefix".to_string()));
+
+        let table_out = format_value(&payload, OutputFormat::Table).unwrap();
+        assert!(table_out.contains("runw"));
+        assert!(table_out.contains("dal2"));
+        assert!(table_out.contains("4.0"));
     }
 }

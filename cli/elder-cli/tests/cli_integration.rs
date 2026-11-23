@@ -1063,3 +1063,256 @@ async fn runs_subcommands_cover_crud_invoke_executions_and_s3_metadata() {
     assert_eq!(reqs[9].method, "DELETE");
     assert_eq!(reqs[9].target, "/api/v1/runs/42");
 }
+
+#[tokio::test]
+async fn workers_subcommands_cover_fleet_lifecycle_and_table_columns() {
+    let sample_worker = |id: &str, worker_type: &str, status: &str| {
+        json!({
+            "id": id,
+            "tenant_id": 7,
+            "name": "dal2-runworker-01",
+            "worker_type": worker_type,
+            "cluster": "dal2-alpha",
+            "status": status,
+            "is_enabled": true,
+            "token_prefix": "ewrk_9a8b",
+            "hostname": "runworker-pod-01",
+            "version": "4.0.12",
+            "last_heartbeat_at": "2026-11-23T22:00:00+00:00",
+            "poll_interval_seconds": 3,
+            "progress_interval_seconds": 15,
+            "max_concurrent": 8,
+            "created_at": "2026-11-20T12:00:00+00:00",
+            "updated_at": "2026-11-23T22:00:00+00:00"
+        })
+    };
+
+    let server = MockServer::start(
+        move |req| match (req.method.as_str(), req.target.as_str()) {
+            ("GET", t) if t.starts_with("/api/v1/admin/workers?") => MockResponse::json(
+                200,
+                json!({
+                    "items": [sample_worker("wrk-01", "runworker", "online")],
+                    "total": 1,
+                    "page": 1,
+                    "per_page": 20,
+                    "pages": 1
+                }),
+            ),
+            ("GET", "/api/v1/admin/workers/wrk-01") => {
+                MockResponse::json(200, sample_worker("wrk-01", "runworker", "online"))
+            }
+            ("POST", "/api/v1/admin/workers") => MockResponse::json(
+                201,
+                json!({
+                    "worker": sample_worker("wrk-02", "scanner", "offline"),
+                    "token": "test-onboard-tok-1",
+                    "token_prefix": "ewrk_9a8b"
+                }),
+            ),
+            ("PUT", "/api/v1/admin/workers/wrk-01") => {
+                let mut w = sample_worker("wrk-01", "runworker", "online");
+                w["name"] = json!("dal2-runworker-renamed");
+                w["cluster"] = json!("dal2-beta");
+                w["is_enabled"] = json!(false);
+                w["poll_interval_seconds"] = json!(10);
+                MockResponse::json(200, w)
+            }
+            ("POST", "/api/v1/admin/workers/wrk-01/rotate-token") => MockResponse::json(
+                200,
+                json!({
+                    "worker": sample_worker("wrk-01", "runworker", "online"),
+                    "worker_id": "wrk-01",
+                    "token": "test-rotated-tok-2",
+                    "token_prefix": "ewrk_1c2d"
+                }),
+            ),
+            ("DELETE", "/api/v1/admin/workers/wrk-01") => MockResponse {
+                status: 204,
+                body: String::new(),
+            },
+            _ => MockResponse::json(404, json!({"error": "not found"})),
+        },
+    )
+    .await;
+
+    let tmp = TempDir::new().unwrap();
+    let cfg_path = tmp.path().join("config.toml");
+    let store = MemoryCredentialStore::new();
+    let env = [
+        ("ELDER_API_URL", server.base_url.as_str()),
+        ("ELDER_TOKEN", "workers-admin-jwt"),
+    ];
+
+    // 1. list (table output prioritizes fleet columns)
+    let (res, out_table, _) = run_cli(
+        &[
+            "-o",
+            "table",
+            "workers",
+            "list",
+            "--type",
+            "runworker",
+            "--cluster",
+            "dal2-alpha",
+            "--status",
+            "online",
+        ],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    assert!(out_table.contains("wrk-01"));
+    assert!(out_table.contains("online"));
+    assert!(out_table.contains("dal2"));
+    assert!(out_table.contains("4.0"));
+
+    // 2. get
+    let (res, out_get, _) = run_cli(
+        &["-o", "json", "workers", "get", "wrk-01"],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    let fetched: Value = serde_json::from_str(&out_get).unwrap();
+    assert_eq!(fetched["id"], "wrk-01");
+    assert_eq!(fetched["token_prefix"], "ewrk_9a8b");
+
+    // 3. onboard
+    let (res, out_onboard, _) = run_cli(
+        &[
+            "-o",
+            "json",
+            "workers",
+            "onboard",
+            "--name",
+            "edge-scanner-01",
+            "--type",
+            "scanner",
+            "--cluster",
+            "edge-west",
+            "--poll-interval",
+            "5",
+            "--progress-interval",
+            "20",
+            "--max-concurrent",
+            "4",
+        ],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    let onboarded: Value = serde_json::from_str(&out_onboard).unwrap();
+    assert_eq!(onboarded["worker"]["id"], "wrk-02");
+    assert_eq!(onboarded["token"], "test-onboard-tok-1");
+
+    // 4. update
+    let (res, out_update, _) = run_cli(
+        &[
+            "-o",
+            "json",
+            "workers",
+            "update",
+            "wrk-01",
+            "--name",
+            "dal2-runworker-renamed",
+            "--cluster",
+            "dal2-beta",
+            "--enabled",
+            "false",
+            "--poll-interval",
+            "10",
+        ],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    let updated: Value = serde_json::from_str(&out_update).unwrap();
+    assert_eq!(updated["name"], "dal2-runworker-renamed");
+    assert_eq!(updated["is_enabled"], false);
+    assert_eq!(updated["poll_interval_seconds"], 10);
+
+    // 5. rotate-token
+    let (res, out_rotate, _) = run_cli(
+        &["-o", "json", "workers", "rotate-token", "wrk-01"],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    let rotated: Value = serde_json::from_str(&out_rotate).unwrap();
+    assert_eq!(rotated["token"], "test-rotated-tok-2");
+    assert_eq!(rotated["token_prefix"], "ewrk_1c2d");
+
+    // 6. offboard
+    let (res, out_offboard, _) = run_cli(
+        &["-o", "json", "workers", "offboard", "wrk-01"],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    let offboarded: Value = serde_json::from_str(&out_offboard).unwrap();
+    assert_eq!(offboarded["offboarded"], true);
+    assert_eq!(offboarded["id"], "wrk-01");
+
+    // 7. invalid --type fails with usage exit code 2
+    let (res, _, _) = run_cli(
+        &["workers", "list", "--type", "invalid-type"],
+        cfg_path,
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    assert_eq!(res.unwrap_err().exit_code_u8(), 2);
+
+    // Verify recorded wire requests
+    let reqs = server.requests();
+    assert_eq!(reqs.len(), 6);
+    assert_eq!(reqs[0].method, "GET");
+    assert_eq!(
+        reqs[0].target,
+        "/api/v1/admin/workers?worker_type=runworker&cluster=dal2-alpha&status=online"
+    );
+    assert_eq!(reqs[1].method, "GET");
+    assert_eq!(reqs[1].target, "/api/v1/admin/workers/wrk-01");
+    assert_eq!(reqs[2].method, "POST");
+    assert_eq!(reqs[2].target, "/api/v1/admin/workers");
+    let onboard_payload: Value = serde_json::from_str(&reqs[2].body).unwrap();
+    assert_eq!(onboard_payload["name"], "edge-scanner-01");
+    assert_eq!(onboard_payload["worker_type"], "scanner");
+    assert_eq!(onboard_payload["cluster"], "edge-west");
+    assert_eq!(onboard_payload["poll_interval_seconds"], 5);
+    assert_eq!(onboard_payload["progress_interval_seconds"], 20);
+    assert_eq!(onboard_payload["max_concurrent"], 4);
+
+    assert_eq!(reqs[3].method, "PUT");
+    assert_eq!(reqs[3].target, "/api/v1/admin/workers/wrk-01");
+    let update_payload: Value = serde_json::from_str(&reqs[3].body).unwrap();
+    assert_eq!(update_payload["name"], "dal2-runworker-renamed");
+    assert_eq!(update_payload["cluster"], "dal2-beta");
+    assert_eq!(update_payload["is_enabled"], false);
+    assert_eq!(update_payload["poll_interval_seconds"], 10);
+
+    assert_eq!(reqs[4].method, "POST");
+    assert_eq!(reqs[4].target, "/api/v1/admin/workers/wrk-01/rotate-token");
+    assert_eq!(reqs[5].method, "DELETE");
+    assert_eq!(reqs[5].target, "/api/v1/admin/workers/wrk-01");
+}

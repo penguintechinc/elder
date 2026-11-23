@@ -24,6 +24,7 @@ pub mod config;
 pub mod error;
 pub mod resources;
 pub mod runs;
+pub mod workers;
 
 pub use catalog::{normalize_name, ApiOperation, Catalog, HttpMethod};
 pub use client::{AuthTokens, ElderClient};
@@ -34,4 +35,9 @@ pub use runs::{
     CreateRunFunctionRequest, InvokeRunRequest, InvokeRunResponse, ListExecutionsParams,
     ListRunFunctionsParams, RunExecution, RunFunction, RunPage, RunsClient,
     UpdateRunFunctionRequest,
+};
+pub use workers::{
+    ListRemoteWorkersParams, OnboardRemoteWorkerRequest, OnboardRemoteWorkerResponse, RemoteWorker,
+    RemoteWorkerListResponse, RotateTokenResponse, UpdateRemoteWorkerRequest,
+    WorkerHeartbeatRequest, WorkersClient,
 };
