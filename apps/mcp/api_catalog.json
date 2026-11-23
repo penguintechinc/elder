@@ -85,6 +85,91 @@
     "destructive": false
   },
   {
+    "service": "admin",
+    "operation": "create_worker",
+    "method": "POST",
+    "path": "/api/v1/admin/workers",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Onboard a new remote worker and return its one-time Bearer token.",
+    "has_body": true,
+    "destructive": false
+  },
+  {
+    "service": "admin",
+    "operation": "get_worker",
+    "method": "GET",
+    "path": "/api/v1/admin/workers/{id}",
+    "path_params": [
+      "id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Retrieve a single remote worker by numeric ID.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "admin",
+    "operation": "list_workers",
+    "method": "GET",
+    "path": "/api/v1/admin/workers",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "List registered remote and in-cluster workers with filtering and status counts.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "admin",
+    "operation": "revoke_worker",
+    "method": "DELETE",
+    "path": "/api/v1/admin/workers/{id}",
+    "path_params": [
+      "id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Offboard and revoke a remote worker, clearing its stored token hash.",
+    "has_body": false,
+    "destructive": true
+  },
+  {
+    "service": "admin",
+    "operation": "rotate_worker_token",
+    "method": "POST",
+    "path": "/api/v1/admin/workers/{id}/rotate-token",
+    "path_params": [
+      "id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Rotate a worker's Bearer token hash and return the new one-time token.",
+    "has_body": true,
+    "destructive": true
+  },
+  {
+    "service": "admin",
+    "operation": "update_worker",
+    "method": "PUT",
+    "path": "/api/v1/admin/workers/{id}",
+    "path_params": [
+      "id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Update a worker's metadata, live config, capabilities, or enabled state.",
+    "has_body": true,
+    "destructive": true
+  },
+  {
+    "service": "admin",
+    "operation": "worker_heartbeat",
+    "method": "POST",
+    "path": "/api/v1/admin/workers/heartbeat",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Record a worker heartbeat and return its current live configuration.",
+    "has_body": true,
+    "destructive": false
+  },
+  {
     "service": "ai",
     "operation": "create_ai_resource",
     "method": "POST",

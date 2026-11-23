@@ -1404,6 +1404,125 @@ components:
       - updated_at
       title: OrganizationDTO
       type: object
+    RemoteWorker:
+      additionalProperties: false
+      description: Registered remote or in-cluster worker (runworker or scanner) with liveness state.
+      properties:
+        capabilities:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - items: {}
+            type: array
+          - type: 'null'
+          default: null
+          title: Capabilities
+        cluster:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Cluster
+        config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          default: null
+          title: Config
+        created_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Created At
+        created_by_identity_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Created By Identity Id
+        hostname:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Hostname
+        id:
+          title: Id
+          type: integer
+        is_enabled:
+          title: Is Enabled
+          type: boolean
+        last_heartbeat_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Last Heartbeat At
+        name:
+          title: Name
+          type: string
+        revoked_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Revoked At
+        status:
+          enum:
+          - online
+          - stale
+          - offline
+          - revoked
+          title: Status
+          type: string
+        tenant_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Tenant Id
+        token_prefix:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Token Prefix
+        updated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Updated At
+        version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Version
+        worker_id:
+          title: Worker Id
+          type: string
+        worker_type:
+          enum:
+          - runworker
+          - scanner
+          title: Worker Type
+          type: string
+      required:
+      - id
+      - worker_id
+      - worker_type
+      - name
+      - is_enabled
+      - status
+      title: RemoteWorker
+      type: object
     RunExecution:
       additionalProperties: false
       description: Single invocation record of an Elder Runs serverless function.
@@ -2444,6 +2563,288 @@ paths:
           type: integer
       responses: {}
       summary: Get all members to review in a review.
+  /api/v1/admin/workers:
+    get:
+      description: List registered remote and in-cluster workers with filtering, pagination, and status counts.
+      operationId: get_list_workers
+      parameters:
+      - in: query
+        name: worker_type
+        required: false
+        schema:
+          enum:
+          - runworker
+          - scanner
+          type: string
+      - in: query
+        name: cluster
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: status
+        required: false
+        schema:
+          enum:
+          - online
+          - stale
+          - offline
+          - revoked
+          type: string
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          type: integer
+      - in: query
+        name: per_page
+        required: false
+        schema:
+          default: 25
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  counts_by_status:
+                    additionalProperties:
+                      type: integer
+                    type: object
+                  items:
+                    items:
+                      $ref: '#/components/schemas/RemoteWorker'
+                    type: array
+                  page:
+                    type: integer
+                  pages:
+                    type: integer
+                  per_page:
+                    type: integer
+                  total:
+                    type: integer
+                type: object
+          description: Paginated list of remote workers.
+      summary: List registered remote and in-cluster workers with filtering and status counts.
+    post:
+      description: Onboard a new remote worker and return its one-time Bearer token and onboarding snippets.
+      operationId: post_create_worker
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                capabilities:
+                  anyOf:
+                  - additionalProperties: true
+                    type: object
+                  - items: {}
+                    type: array
+                cluster:
+                  type: string
+                config:
+                  additionalProperties: true
+                  type: object
+                name:
+                  type: string
+                tenant_id:
+                  type: integer
+                worker_id:
+                  type: string
+                worker_type:
+                  enum:
+                  - runworker
+                  - scanner
+                  type: string
+              required:
+              - name
+              - worker_type
+              type: object
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                properties:
+                  onboarding:
+                    properties:
+                      docker_env:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      helm_set:
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  token:
+                    type: string
+                  worker:
+                    $ref: '#/components/schemas/RemoteWorker'
+                type: object
+          description: Created remote worker and one-time token.
+      summary: Onboard a new remote worker and return its one-time Bearer token.
+  /api/v1/admin/workers/heartbeat:
+    post:
+      description: Record a worker heartbeat using a provisioned ewk_ Bearer token or an in-cluster service_worker JWT.
+      operationId: post_worker_heartbeat
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                capabilities:
+                  anyOf:
+                  - additionalProperties: true
+                    type: object
+                  - items: {}
+                    type: array
+                cluster:
+                  type: string
+                hostname:
+                  type: string
+                name:
+                  type: string
+                version:
+                  type: string
+                worker_id:
+                  type: string
+                worker_type:
+                  enum:
+                  - runworker
+                  - scanner
+                  type: string
+              type: object
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  config:
+                    additionalProperties: true
+                    type: object
+                  ok:
+                    type: boolean
+                  status:
+                    type: string
+                  worker_id:
+                    type: string
+                type: object
+          description: Heartbeat acknowledged with live worker config.
+      summary: Record a worker heartbeat and return its current live configuration.
+  /api/v1/admin/workers/{id}:
+    delete:
+      description: Offboard and revoke a remote worker, clearing its stored token hash.
+      operationId: delete_revoke_worker
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  revoked:
+                    type: boolean
+                  worker:
+                    $ref: '#/components/schemas/RemoteWorker'
+                type: object
+          description: Worker revoked.
+      summary: Offboard and revoke a remote worker, clearing its stored token hash.
+    get:
+      description: Retrieve a single remote worker by numeric ID.
+      operationId: get_get_worker
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  worker:
+                    $ref: '#/components/schemas/RemoteWorker'
+                type: object
+          description: Remote worker details.
+      summary: Retrieve a single remote worker by numeric ID.
+    put:
+      description: Update a worker's metadata, live config, capabilities, or enabled state.
+      operationId: put_update_worker
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                capabilities:
+                  anyOf:
+                  - additionalProperties: true
+                    type: object
+                  - items: {}
+                    type: array
+                cluster:
+                  type: string
+                config:
+                  additionalProperties: true
+                  type: object
+                is_enabled:
+                  type: boolean
+                name:
+                  type: string
+              type: object
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  worker:
+                    $ref: '#/components/schemas/RemoteWorker'
+                type: object
+          description: Updated remote worker.
+      summary: Update a worker's metadata, live config, capabilities, or enabled state.
+  /api/v1/admin/workers/{id}/rotate-token:
+    post:
+      description: Rotate a worker's Bearer token hash and return the new one-time token.
+      operationId: post_rotate_worker_token
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  token:
+                    type: string
+                  worker:
+                    $ref: '#/components/schemas/RemoteWorker'
+                type: object
+          description: Rotated worker token.
+      summary: Rotate a worker's Bearer token hash and return the new one-time token.
   /api/v1/ai/resources:
     get:
       description: ''

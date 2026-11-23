@@ -41,10 +41,12 @@ from apps.api.models.dataclasses import (
     from_pydal_rows,
     to_dict,
 )
+from apps.api.models.remote_workers import RemoteWorker
 
 __all__ = [
     # SQLAlchemy models
     "CsvImportJob",
+    "RemoteWorker",
     # DTOs - Organizations
     "OrganizationDTO",
     "CreateOrganizationRequest",

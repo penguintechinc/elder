@@ -105,6 +105,8 @@ class RunWorkerConfig:
     s3_fetch_mode: str = "worker"  # "worker" (zero-egress pods) | "init_container"
     log_flush_interval_seconds: float = DEFAULT_LOG_FLUSH_INTERVAL_SECONDS
     runner_backend: str = "auto"  # "auto" | "sandbox" | "k8s_job"
+    heartbeat_interval_seconds: float = 30.0
+    worker_version: str = ""
 
     @classmethod
     def from_env(cls) -> RunWorkerConfig:
@@ -140,6 +142,14 @@ class RunWorkerConfig:
         runner_backend = (
             raw_backend if raw_backend in ("auto", "sandbox", "k8s_job") else "auto"
         )
+        raw_hb_interval = (os.getenv("RUNS_HEARTBEAT_INTERVAL_SECONDS") or "30").strip()
+        try:
+            heartbeat_interval = max(5.0, float(raw_hb_interval))
+        except ValueError:
+            heartbeat_interval = 30.0
+        worker_version = (
+            os.getenv("ELDER_VERSION") or os.getenv("APP_VERSION") or ""
+        ).strip()
         return cls(
             elder_api_url=api_url,
             elder_internal_token=token,
@@ -157,6 +167,8 @@ class RunWorkerConfig:
             s3_fetch_mode=s3_fetch_mode,
             log_flush_interval_seconds=log_flush_interval,
             runner_backend=runner_backend,
+            heartbeat_interval_seconds=heartbeat_interval,
+            worker_version=worker_version,
         )
 
 
@@ -245,6 +257,7 @@ class RunWorkerService:
         )
         self._semaphore = asyncio.Semaphore(config.max_concurrent)
         self._stop_event = asyncio.Event()
+        self._last_heartbeat_sent: float = 0.0
 
     def select_runner(self, req: RunJobRequest) -> Any:
         """Select the runner backend for ``req`` based on ``RUNS_RUNNER_BACKEND``."""
@@ -290,6 +303,45 @@ class RunWorkerService:
                 "runworker_heartbeat_write_failed",
                 extra={"path": self.config.health_file, "error": str(exc)},
             )
+
+    async def send_heartbeat(self) -> dict[str, Any] | None:
+        """Send a best-effort fleet heartbeat to hub-api; never raises."""
+        self._last_heartbeat_sent = time.monotonic()
+        url = f"{self.config.elder_api_url}/api/v1/admin/workers/heartbeat"
+        body: dict[str, Any] = {
+            "worker_id": self.config.worker_id,
+            "worker_type": "runworker",
+            "hostname": socket.gethostname(),
+            "cluster": self.config.worker_cluster or "in-cluster",
+            "capabilities": {
+                "runner_backend": self.config.runner_backend,
+                "max_concurrent": self.config.max_concurrent,
+                "execution_namespace": self.config.execution_namespace,
+                "runtime_class_name": self.config.runtime_class_name or None,
+                "s3_fetch_mode": self.config.s3_fetch_mode,
+            },
+        }
+        if self.config.worker_version:
+            body["version"] = self.config.worker_version
+
+        try:
+            response = await self._client.post(
+                url,
+                json=body,
+                headers=self._auth_headers(),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            return payload if isinstance(payload, dict) else {"ok": True}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "runworker_heartbeat_post_failed",
+                extra={
+                    "worker_id": self.config.worker_id,
+                    "error": str(exc),
+                },
+            )
+            return None
 
     async def poll_pending(self) -> list[dict[str, Any]]:
         """Claim pending executions from the Elder API."""
@@ -505,9 +557,15 @@ class RunWorkerService:
             },
         )
         self.touch_heartbeat()
+        await self.send_heartbeat()
 
         try:
             while not self._stop_event.is_set():
+                if (
+                    time.monotonic() - self._last_heartbeat_sent
+                    >= self.config.heartbeat_interval_seconds
+                ):
+                    await self.send_heartbeat()
                 try:
                     await self.poll_once()
                 except Exception as exc:  # noqa: BLE001

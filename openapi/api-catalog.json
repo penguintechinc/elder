@@ -1,10 +1,11 @@
 {
   "version": "0.1.0",
   "openapi": "3.1.0",
-  "service_count": 70,
-  "operation_count": 712,
+  "service_count": 71,
+  "operation_count": 719,
   "services": [
     "access_reviews",
+    "admin_workers",
     "ai",
     "api_keys",
     "audit",
@@ -145,6 +146,77 @@
         "review_id"
       ],
       "summary": "Submit review decision for member(s).",
+      "has_body": true
+    },
+    {
+      "service": "admin_workers",
+      "operation": "create_worker",
+      "method": "POST",
+      "path": "/api/v1/admin/workers",
+      "path_params": [],
+      "summary": "Onboard a new remote worker and return its one-time Bearer token.",
+      "has_body": true
+    },
+    {
+      "service": "admin_workers",
+      "operation": "get_worker",
+      "method": "GET",
+      "path": "/api/v1/admin/workers/{id}",
+      "path_params": [
+        "id"
+      ],
+      "summary": "Retrieve a single remote worker by numeric ID.",
+      "has_body": false
+    },
+    {
+      "service": "admin_workers",
+      "operation": "list_workers",
+      "method": "GET",
+      "path": "/api/v1/admin/workers",
+      "path_params": [],
+      "summary": "List registered remote and in-cluster workers with filtering and status counts.",
+      "has_body": false
+    },
+    {
+      "service": "admin_workers",
+      "operation": "revoke_worker",
+      "method": "DELETE",
+      "path": "/api/v1/admin/workers/{id}",
+      "path_params": [
+        "id"
+      ],
+      "summary": "Offboard and revoke a remote worker, clearing its stored token hash.",
+      "has_body": false
+    },
+    {
+      "service": "admin_workers",
+      "operation": "rotate_worker_token",
+      "method": "POST",
+      "path": "/api/v1/admin/workers/{id}/rotate-token",
+      "path_params": [
+        "id"
+      ],
+      "summary": "Rotate a worker's Bearer token hash and return the new one-time token.",
+      "has_body": true
+    },
+    {
+      "service": "admin_workers",
+      "operation": "update_worker",
+      "method": "PUT",
+      "path": "/api/v1/admin/workers/{id}",
+      "path_params": [
+        "id"
+      ],
+      "summary": "Update a worker's metadata, live config, capabilities, or enabled state.",
+      "has_body": true
+    },
+    {
+      "service": "admin_workers",
+      "operation": "worker_heartbeat",
+      "method": "POST",
+      "path": "/api/v1/admin/workers/heartbeat",
+      "path_params": [],
+      "summary": "Record a worker heartbeat and return its current live configuration.",
       "has_body": true
     },
     {
