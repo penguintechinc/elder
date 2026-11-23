@@ -440,3 +440,148 @@ class TestRunWorkerPollAndReport:
         assert decoded["tenant"] == "system"
         assert "runs:invoke" in decoded["scope"].split()
         assert 0 < decoded["exp"] - decoded["iat"] <= 600
+
+    def test_worker_fetches_presigned_s3_artifact_and_verifies_sha256(
+        self, tmp_path
+    ) -> None:
+        import hashlib
+
+        script_code = "print('{\"from_s3\": true}')\n"
+        expected_sha = hashlib.sha256(script_code.encode("utf-8")).hexdigest()
+        presigned_url = (
+            "https://s3.example.test/elder-runs/runs/tenant-1/fn/v1/main.py?sig=secret"
+        )
+        executed_requests: list[RunJobRequest] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/api/v1/runs/internal/pending":
+                return httpx.Response(
+                    200,
+                    json={
+                        "items": [
+                            {
+                                "execution_id": "exec-s3-1",
+                                "runtime": "python",
+                                "code": "",
+                                "storage_backend": "s3",
+                                "code_url": presigned_url,
+                                "code_sha256": expected_sha,
+                                "input_data": {"a": 1},
+                            }
+                        ]
+                    },
+                )
+            if str(request.url) == presigned_url:
+                return httpx.Response(200, text=script_code)
+            if request.method == "POST":
+                return httpx.Response(200, json={"accepted": True})
+            return httpx.Response(404)
+
+        mock_runner = MagicMock(spec=K8sRunner)
+
+        def _capture_execute(req: RunJobRequest) -> RunExecutionResult:
+            executed_requests.append(req)
+            return RunExecutionResult(
+                status="succeeded",
+                exit_code=0,
+                logs='{"from_s3": true}\n',
+                output={"from_s3": True},
+                duration_ms=15,
+            )
+
+        mock_runner.execute.side_effect = _capture_execute
+
+        cfg = RunWorkerConfig(
+            elder_api_url="https://elder.example.test",
+            health_file=str(tmp_path / "healthy"),
+            s3_fetch_mode="worker",
+        )
+
+        async def _run() -> int:
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(handler)
+            ) as client:
+                service = RunWorkerService(cfg, runner=mock_runner, http_client=client)
+                return await service.poll_once()
+
+        assert asyncio.run(_run()) == 1
+        assert len(executed_requests) == 1
+        assert executed_requests[0].code == script_code
+        assert executed_requests[0].use_init_container is False
+        assert "sig=secret" not in repr(executed_requests[0])
+
+    def test_worker_reports_failed_on_s3_sha256_mismatch(self, tmp_path) -> None:
+        presigned_url = "https://s3.example.test/elder-runs/runs/tampered.py?sig=1"
+        reported: list[dict] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/api/v1/runs/internal/pending":
+                return httpx.Response(
+                    200,
+                    json={
+                        "items": [
+                            {
+                                "execution_id": "exec-s3-bad",
+                                "runtime": "python",
+                                "code": "",
+                                "storage_backend": "s3",
+                                "code_url": presigned_url,
+                                "code_sha256": "f" * 64,
+                            }
+                        ]
+                    },
+                )
+            if str(request.url) == presigned_url:
+                return httpx.Response(200, text="tampered()")
+            reported.append(json.loads(request.content))
+            return httpx.Response(200, json={"accepted": True})
+
+        mock_runner = MagicMock(spec=K8sRunner)
+        cfg = RunWorkerConfig(
+            elder_api_url="https://elder.example.test",
+            health_file=str(tmp_path / "healthy"),
+        )
+
+        async def _run() -> int:
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(handler)
+            ) as client:
+                service = RunWorkerService(cfg, runner=mock_runner, http_client=client)
+                return await service.poll_once()
+
+        assert asyncio.run(_run()) == 1
+        mock_runner.execute.assert_not_called()
+        assert len(reported) == 1
+        assert reported[0]["status"] == "failed"
+        assert "SHA-256 mismatch" in reported[0]["error"]
+
+    def test_init_container_manifest_uses_emptydir_and_hides_presigned_url(
+        self,
+    ) -> None:
+        req = RunJobRequest(
+            execution_id="exec-init-1",
+            runtime="nodejs",
+            code="",
+            code_url="https://s3.example.test/bucket/main.js?X-Amz-Signature=hidden",
+            code_sha256="a" * 64,
+            storage_backend="s3",
+            use_init_container=True,
+        )
+        manifest = build_job_manifest(req, namespace="elder-runs")
+        pod_spec = manifest["spec"]["template"]["spec"]
+
+        assert len(pod_spec["initContainers"]) == 1
+        init_c = pod_spec["initContainers"][0]
+        assert init_c["name"] == "fetch-artifact"
+        assert init_c["securityContext"]["runAsNonRoot"] is True
+        assert init_c["securityContext"]["readOnlyRootFilesystem"] is True
+        assert init_c["securityContext"]["allowPrivilegeEscalation"] is False
+
+        runner_c = pod_spec["containers"][0]
+        runner_env_names = {e["name"] for e in runner_c["env"]}
+        assert "ELDER_ARTIFACT_URL" not in runner_env_names
+        assert runner_c["volumeMounts"][0]["readOnly"] is True
+
+        workspace_vol = pod_spec["volumes"][0]
+        assert "emptyDir" in workspace_vol
+        assert "configMap" not in workspace_vol

@@ -19,7 +19,7 @@ import signal
 import socket
 import tempfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -99,6 +99,7 @@ class RunWorkerConfig:
     worker_id: str = ""
     health_file: str = field(default_factory=_default_health_file)
     http_timeout_seconds: float = 30.0
+    s3_fetch_mode: str = "worker"  # "worker" (zero-egress pods) | "init_container"
 
     @classmethod
     def from_env(cls) -> RunWorkerConfig:
@@ -118,6 +119,12 @@ class RunWorkerConfig:
         )
         health_file = os.getenv("RUNS_HEALTH_FILE") or _default_health_file()
         http_timeout = max(5.0, float(os.getenv("RUNS_HTTP_TIMEOUT_SECONDS") or "30"))
+        raw_fetch_mode = (os.getenv("RUNS_S3_FETCH_MODE") or "worker").strip().lower()
+        s3_fetch_mode = (
+            raw_fetch_mode
+            if raw_fetch_mode in ("worker", "init_container")
+            else "worker"
+        )
         return cls(
             elder_api_url=api_url,
             elder_internal_token=token,
@@ -132,7 +139,11 @@ class RunWorkerConfig:
             worker_id=worker_id,
             health_file=health_file,
             http_timeout_seconds=http_timeout,
+            s3_fetch_mode=s3_fetch_mode,
         )
+
+
+CONFIGMAP_MAX_CODE_BYTES = 900 * 1024  # Safe margin below K8s 1 MiB etcd limit
 
 
 def _request_from_payload(item: dict[str, Any]) -> RunJobRequest:
@@ -142,10 +153,14 @@ def _request_from_payload(item: dict[str, Any]) -> RunJobRequest:
         raise ValueError("Pending execution payload is missing execution_id/id")
     runtime = str(item.get("runtime") or "")
     code = str(item.get("code") or "")
+    code_url = str(item["code_url"]) if item.get("code_url") else None
+    code_sha256 = str(item["code_sha256"]) if item.get("code_sha256") else None
+    storage_backend = str(item.get("storage_backend") or "database")
     input_data = item.get("input") if "input" in item else item.get("input_data")
     timeout_seconds = int(item.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS)
     memory_mb = int(item.get("memory_mb") or DEFAULT_MEMORY_MB)
-    env = item.get("env") if isinstance(item.get("env"), dict) else {}
+    env = item.get("env") or item.get("env_vars")
+    env_dict = env if isinstance(env, dict) else {}
     return RunJobRequest(
         execution_id=execution_id,
         runtime=runtime,
@@ -153,9 +168,12 @@ def _request_from_payload(item: dict[str, Any]) -> RunJobRequest:
         input_data=input_data,
         timeout_seconds=timeout_seconds,
         memory_mb=memory_mb,
-        env={str(k): str(v) for k, v in env.items()},
+        env={str(k): str(v) for k, v in env_dict.items()},
         function_id=str(item["function_id"]) if item.get("function_id") else None,
         tenant_id=str(item["tenant_id"]) if item.get("tenant_id") else None,
+        code_url=code_url,
+        code_sha256=code_sha256,
+        storage_backend=storage_backend,
     )
 
 
@@ -260,13 +278,38 @@ class RunWorkerService:
         response.raise_for_status()
         return True
 
+    async def _resolve_artifact(self, req: RunJobRequest) -> RunJobRequest:
+        """Fetch and verify S3-backed code when ``code_url`` is supplied."""
+        if not req.code_url:
+            return req
+
+        if self.config.s3_fetch_mode == "init_container":
+            return replace(req, use_init_container=True)
+
+        response = await self._client.get(req.code_url)
+        response.raise_for_status()
+        raw_bytes = response.content
+        if req.code_sha256:
+            actual_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+            if actual_sha256 != req.code_sha256:
+                raise ValueError(
+                    f"Artifact SHA-256 mismatch for execution {req.execution_id}: "
+                    f"expected {req.code_sha256}, got {actual_sha256}"
+                )
+
+        if len(raw_bytes) > CONFIGMAP_MAX_CODE_BYTES:
+            return replace(req, use_init_container=True)
+
+        return replace(req, code=raw_bytes.decode("utf-8"), use_init_container=False)
+
     async def process_execution(self, item: dict[str, Any]) -> RunExecutionResult:
         """Execute a single claimed job under the concurrency semaphore and report."""
         req = _request_from_payload(item)
         async with self._semaphore:
             started = time.monotonic()
             try:
-                result = await asyncio.to_thread(self.runner.execute, req)
+                resolved_req = await self._resolve_artifact(req)
+                result = await asyncio.to_thread(self.runner.execute, resolved_req)
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
                     "runworker_execution_error",

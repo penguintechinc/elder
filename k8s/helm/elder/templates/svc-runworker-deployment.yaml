@@ -67,6 +67,8 @@ spec:
               value: {{ ($cfg.env).RUNS_POLL_INTERVAL_SECONDS | default "3" | quote }}
             - name: RUNS_MAX_CONCURRENT
               value: {{ ($cfg.env).RUNS_MAX_CONCURRENT | default "5" | quote }}
+            - name: RUNS_S3_FETCH_MODE
+              value: {{ $cfg.s3FetchMode | default (($cfg.env).RUNS_S3_FETCH_MODE | default "worker") | quote }}
             - name: LOG_LEVEL
               value: {{ ($cfg.env).LOG_LEVEL | default "INFO" | quote }}
             {{- if .Values.otel.enabled }}

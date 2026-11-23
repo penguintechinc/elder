@@ -633,6 +633,25 @@ svc-flows-invoker:
   networkPolicy:
     enabled: true
 
+# Elder Runs S3-compatible artifact storage (MinIO, Garage, Ceph RGW, R2, AWS S3).
+# When `bucket` is set, hub-api stores versioned scripts in S3 and mints
+# short-lived presigned GET URLs for svc-runworker (zero S3 credentials on workers/pods).
+runs:
+  storage:
+    # S3-compatible bucket name (leave empty to store scripts in Postgres).
+    bucket: ""
+    # Custom S3 endpoint URL (e.g. https://s3.internal.penguintech.cloud or http://minio.storage:9000).
+    endpoint: ""
+    region: "us-east-1"
+    prefix: "runs"
+    presignTtlSeconds: 300
+    # Path-style addressing (recommended for MinIO/Garage/Ceph RGW; auto-enabled when endpoint is set).
+    pathStyle: true
+    # Optional Kubernetes Secret name holding RUNS_S3_ACCESS_KEY_ID and RUNS_S3_SECRET_ACCESS_KEY.
+    credentialsSecretName: ""
+    accessKeySecretKey: "access-key-id"
+    secretKeySecretKey: "secret-access-key"
+
 # Runs Worker Service — isolated Kubernetes serverless function runner for
 # Elder Runs (v4.0.x). Completely decoupled from Elder's DB/Redis so it can
 # run inside Elder's cluster OR in a remote Kubernetes cluster.
@@ -646,6 +665,10 @@ svc-runworker:
   # Dedicated namespace where per-execution Kubernetes Jobs run.
   executionNamespace: "elder-runs"
   createExecutionNamespace: true
+  # How svc-runworker fetches S3-backed artifacts:
+  # - "worker": worker fetches via presigned URL, verifies SHA-256, mounts read-only ConfigMap (preserves zero-egress pods; auto-promotes >900KiB to init_container)
+  # - "init_container": hardened initContainer fetches via presigned URL into emptyDir /workspace
+  s3FetchMode: "worker"
   # Optional RuntimeClass (e.g. "kata") for VM-isolated function pods.
   runtimeClassName: ""
   # Secret holding ELDER_INTERNAL_TOKEN (never hardcoded in values/manifests).

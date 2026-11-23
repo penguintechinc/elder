@@ -66,6 +66,15 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+    {{- with ($cfg.networkPolicy).s3Egress }}
+    # Optional explicit S3-compatible storage egress (e.g. in-cluster/RFC1918 MinIO/Garage)
+    - toCIDRSet:
+        - cidr: {{ .cidr | quote }}
+      toPorts:
+        - ports:
+            - port: {{ .port | default 443 | quote }}
+              protocol: TCP
+    {{- end }}
 ---
 # Default-deny all ingress and egress for serverless function pods in
 # executionNamespace so untrusted user code cannot reach cluster services,
