@@ -67,6 +67,7 @@ from elder_sdk.resources import (
     AsyncPrivacyResource,
     AsyncProjectsResource,
     AsyncResourceBase,
+    AsyncRunsResource,
     AsyncSbomResource,
     AsyncSearchResource,
     AsyncSecretsResource,
@@ -112,6 +113,7 @@ from elder_sdk.resources import (
     PagesResource,
     PrivacyResource,
     ProjectsResource,
+    RunsResource,
     SbomResource,
     SearchResource,
     SecretsResource,
@@ -463,6 +465,7 @@ class ElderClient(_BaseElderClient):
     sso: SsoResource
     api_keys: ApiKeysResource
     modules: ModulesResource
+    runs: RunsResource
 
     def __init__(
         self,
@@ -831,6 +834,7 @@ class AsyncElderClient(_BaseElderClient):
     sso: AsyncSsoResource
     api_keys: AsyncApiKeysResource
     modules: AsyncModulesResource
+    runs: AsyncRunsResource
 
     def __init__(
         self,

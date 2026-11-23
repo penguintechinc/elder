@@ -1290,6 +1290,77 @@ class AsyncModulesResource(AsyncResourceBase, _ModulesMixin):
     """Asynchronous modules registry resource."""
 
 
+class _RunsMixin:
+    SERVICE_NAME = "runs"
+    invoke = _CatalogMethod(
+        "invoke_run_function",
+        "Queue a pending execution for a serverless function.",
+    )
+    list_executions = _CatalogMethod(
+        "list_run_executions",
+        "List executions for the current tenant with optional filters.",
+    )
+    get_execution = _CatalogMethod(
+        "get_run_execution",
+        "Fetch a single execution record including stdout/stderr logs and output.",
+    )
+    claim_pending = _CatalogMethod(
+        "claim_pending_executions",
+        "Atomically claim pending executions (internal svc-runworker endpoint).",
+    )
+    report_result = _CatalogMethod(
+        "report_execution_result",
+        "Report terminal execution output and logs (internal svc-runworker endpoint).",
+    )
+
+
+class RunsResource(SyncCrudResource, _RunsMixin):
+    """Synchronous Elder Runs serverless functions resource."""
+
+    def iter_executions(
+        self,
+        *,
+        params: Mapping[str, Any] | None = None,
+        per_page: int = 50,
+        items_key: str | None = None,
+        max_pages: int | None = None,
+        **filters: Any,
+    ) -> Iterator[Any]:
+        """Iterate across all pages returned by ``list_executions``."""
+        return self.iter_operation(
+            "list_run_executions",
+            params=params,
+            per_page=per_page,
+            items_key=items_key,
+            max_pages=max_pages,
+            **filters,
+        )
+
+
+class AsyncRunsResource(AsyncCrudResource, _RunsMixin):
+    """Asynchronous Elder Runs serverless functions resource."""
+
+    async def iter_executions(
+        self,
+        *,
+        params: Mapping[str, Any] | None = None,
+        per_page: int = 50,
+        items_key: str | None = None,
+        max_pages: int | None = None,
+        **filters: Any,
+    ) -> AsyncIterator[Any]:
+        """Asynchronously iterate across all pages returned by ``list_executions``."""
+        async for item in self.iter_operation(
+            "list_run_executions",
+            params=params,
+            per_page=per_page,
+            items_key=items_key,
+            max_pages=max_pages,
+            **filters,
+        ):
+            yield item
+
+
 SYNC_RESOURCE_CLASSES: dict[str, type[SyncResourceBase]] = {
     "auth": AuthResource,
     "organizations": OrganizationsResource,
@@ -1339,6 +1410,7 @@ SYNC_RESOURCE_CLASSES: dict[str, type[SyncResourceBase]] = {
     "sso": SsoResource,
     "api_keys": ApiKeysResource,
     "modules": ModulesResource,
+    "runs": RunsResource,
 }
 
 ASYNC_RESOURCE_CLASSES: dict[str, type[AsyncResourceBase]] = {
@@ -1390,4 +1462,5 @@ ASYNC_RESOURCE_CLASSES: dict[str, type[AsyncResourceBase]] = {
     "sso": AsyncSsoResource,
     "api_keys": AsyncApiKeysResource,
     "modules": AsyncModulesResource,
+    "runs": AsyncRunsResource,
 }

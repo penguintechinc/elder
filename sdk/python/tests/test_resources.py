@@ -1,4 +1,4 @@
-"""Unit tests for all 48 typed resource facades (sync & async)."""
+"""Unit tests for all 49 typed resource facades (sync & async)."""
 
 from __future__ import annotations
 
@@ -66,10 +66,11 @@ EXPECTED_FACADE_NAMES = {
     "sso",
     "api_keys",
     "modules",
+    "runs",
 }
 
 
-def test_all_48_facades_registered_and_bound_to_valid_catalog_ops() -> None:
+def test_all_49_facades_registered_and_bound_to_valid_catalog_ops() -> None:
     assert set(SYNC_RESOURCE_CLASSES.keys()) == EXPECTED_FACADE_NAMES
     assert set(ASYNC_RESOURCE_CLASSES.keys()) == EXPECTED_FACADE_NAMES
 
@@ -198,6 +199,7 @@ def test_sync_resource_facades_execution() -> None:
         client.sso.list_idps()
         client.api_keys.list()
         client.modules.list()
+        client.runs.list(runtime="python")
 
         # Also test non-CRUD iter_operation
         list(client.discovery.iter_operation("list_discovery_jobs", provider="aws"))
@@ -257,6 +259,7 @@ async def test_async_resource_facades_execution() -> None:
         await client.helpdesk.dashboard_stats()
         await client.sbom.list_scans()
         await client.modules.list()
+        await client.runs.list(runtime="python")
 
     assert ("POST", "/api/v1/auth/login") in recorded
     assert ("POST", "/api/v1/auth/refresh") in recorded

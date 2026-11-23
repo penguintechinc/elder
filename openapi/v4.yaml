@@ -1404,6 +1404,529 @@ components:
       - updated_at
       title: OrganizationDTO
       type: object
+    RunExecution:
+      additionalProperties: false
+      description: Single invocation record of an Elder Runs serverless function.
+      properties:
+        completed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Completed At
+        created_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Created At
+        duration_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Duration Ms
+        error_message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Error Message
+        execution_id:
+          title: Execution Id
+          type: string
+        exit_code:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Exit Code
+        function_id:
+          title: Function Id
+          type: integer
+        id:
+          title: Id
+          type: integer
+        input_data:
+          default: null
+          title: Input Data
+        output_data:
+          default: null
+          title: Output Data
+        started_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Started At
+        status:
+          enum:
+          - pending
+          - running
+          - completed
+          - failed
+          - timed_out
+          title: Status
+          type: string
+        stderr_log:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Stderr Log
+        stdout_log:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Stdout Log
+        tenant_id:
+          title: Tenant Id
+          type: integer
+        trigger_type:
+          enum:
+          - manual
+          - schedule
+          - stream
+          title: Trigger Type
+          type: string
+        triggered_by_identity_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Triggered By Identity Id
+        worker_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Worker Id
+      required:
+      - id
+      - tenant_id
+      - execution_id
+      - function_id
+      - status
+      - trigger_type
+      title: RunExecution
+      type: object
+    RunExecutionListResponse:
+      additionalProperties: false
+      description: Paginated list of Elder Runs executions.
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RunExecution'
+          title: Items
+          type: array
+        page:
+          title: Page
+          type: integer
+        pages:
+          title: Pages
+          type: integer
+        per_page:
+          title: Per Page
+          type: integer
+        total:
+          title: Total
+          type: integer
+      required:
+      - items
+      - total
+      - page
+      - per_page
+      - pages
+      title: RunExecutionListResponse
+      type: object
+    RunFunction:
+      additionalProperties: false
+      description: Elder Runs serverless function definition with artifact storage metadata.
+      properties:
+        code:
+          title: Code
+          type: string
+        code_sha256:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          description: SHA-256 hex digest of the stored function source artifact.
+          title: Code Sha256
+        created_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Created At
+        created_by_identity_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Created By Identity Id
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Description
+        entrypoint:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Entrypoint
+        env_vars:
+          additionalProperties: true
+          default: {}
+          title: Env Vars
+          type: object
+        execution_namespace:
+          default: elder-runs
+          title: Execution Namespace
+          type: string
+        id:
+          title: Id
+          type: integer
+        is_enabled:
+          default: true
+          title: Is Enabled
+          type: boolean
+        latest_version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Latest Version
+        memory_mb:
+          default: 256
+          maximum: 16384
+          minimum: 32
+          title: Memory Mb
+          type: integer
+        name:
+          title: Name
+          type: string
+        recent_executions:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/RunExecution'
+            type: array
+          - type: 'null'
+          default: null
+          title: Recent Executions
+        runtime:
+          enum:
+          - golang
+          - nodejs
+          - python
+          - ruby
+          - rust
+          title: Runtime
+          type: string
+        schedule_cron:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Schedule Cron
+        storage_backend:
+          default: database
+          description: Artifact storage backend holding the function code bundle.
+          enum:
+          - database
+          - s3
+          title: Storage Backend
+          type: string
+        storage_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          description: S3-compatible object key when storage_backend is s3.
+          title: Storage Key
+        tenant_id:
+          title: Tenant Id
+          type: integer
+        timeout_seconds:
+          default: 60
+          maximum: 3600
+          minimum: 1
+          title: Timeout Seconds
+          type: integer
+        updated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Updated At
+        village_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Village Id
+        worker_cluster:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Worker Cluster
+      required:
+      - id
+      - tenant_id
+      - name
+      - runtime
+      - code
+      - timeout_seconds
+      - memory_mb
+      - env_vars
+      - execution_namespace
+      - is_enabled
+      - storage_backend
+      - storage_key
+      - code_sha256
+      title: RunFunction
+      type: object
+    RunFunctionCreateRequest:
+      additionalProperties: false
+      description: Request payload for creating a serverless function.
+      properties:
+        code:
+          title: Code
+          type: string
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Description
+        entrypoint:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Entrypoint
+        env_vars:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          default: null
+          title: Env Vars
+        execution_namespace:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: elder-runs
+          title: Execution Namespace
+        is_enabled:
+          default: true
+          title: Is Enabled
+          type: boolean
+        memory_mb:
+          default: 256
+          maximum: 16384
+          minimum: 32
+          title: Memory Mb
+          type: integer
+        name:
+          title: Name
+          type: string
+        runtime:
+          enum:
+          - golang
+          - nodejs
+          - python
+          - ruby
+          - rust
+          title: Runtime
+          type: string
+        schedule_cron:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Schedule Cron
+        timeout_seconds:
+          default: 60
+          maximum: 3600
+          minimum: 1
+          title: Timeout Seconds
+          type: integer
+        worker_cluster:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Worker Cluster
+      required:
+      - name
+      - runtime
+      - code
+      title: RunFunctionCreateRequest
+      type: object
+    RunFunctionListResponse:
+      additionalProperties: false
+      description: Paginated list of Elder Runs serverless functions.
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RunFunction'
+          title: Items
+          type: array
+        page:
+          title: Page
+          type: integer
+        pages:
+          title: Pages
+          type: integer
+        per_page:
+          title: Per Page
+          type: integer
+        total:
+          title: Total
+          type: integer
+      required:
+      - items
+      - total
+      - page
+      - per_page
+      - pages
+      title: RunFunctionListResponse
+      type: object
+    RunFunctionUpdateRequest:
+      additionalProperties: false
+      description: Request payload for updating a serverless function.
+      properties:
+        code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Code
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Description
+        entrypoint:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Entrypoint
+        env_vars:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          default: null
+          title: Env Vars
+        execution_namespace:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Execution Namespace
+        is_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          default: null
+          title: Is Enabled
+        memory_mb:
+          anyOf:
+          - maximum: 16384
+            minimum: 32
+            type: integer
+          - type: 'null'
+          default: null
+          title: Memory Mb
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Name
+        runtime:
+          anyOf:
+          - enum:
+            - golang
+            - nodejs
+            - python
+            - ruby
+            - rust
+            type: string
+          - type: 'null'
+          default: null
+          title: Runtime
+        schedule_cron:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Schedule Cron
+        timeout_seconds:
+          anyOf:
+          - maximum: 3600
+            minimum: 1
+            type: integer
+          - type: 'null'
+          default: null
+          title: Timeout Seconds
+        worker_cluster:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Worker Cluster
+      title: RunFunctionUpdateRequest
+      type: object
+    RunInvokeRequest:
+      additionalProperties: false
+      description: Request payload for invoking a serverless function.
+      properties:
+        input_data:
+          default: null
+          description: Arbitrary JSON input passed to the function invocation.
+          title: Input Data
+        payload:
+          default: null
+          description: Alias for input_data.
+          title: Payload
+        trigger_type:
+          default: manual
+          enum:
+          - manual
+          - schedule
+          - stream
+          title: Trigger Type
+          type: string
+      title: RunInvokeRequest
+      type: object
+    RunInvokeResponse:
+      additionalProperties: false
+      description: Response returned when an Elder Runs invocation is queued (HTTP 202).
+      properties:
+        execution:
+          $ref: '#/components/schemas/RunExecution'
+        execution_id:
+          title: Execution Id
+          type: string
+      required:
+      - execution_id
+      - execution
+      title: RunInvokeResponse
+      type: object
     SecretMetadataResponse:
       additionalProperties: false
       description: "Metadata about a built-in secret \u2014 never includes the secret value."
@@ -12990,6 +13513,286 @@ paths:
           type: integer
       responses: {}
       summary: Revoke a resource role.
+  /api/v1/runs:
+    get:
+      description: List Elder Runs serverless functions for the current tenant with optional filtering and pagination.
+      operationId: get_list_run_functions
+      parameters:
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          type: integer
+      - in: query
+        name: per_page
+        required: false
+        schema:
+          default: 50
+          maximum: 200
+          minimum: 1
+          type: integer
+      - in: query
+        name: runtime
+        required: false
+        schema:
+          enum:
+          - golang
+          - nodejs
+          - python
+          - ruby
+          - rust
+          type: string
+      - in: query
+        name: search
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: worker_cluster
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: is_enabled
+        required: false
+        schema:
+          type: boolean
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunFunctionListResponse'
+          description: Paginated list of serverless functions.
+      summary: List serverless functions for the current tenant with optional filters.
+    post:
+      description: Create a new Elder Runs serverless function and record initial version 1.
+      operationId: post_create_run_function
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunFunctionCreateRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunFunction'
+          description: Created serverless function with artifact storage metadata.
+      summary: Create a new serverless function and record initial version 1.
+  /api/v1/runs/executions:
+    get:
+      description: List function executions for the current tenant with optional filters.
+      operationId: get_list_run_executions
+      parameters:
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          type: integer
+      - in: query
+        name: per_page
+        required: false
+        schema:
+          default: 50
+          maximum: 200
+          minimum: 1
+          type: integer
+      - in: query
+        name: function_id
+        required: false
+        schema:
+          type: integer
+      - in: query
+        name: status
+        required: false
+        schema:
+          enum:
+          - pending
+          - running
+          - completed
+          - failed
+          - timed_out
+          type: string
+      - in: query
+        name: trigger_type
+        required: false
+        schema:
+          enum:
+          - manual
+          - schedule
+          - stream
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunExecutionListResponse'
+          description: Paginated list of function executions.
+      summary: List function executions for the current tenant with optional filters.
+  /api/v1/runs/executions/{execution_id}:
+    get:
+      description: Get a single execution record including stdout/stderr logs and output.
+      operationId: get_get_run_execution
+      parameters:
+      - in: path
+        name: execution_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunExecution'
+          description: Execution record details.
+      summary: Get a single execution record including stdout/stderr logs and output.
+  /api/v1/runs/internal/executions/{execution_id}/result:
+    post:
+      description: Record terminal execution output and logs from svc-runworker.
+      operationId: post_report_execution_result
+      parameters:
+      - in: path
+        name: execution_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunExecution'
+          description: Updated execution record.
+      summary: Record terminal execution output and logs from svc-runworker.
+  /api/v1/runs/internal/pending:
+    get:
+      description: Atomically claim pending executions for svc-runworker.
+      operationId: get_claim_pending_executions
+      parameters:
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 5
+          maximum: 50
+          minimum: 1
+          type: integer
+      - in: query
+        name: worker_cluster
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: worker_id
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  count:
+                    type: integer
+                  items:
+                    items:
+                      type: object
+                    type: array
+                required:
+                - items
+                - count
+                type: object
+          description: Claimed pending executions.
+      summary: Atomically claim pending executions for svc-runworker.
+  /api/v1/runs/{func_id}:
+    delete:
+      description: Delete a serverless function and its versions/executions for the current tenant.
+      operationId: delete_delete_run_function
+      parameters:
+      - in: path
+        name: func_id
+        required: true
+        schema:
+          type: integer
+      responses:
+        '204':
+          description: Serverless function deleted.
+      summary: Delete a serverless function for the current tenant.
+    get:
+      description: Get a single serverless function along with latest_version, recent_executions, and storage metadata.
+      operationId: get_get_run_function
+      parameters:
+      - in: path
+        name: func_id
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunFunction'
+          description: Serverless function details with recent executions and storage metadata.
+      summary: Get a single serverless function along with recent executions.
+    put:
+      description: Update a serverless function, creating a new version when code changes.
+      operationId: put_update_run_function
+      parameters:
+      - in: path
+        name: func_id
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunFunctionUpdateRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunFunction'
+          description: Updated serverless function with latest_version and storage metadata.
+      summary: Update a serverless function, creating a new version when code changes.
+  /api/v1/runs/{func_id}/invoke:
+    post:
+      description: Queue a pending execution for a serverless function and return 202.
+      operationId: post_invoke_run_function
+      parameters:
+      - in: path
+        name: func_id
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunInvokeRequest'
+        required: false
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunInvokeResponse'
+          description: Execution queued.
+      summary: Queue a pending execution for a serverless function and return 202.
   /api/v1/sbom/components:
     get:
       description: "\nQuery Parameters:\n    - parent_type: Filter by parent type (service, software,\
