@@ -16,6 +16,7 @@ import {
   HardDrive,
   Copy,
   Check,
+  ExternalLink,
 } from "lucide-react";
 import api, {
   type RunExecution,
@@ -703,55 +704,66 @@ export default function RunDetail() {
                     key={exec.execution_id}
                     className="bg-slate-900 border border-slate-700 rounded-lg overflow-hidden"
                   >
-                    <button
-                      type="button"
-                      onClick={() => toggleExecution(exec.execution_id)}
-                      aria-expanded={isExpanded}
-                      className="w-full px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-left hover:bg-slate-800/70 transition-colors"
-                    >
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        {isExpanded ? (
-                          <ChevronDown
-                            className="w-4 h-4 text-slate-400"
-                            aria-hidden="true"
-                          />
-                        ) : (
-                          <ChevronRight
-                            className="w-4 h-4 text-slate-400"
-                            aria-hidden="true"
-                          />
-                        )}
-                        <span
-                          className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${getExecutionStatusBadgeClass(exec.status)}`}
-                        >
-                          {exec.status}
-                        </span>
-                        <span className="font-mono text-xs text-slate-200">
-                          {exec.execution_id}
-                        </span>
-                        {exec.trigger_type && (
-                          <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                            {exec.trigger_type}
+                    <div className="flex flex-wrap items-center justify-between gap-2 hover:bg-slate-800/70 transition-colors">
+                      <button
+                        type="button"
+                        onClick={() => toggleExecution(exec.execution_id)}
+                        aria-expanded={isExpanded}
+                        className="flex-1 min-w-0 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-left"
+                      >
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          {isExpanded ? (
+                            <ChevronDown
+                              className="w-4 h-4 text-slate-400"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <ChevronRight
+                              className="w-4 h-4 text-slate-400"
+                              aria-hidden="true"
+                            />
+                          )}
+                          <span
+                            className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${getExecutionStatusBadgeClass(exec.status)}`}
+                          >
+                            {exec.status}
                           </span>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
-                        {exec.exit_code !== undefined &&
-                          exec.exit_code !== null && (
-                            <span className="font-mono">
-                              exit {exec.exit_code}
+                          <span className="font-mono text-xs text-slate-200">
+                            {exec.execution_id}
+                          </span>
+                          {exec.trigger_type && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                              {exec.trigger_type}
                             </span>
                           )}
-                        {exec.duration_ms !== undefined &&
-                          exec.duration_ms !== null && (
-                            <span>{exec.duration_ms} ms</span>
-                          )}
-                        <span>
-                          {new Date(exec.created_at).toLocaleString()}
-                        </span>
-                      </div>
-                    </button>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
+                          {exec.exit_code !== undefined &&
+                            exec.exit_code !== null && (
+                              <span className="font-mono">
+                                exit {exec.exit_code}
+                              </span>
+                            )}
+                          {exec.duration_ms !== undefined &&
+                            exec.duration_ms !== null && (
+                              <span>{exec.duration_ms} ms</span>
+                            )}
+                          <span>
+                            {new Date(exec.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                      </button>
+
+                      <Link
+                        to={`/runs/executions/${exec.execution_id}`}
+                        data-testid={`view-execution-details-${exec.execution_id}`}
+                        className="mr-3 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700 transition-colors shrink-0"
+                      >
+                        View Execution Details
+                        <ExternalLink className="w-3 h-3" aria-hidden="true" />
+                      </Link>
+                    </div>
 
                     {isExpanded && (
                       <div className="px-4 pb-4 pt-2 border-t border-slate-800 space-y-3 text-xs">

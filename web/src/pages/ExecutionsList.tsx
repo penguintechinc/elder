@@ -95,7 +95,11 @@ function getSourceBadge(source: ExecutionSource): {
 
 function getDetailPath(exec: Execution, source: ExecutionSource): string {
   if (source === "coderun") {
-    return exec.function_id ? `/runs/${exec.function_id}` : "/runs";
+    return exec.execution_id
+      ? `/runs/executions/${exec.execution_id}`
+      : exec.function_id
+        ? `/runs/${exec.function_id}`
+        : "/runs";
   }
   if (source === "webhook") {
     return "/webhooks";

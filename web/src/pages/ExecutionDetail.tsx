@@ -1,7 +1,22 @@
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, AlertTriangle, ExternalLink } from "lucide-react";
+import {
+  ArrowLeft,
+  AlertTriangle,
+  ExternalLink,
+  Pause,
+  Play,
+  RefreshCw,
+} from "lucide-react";
 import api from "@/lib/api";
+
+const ACTIVE_PLAYBOOK_STATUSES = new Set([
+  "pending",
+  "running",
+  "waiting_approval",
+]);
+const POLL_INTERVAL_MS = 10_000;
 
 interface ExecutionRecord {
   id?: number | string;
@@ -48,18 +63,42 @@ interface ExecutionDetailEnvelope {
   node_logs?: NodeLogItem[];
 }
 
+function extractExecutionStatus(
+  raw: ExecutionDetailEnvelope | ExecutionRecord | null | undefined,
+): string {
+  if (!raw) return "";
+  const envelope =
+    (raw as ExecutionDetailEnvelope)?.data || (raw as ExecutionDetailEnvelope);
+  const exec = envelope?.execution
+    ? envelope.execution
+    : "status" in raw
+      ? (raw as ExecutionRecord)
+      : null;
+  return String(exec?.status || "").toLowerCase();
+}
+
 export default function ExecutionDetail() {
   const { executionId } = useParams<{ executionId: string }>();
   const navigate = useNavigate();
+  const [autoPollEnabled, setAutoPollEnabled] = useState(true);
 
   const {
     data: rawResponse,
     isLoading,
+    isFetching,
     error,
+    refetch,
   } = useQuery<ExecutionDetailEnvelope | ExecutionRecord | null>({
     queryKey: ["execution", executionId],
     queryFn: () => (executionId ? api.getExecutionById(executionId) : null),
     enabled: !!executionId,
+    refetchInterval: (query) => {
+      if (!autoPollEnabled) return false;
+      const currentStatus = extractExecutionStatus(query.state.data);
+      return ACTIVE_PLAYBOOK_STATUSES.has(currentStatus)
+        ? POLL_INTERVAL_MS
+        : false;
+    },
   });
 
   const envelope = (rawResponse as ExecutionDetailEnvelope | null)?.data ||
@@ -80,6 +119,7 @@ export default function ExecutionDetail() {
     (streamId ? `Playbook #${streamId}` : "Playbook Execution");
   const displayId = execution?.execution_id || execution?.id || executionId;
   const status = String(execution?.status || "unknown");
+  const isActive = ACTIVE_PLAYBOOK_STATUSES.has(status.toLowerCase());
   const startedAt = execution?.started_at || execution?.created_at;
 
   const getStatusColor = (s: string) => {
@@ -94,6 +134,7 @@ export default function ExecutionDetail() {
         return "bg-blue-900 text-blue-200";
       case "pending":
       case "queued":
+      case "waiting_approval":
         return "bg-yellow-900 text-yellow-200";
       default:
         return "bg-slate-700 text-slate-300";
@@ -103,7 +144,7 @@ export default function ExecutionDetail() {
   return (
     <div className="min-h-screen bg-slate-900 p-6">
       <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between gap-4 mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <button
             type="button"
             onClick={() => navigate("/streams/executions")}
@@ -113,16 +154,76 @@ export default function ExecutionDetail() {
             Back to Executions
           </button>
 
-          {streamId ? (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {isActive && (
+              <>
+                <span
+                  data-testid="live-poll-badge"
+                  className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border ${
+                    autoPollEnabled
+                      ? "bg-sky-950/70 text-sky-200 border-sky-700/70"
+                      : "bg-slate-800 text-slate-300 border-slate-700"
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      autoPollEnabled
+                        ? "bg-sky-400 animate-pulse"
+                        : "bg-slate-500"
+                    }`}
+                    aria-hidden="true"
+                  />
+                  {autoPollEnabled
+                    ? "Auto-refreshing every 10s"
+                    : "Auto-refresh paused"}
+                </span>
+
+                <button
+                  type="button"
+                  data-testid="toggle-poll-btn"
+                  onClick={() => setAutoPollEnabled((prev) => !prev)}
+                  className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
+                >
+                  {autoPollEnabled ? (
+                    <>
+                      <Pause className="w-3.5 h-3.5" aria-hidden="true" />
+                      Pause
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-3.5 h-3.5" aria-hidden="true" />
+                      Resume
+                    </>
+                  )}
+                </button>
+              </>
+            )}
+
             <button
               type="button"
-              onClick={() => navigate(`/streams/${streamId}`)}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700"
+              data-testid="manual-refresh-btn"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
             >
-              <ExternalLink className="w-3.5 h-3.5" />
-              Open Playbook
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`}
+                aria-hidden="true"
+              />
+              Refresh
             </button>
-          ) : null}
+
+            {streamId ? (
+              <button
+                type="button"
+                onClick={() => navigate(`/streams/${streamId}`)}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Open Playbook
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {error && (

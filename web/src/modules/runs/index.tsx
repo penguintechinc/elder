@@ -10,6 +10,8 @@ import { Terminal } from 'lucide-react'
 const RunsList = lazy(() => import('@/pages/RunsList'))
 // eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const RunDetail = lazy(() => import('@/pages/RunDetail'))
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
+const RunExecutionDetail = lazy(() => import('@/pages/RunExecutionDetail'))
 // eslint-enable react-refresh/only-export-components
 
 const navigation: MenuCategory[] = [
@@ -22,6 +24,7 @@ const navigation: MenuCategory[] = [
 
 const routes: RouteObject[] = [
   { path: 'runs', element: <RunsList /> },
+  { path: 'runs/executions/:executionId', element: <RunExecutionDetail /> },
   { path: 'runs/:id', element: <RunDetail /> },
 ]
 

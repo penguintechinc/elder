@@ -143,7 +143,9 @@ describe("RunDetail", () => {
       expect(api.invokeRunFunction).toHaveBeenCalledWith(7, { env: "prod" });
     });
 
-    // Expand execution logs
+    // Expand execution logs and check View Execution Details link
+    const detailLink = screen.getByTestId("view-execution-details-exec-abc-123");
+    expect(detailLink.getAttribute("href")).toBe("/runs/executions/exec-abc-123");
     fireEvent.click(screen.getByRole("button", { name: /exec-abc-123/i }));
     await waitFor(() => {
       expect(screen.getByText("hello from container")).toBeTruthy();

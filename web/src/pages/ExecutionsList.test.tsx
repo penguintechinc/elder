@@ -108,7 +108,9 @@ describe("ExecutionsList", () => {
     expect(detailLinks[0].getAttribute("href")).toBe(
       "/streams/executions/550e8400-e29b-41d4-a716-446655440000",
     );
-    expect(detailLinks[1].getAttribute("href")).toBe("/runs/42");
+    expect(detailLinks[1].getAttribute("href")).toBe(
+      "/runs/executions/550e8400-e29b-41d4-a716-446655440001",
+    );
     expect(detailLinks[2].getAttribute("href")).toBe("/webhooks");
   });
 
