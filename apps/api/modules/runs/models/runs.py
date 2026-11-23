@@ -68,6 +68,8 @@ class RunFunction(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMix
     timeout_seconds = Column(Integer, nullable=False, default=60, server_default="60")
     memory_mb = Column(Integer, nullable=False, default=256, server_default="256")
     env_vars_json = Column(JSON, nullable=True)
+    granted_scopes_json = Column(JSON, nullable=True)
+    allowed_egress_domains_json = Column(JSON, nullable=True)
     schedule_cron = Column(String(128), nullable=True)
     execution_namespace = Column(
         String(128),
@@ -108,6 +110,7 @@ class RunFunctionVersion(Base, IDMixin, TenantScopedMixin):
     code_sha256 = Column(String(64), nullable=True)
     runtime = Column(String(32), nullable=False)
     entrypoint = Column(String(255), nullable=True)
+    granted_scopes_json = Column(JSON, nullable=True)
     created_by_identity_id = Column(
         Integer, ForeignKey("identities.id", ondelete="SET NULL"), nullable=True
     )

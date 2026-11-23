@@ -12,12 +12,23 @@ from quart import Blueprint, current_app, g, jsonify, request
 from sqlalchemy import text
 
 from apps.api.auth.decorators import login_required, require_scope
-from apps.api.auth.jwt_handler import is_system_service_worker
+from apps.api.auth.jwt_handler import (
+    MAX_CODERUN_TTL_SECONDS,
+    generate_coderun_token,
+    is_system_service_worker,
+)
 from apps.api.modules.runs.models.runs import (
     EXECUTION_STATUSES,
     SUPPORTED_RUNTIMES,
     TERMINAL_EXECUTION_STATUSES,
     TRIGGER_TYPES,
+)
+from apps.api.modules.runs.permissions import (
+    EgressDomainValidationError,
+    ScopeValidationError,
+    build_permission_catalog_payload,
+    validate_egress_domains,
+    validate_granted_scopes,
 )
 from apps.api.modules.runs.storage import (
     compute_code_sha256,
@@ -100,6 +111,39 @@ def _parse_json_dict(raw: Any) -> dict[str, Any]:
     return {}
 
 
+def _parse_json_list(raw: Any) -> list[str]:
+    """Decode a JSON array column or list into a list of clean strings."""
+    parsed = _parse_json_value(raw)
+    if isinstance(parsed, list):
+        return [
+            str(item).strip()
+            for item in parsed
+            if isinstance(item, str) and item.strip()
+        ]
+    return []
+
+
+def _caller_scopes_and_superuser() -> tuple[set[str], bool]:
+    """Return ``(caller_scopes, is_superuser)`` for the authenticated caller."""
+    user = getattr(g, "current_user", None)
+    is_superuser = bool(getattr(user, "is_superuser", False))
+    claims = getattr(g, "claims", None) or {}
+    raw_scope = claims.get("scope")
+    if isinstance(raw_scope, str):
+        scopes = {s.strip() for s in raw_scope.split() if s.strip()}
+    elif isinstance(raw_scope, (list, tuple, set)):
+        scopes = {str(s).strip() for s in raw_scope if isinstance(s, str) and s.strip()}
+    else:
+        scopes = set()
+    if not scopes and user is not None:
+        user_scopes = getattr(user, "scopes", None)
+        if isinstance(user_scopes, (list, tuple, set)):
+            scopes = {
+                str(s).strip() for s in user_scopes if isinstance(s, str) and s.strip()
+            }
+    return scopes, is_superuser
+
+
 def _current_identity_id() -> int | None:
     """Return the authenticated caller's numeric identity ID if available."""
     user = getattr(g, "current_user", None)
@@ -166,6 +210,10 @@ def _serialize_function(
             getattr(row, "memory_mb", DEFAULT_MEMORY_MB) or DEFAULT_MEMORY_MB
         ),
         "env_vars": _parse_json_dict(getattr(row, "env_vars_json", None)),
+        "granted_scopes": _parse_json_list(getattr(row, "granted_scopes_json", None)),
+        "allowed_egress_domains": _parse_json_list(
+            getattr(row, "allowed_egress_domains_json", None)
+        ),
         "schedule_cron": getattr(row, "schedule_cron", None),
         "execution_namespace": (
             getattr(row, "execution_namespace", None) or DEFAULT_EXECUTION_NAMESPACE
@@ -274,6 +322,20 @@ def _validate_memory(value: Any) -> tuple[int | None, tuple[Any, int] | None]:
     return parsed, None
 
 
+@bp.route("/permissions/catalog", methods=["GET"])
+@login_required
+@require_scope("runs:read")
+async def get_permissions_catalog():
+    """Return the grouped grantable CodeRun scope catalog and caller eligibility."""
+    caller_scopes, is_superuser = _caller_scopes_and_superuser()
+    return (
+        jsonify(
+            build_permission_catalog_payload(caller_scopes, is_superuser=is_superuser)
+        ),
+        200,
+    )
+
+
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("runs:read")
@@ -376,6 +438,33 @@ async def create_run_function():
     if env_vars is not None and not isinstance(env_vars, dict):
         return ApiResponse.validation_error("env_vars", "must be a JSON object")
 
+    caller_scopes, is_superuser = _caller_scopes_and_superuser()
+    raw_granted_scopes = data.get("granted_scopes", data.get("granted_scopes_json"))
+    try:
+        granted_scopes = validate_granted_scopes(
+            raw_granted_scopes, caller_scopes, is_superuser=is_superuser
+        )
+    except ScopeValidationError as exc:
+        extra: dict[str, Any] = {"field": "granted_scopes"}
+        if exc.invalid_scopes:
+            extra["invalid_scopes"] = exc.invalid_scopes
+        if exc.missing_scopes:
+            extra["missing_scopes"] = exc.missing_scopes
+        return ApiResponse.error(exc.message, exc.status_code, **extra)
+
+    raw_egress_domains = data.get(
+        "allowed_egress_domains", data.get("allowed_egress_domains_json")
+    )
+    try:
+        allowed_egress_domains = validate_egress_domains(raw_egress_domains)
+    except EgressDomainValidationError as exc:
+        return ApiResponse.error(
+            exc.message,
+            exc.status_code,
+            field="allowed_egress_domains",
+            invalid_domains=exc.invalid_domains,
+        )
+
     description = data.get("description")
     entrypoint = data.get("entrypoint")
     schedule_cron = data.get("schedule_cron")
@@ -414,6 +503,8 @@ async def create_run_function():
             timeout_seconds=timeout_seconds,
             memory_mb=memory_mb,
             env_vars_json=env_vars or {},
+            granted_scopes_json=granted_scopes,
+            allowed_egress_domains_json=allowed_egress_domains,
             schedule_cron=schedule_cron,
             execution_namespace=execution_namespace,
             worker_cluster=worker_cluster,
@@ -432,6 +523,7 @@ async def create_run_function():
             code_sha256=artifact.code_sha256,
             runtime=runtime,
             entrypoint=entrypoint,
+            granted_scopes_json=granted_scopes,
             created_by_identity_id=identity_id,
             created_at=now,
         )
@@ -578,6 +670,37 @@ async def update_run_function(func_id: int):
             return ApiResponse.validation_error("env_vars", "must be a JSON object")
         update_fields["env_vars_json"] = env_vars or {}
 
+    if "granted_scopes" in data or "granted_scopes_json" in data:
+        caller_scopes, is_superuser = _caller_scopes_and_superuser()
+        raw_granted_scopes = data.get("granted_scopes", data.get("granted_scopes_json"))
+        try:
+            update_fields["granted_scopes_json"] = validate_granted_scopes(
+                raw_granted_scopes, caller_scopes, is_superuser=is_superuser
+            )
+        except ScopeValidationError as exc:
+            extra: dict[str, Any] = {"field": "granted_scopes"}
+            if exc.invalid_scopes:
+                extra["invalid_scopes"] = exc.invalid_scopes
+            if exc.missing_scopes:
+                extra["missing_scopes"] = exc.missing_scopes
+            return ApiResponse.error(exc.message, exc.status_code, **extra)
+
+    if "allowed_egress_domains" in data or "allowed_egress_domains_json" in data:
+        raw_egress_domains = data.get(
+            "allowed_egress_domains", data.get("allowed_egress_domains_json")
+        )
+        try:
+            update_fields["allowed_egress_domains_json"] = validate_egress_domains(
+                raw_egress_domains
+            )
+        except EgressDomainValidationError as exc:
+            return ApiResponse.error(
+                exc.message,
+                exc.status_code,
+                field="allowed_egress_domains",
+                invalid_domains=exc.invalid_domains,
+            )
+
     if "schedule_cron" in data:
         update_fields["schedule_cron"] = data["schedule_cron"]
 
@@ -653,6 +776,10 @@ async def update_run_function(func_id: int):
                 code_sha256=artifact.code_sha256,
                 runtime=eff_runtime,
                 entrypoint=update_fields.get("entrypoint", existing.entrypoint),
+                granted_scopes_json=update_fields.get(
+                    "granted_scopes_json",
+                    _parse_json_list(getattr(existing, "granted_scopes_json", None)),
+                ),
                 created_by_identity_id=identity_id,
                 created_at=now,
             )
@@ -985,6 +1112,8 @@ async def claim_pending_executions():
                     f.timeout_seconds,
                     f.memory_mb,
                     f.env_vars_json,
+                    f.granted_scopes_json,
+                    f.allowed_egress_domains_json,
                     f.execution_namespace,
                     f.worker_cluster
                 """  # nosec B608 - cluster_filter is a hardcoded SQL fragment
@@ -1030,6 +1159,10 @@ async def claim_pending_executions():
                         ),
                         "memory_mb": int(r["memory_mb"] or DEFAULT_MEMORY_MB),
                         "env_vars": _parse_json_dict(r["env_vars_json"]),
+                        "granted_scopes": _parse_json_list(r["granted_scopes_json"]),
+                        "allowed_egress_domains": _parse_json_list(
+                            r["allowed_egress_domains_json"]
+                        ),
                         "execution_namespace": (
                             r["execution_namespace"] or DEFAULT_EXECUTION_NAMESPACE
                         ),
@@ -1041,7 +1174,7 @@ async def claim_pending_executions():
 
         # Generic / SQLite fallback: select pending candidates and conditionally claim
         pending_rows = db(db.run_executions.status == "pending").select(
-            orderby=db.run_executions.created_at | db.run_executions.id,
+            orderby=db.run_executions.id,
             limitby=(0, limit * 3),
         )  # tenant-scope-exempt: internal svc-runworker claims across active tenants
 
@@ -1106,6 +1239,12 @@ async def claim_pending_executions():
                         or DEFAULT_MEMORY_MB
                     ),
                     "env_vars": _parse_json_dict(getattr(func, "env_vars_json", None)),
+                    "granted_scopes": _parse_json_list(
+                        getattr(func, "granted_scopes_json", None)
+                    ),
+                    "allowed_egress_domains": _parse_json_list(
+                        getattr(func, "allowed_egress_domains_json", None)
+                    ),
                     "execution_namespace": (
                         getattr(func, "execution_namespace", None)
                         or DEFAULT_EXECUTION_NAMESPACE
@@ -1118,6 +1257,17 @@ async def claim_pending_executions():
         return claimed_items
 
     items = await run_in_threadpool(claim)
+    for item in items:
+        scopes = item.get("granted_scopes") or []
+        if scopes:
+            ttl = min(int(item["timeout_seconds"]) + 60, MAX_CODERUN_TTL_SECONDS)
+            item["elder_api_token"] = generate_coderun_token(
+                tenant_id=int(item["tenant_id"]),
+                function_id=int(item["function_id"]),
+                execution_id=str(item["execution_id"]),
+                scopes=scopes,
+                ttl_seconds=ttl,
+            )
     logger.info(
         "run_executions_claimed",
         claimed_count=len(items),
