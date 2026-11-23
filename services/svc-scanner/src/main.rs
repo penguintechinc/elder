@@ -258,6 +258,30 @@ fn write_heartbeat(path: &Path) {
     }
 }
 
+async fn send_worker_heartbeat(client: &ElderApiClient, cfg: &ScanningConfig) {
+    let hostname = std::env::var("POD_NAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "svc-scanner".to_string());
+    let worker_id = std::env::var("SCANNER_WORKER_ID")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| hostname.clone());
+    let payload = json!({
+        "worker_id": worker_id,
+        "worker_type": "scanner",
+        "hostname": hostname,
+        "version": env!("CARGO_PKG_VERSION"),
+        "cluster": cfg.scanner_cluster,
+        "capabilities": ["network", "banner", "http_screenshot", "sbom", "nvd"],
+    });
+    if let Err(err) = client
+        .post_json::<_, Value>("/api/v1/admin/workers/heartbeat", &payload)
+        .await
+    {
+        tracing::debug!(error = %err, "Worker fleet heartbeat failed (best-effort)");
+    }
+}
+
 fn max_heartbeat_age_secs(poll_interval_secs: u64, job_timeout_secs: u64) -> u64 {
     60_u64.max(
         poll_interval_secs
@@ -320,6 +344,7 @@ async fn execute_runner(loop_mode: bool, interval_override: Option<u64>) -> Resu
     let mut last_nvd_sync: Option<DateTime<Utc>> = None;
 
     write_heartbeat(&cfg.health_file);
+    send_worker_heartbeat(&client, &cfg).await;
 
     if !loop_mode {
         run_cycle(Arc::clone(&cfg), client, metrics, &mut last_nvd_sync).await?;
@@ -327,9 +352,28 @@ async fn execute_runner(loop_mode: bool, interval_override: Option<u64>) -> Resu
         return Ok(());
     }
 
+    let hb_interval_secs = std::env::var("SCANNER_HEARTBEAT_INTERVAL_SECONDS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(30)
+        .clamp(10, 300);
+    let hb_client = Arc::clone(&client);
+    let hb_cfg = Arc::clone(&cfg);
+    let heartbeat_task = tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(hb_interval_secs));
+        // First tick fires immediately, skip since startup already sent one.
+        ticker.tick().await;
+        loop {
+            ticker.tick().await;
+            write_heartbeat(&hb_cfg.health_file);
+            send_worker_heartbeat(&hb_client, &hb_cfg).await;
+        }
+    });
+
     tracing::info!(
         interval_secs = poll_interval.as_secs(),
         progress_interval_secs = cfg.progress_interval_secs,
+        heartbeat_interval_secs = hb_interval_secs,
         cluster = cfg.scanner_cluster.as_deref().unwrap_or("default"),
         health_file = %cfg.health_file.display(),
         "Starting svc-scanner polling loop"
@@ -348,6 +392,7 @@ async fn execute_runner(loop_mode: bool, interval_override: Option<u64>) -> Resu
             tracing::error!(error = %err, "Scanning cycle encountered an error");
         }
         write_heartbeat(&cfg.health_file);
+        send_worker_heartbeat(&client, &cfg).await;
 
         tokio::select! {
             _ = shutdown_signal() => {
@@ -357,6 +402,8 @@ async fn execute_runner(loop_mode: bool, interval_override: Option<u64>) -> Resu
             _ = tokio::time::sleep(poll_interval) => {}
         }
     }
+
+    heartbeat_task.abort();
 
     Ok(())
 }
