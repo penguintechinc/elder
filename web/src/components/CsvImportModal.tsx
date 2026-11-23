@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Upload, Download, X, AlertCircle, CheckCircle2, FileSpreadsheet } from "lucide-react";
 import toast from "react-hot-toast";
-import api from "@/lib/api";
+import api, { type CsvImportResponse } from "@/lib/api";
 import Button from "@/components/Button";
 import Card, { CardHeader, CardContent } from "@/components/Card";
 
@@ -21,7 +21,7 @@ interface CsvImportModalProps {
   resource: string;
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (result?: CsvImportResponse) => void;
 }
 
 export default function CsvImportModal({
@@ -52,13 +52,20 @@ export default function CsvImportModal({
   const importMutation = useMutation({
     mutationFn: (payload: File | string) =>
       api.importCsvResource(resource, payload),
-    onSuccess: (res: { imported: number }) => {
-      toast.success(`Imported ${res.imported} row(s) successfully`);
+    onSuccess: (res: CsvImportResponse) => {
+      if (res.job_id) {
+        toast.success(
+          res.message ||
+            `Import job queued${res.total_rows !== undefined ? ` (${res.total_rows} row(s))` : ""}`,
+        );
+      } else {
+        toast.success(`Imported ${res.imported ?? 0} row(s) successfully`);
+      }
       setValidationErrors([]);
       setHeaderMismatch(null);
       setSelectedFile(null);
       setCsvText("");
-      onSuccess?.();
+      onSuccess?.(res);
       onClose();
     },
     onError: (err: {
