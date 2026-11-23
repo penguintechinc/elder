@@ -249,10 +249,13 @@ test-beta: ## Run full test suite against beta: smoke + REST API + Playwright e2
 	@echo "$(BLUE)[2/3] REST API tests...$(RESET)"
 	@$(PYTHON) scripts/test-rest-api.py --url https://dal2.penguintech.io --host-header elder.penguintech.cloud --no-verify-ssl
 	@echo "$(BLUE)[3/3] Playwright e2e...$(RESET)"
-	@cd web && PLAYWRIGHT_BASE_URL=https://dal2.penguintech.io \
+	@set -e; rc=0; \
+	(cd web && PLAYWRIGHT_BASE_URL=https://dal2.penguintech.io \
 		PLAYWRIGHT_TARGET_HOST=elder.penguintech.cloud \
 		PLAYWRIGHT_WEBSERVER_DISABLED=1 \
-		npx playwright test
+		npx playwright test) || rc=$$?; \
+	rm -rf /tmp/playwright-elder; \
+	exit $$rc
 	@echo "$(GREEN)All beta tests passed$(RESET)"
 
 test-unit: ## Run unit tests
@@ -336,7 +339,7 @@ seed-k8s-geo-demo: ## Seed demo K8s cluster hierarchy (parent_id-linked) + geo-l
 	@echo "$(GREEN)K8s/geo demo data seeded$(RESET)"
 
 screenshots: ## Capture screenshots with mock data (requires seed-mock-data first)
-	@node scripts/capture-screenshots.cjs
+	@node scripts/capture-screenshots.cjs --prune
 
 pre-commit: ## Run full pre-commit sequence (lint + security + tests + smoke-test)
 	@echo "$(YELLOW)=== Pre-commit Checks ===$(RESET)"
