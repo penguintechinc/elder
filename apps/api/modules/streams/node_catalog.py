@@ -930,6 +930,115 @@ BUILTIN_UI_META: dict[str, dict[str, Any]] = {
             {"name": "body", "type": "any", "description": "Formatted response body"},
         ],
     },
+    "action_s3": {
+        "stage": "actions",
+        "subcategory": "Storage & Files",
+        "icon": "HardDrive",
+        "color": "#10b981",
+        "config_schema": [
+            _cf(
+                "operation",
+                "Operation",
+                "select",
+                required=True,
+                default="fetch",
+                options=[
+                    {"value": "fetch", "label": "Fetch JSON"},
+                    {"value": "push", "label": "Push JSON"},
+                ],
+                description="Fetch a .json object from S3 or push a JSON payload to S3.",
+            ),
+            _cf(
+                "bucket",
+                "Bucket",
+                "string",
+                required=True,
+                placeholder="my-elder-bucket",
+                supports_expressions=True,
+                description="Target S3 bucket name.",
+            ),
+            _cf(
+                "key",
+                "Object Key",
+                "string",
+                required=True,
+                placeholder="exports/{{$json.id}}.json",
+                supports_expressions=True,
+                description="S3 object key (must end with .json for fetch).",
+            ),
+            _cf(
+                "region",
+                "Region",
+                "string",
+                default="us-east-1",
+                placeholder="us-east-1",
+                supports_expressions=True,
+                description="AWS region (default: us-east-1).",
+            ),
+            _cf(
+                "endpoint_url",
+                "Custom Endpoint URL",
+                "string",
+                placeholder="https://minio.example.com",
+                supports_expressions=True,
+                description=(
+                    "Optional S3-compatible endpoint URL (MinIO, Cloudflare R2, "
+                    "DigitalOcean Spaces). Must start with http:// or https://."
+                ),
+            ),
+            _cf(
+                "access_key_id",
+                "Access Key ID",
+                "string",
+                placeholder="Leave blank to use default AWS/IRSA credentials",
+                supports_expressions=True,
+                description="Optional static AWS access key ID.",
+            ),
+            _cf(
+                "secret_access_key",
+                "Secret Access Key",
+                "password",
+                placeholder="Leave blank to use default AWS/IRSA credentials",
+                supports_expressions=True,
+                description="Optional static AWS secret access key (never logged).",
+            ),
+            _cf(
+                "payload",
+                "JSON Payload",
+                "json",
+                supports_expressions=True,
+                show_when={"field": "operation", "equals": "push"},
+                description=(
+                    "JSON payload to upload (defaults to upstream 'in' payload if empty)."
+                ),
+            ),
+        ],
+        "output_schema": [
+            {
+                "name": "operation",
+                "type": "string",
+                "description": "Executed S3 operation ('fetch' or 'push')",
+            },
+            {"name": "bucket", "type": "string", "description": "Target S3 bucket"},
+            {"name": "key", "type": "string", "description": "Target S3 object key"},
+            {"name": "etag", "type": "string", "description": "S3 object ETag"},
+            {
+                "name": "data",
+                "type": "any",
+                "description": "Parsed JSON document returned on fetch",
+            },
+            {
+                "name": "bytes_read",
+                "type": "number",
+                "description": "Bytes downloaded on fetch",
+            },
+            {
+                "name": "bytes_written",
+                "type": "number",
+                "description": "UTF-8 JSON bytes uploaded on push",
+            },
+        ],
+    },
 }
 
 BUILTIN_OPERATOR_OPTIONS = _FILTER_OPERATOR_OPTIONS
