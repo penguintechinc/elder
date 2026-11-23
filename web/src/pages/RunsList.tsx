@@ -14,6 +14,8 @@ import {
   ChevronRight,
   Database,
   HardDrive,
+  Shield,
+  ShieldCheck,
 } from "lucide-react";
 import api, {
   type RunFunction,
@@ -21,6 +23,8 @@ import api, {
   type RunRuntime,
 } from "@/lib/api";
 import VillageIdBadge from "@/components/VillageIdBadge";
+import CodeRunPermissionsEditor from "@/components/runs/CodeRunPermissionsEditor";
+import { parseEgressDomains } from "@/modules/runs/permissions";
 import {
   RUN_RUNTIMES,
   getRuntimeMeta,
@@ -38,6 +42,8 @@ interface CreateFormState {
   schedule_cron: string;
   execution_namespace: string;
   worker_cluster: string;
+  granted_scopes: string[];
+  allowed_egress_domains: string;
 }
 
 const DEFAULT_CREATE_FORM: CreateFormState = {
@@ -50,6 +56,8 @@ const DEFAULT_CREATE_FORM: CreateFormState = {
   schedule_cron: "",
   execution_namespace: "elder-runs",
   worker_cluster: "",
+  granted_scopes: [],
+  allowed_egress_domains: "",
 };
 
 export default function RunsList() {
@@ -174,6 +182,8 @@ export default function RunsList() {
       schedule_cron: form.schedule_cron.trim() || null,
       execution_namespace: form.execution_namespace.trim() || "elder-runs",
       worker_cluster: form.worker_cluster.trim() || null,
+      granted_scopes: form.granted_scopes,
+      allowed_egress_domains: parseEgressDomains(form.allowed_egress_domains),
     };
 
     createMutation.mutate(payload);
@@ -373,6 +383,37 @@ export default function RunsList() {
                             </span>
                           );
                         })()}
+                      {(() => {
+                        const scopes = fn.granted_scopes ?? [];
+                        const hasScopes = scopes.length > 0;
+                        return (
+                          <span
+                            data-testid={`permissions-badge-${fn.id}`}
+                            title={
+                              hasScopes
+                                ? `Granted scopes: ${scopes.join(", ")}`
+                                : "Isolated: zero Elder API scopes granted"
+                            }
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-mono ${
+                              hasScopes
+                                ? "bg-amber-900/60 text-amber-200 border border-amber-700/60"
+                                : "bg-slate-900 text-slate-300 border border-slate-700"
+                            }`}
+                          >
+                            {hasScopes ? (
+                              <ShieldCheck
+                                className="w-3 h-3"
+                                aria-hidden="true"
+                              />
+                            ) : (
+                              <Shield className="w-3 h-3" aria-hidden="true" />
+                            )}
+                            {hasScopes
+                              ? `${scopes.length} ${scopes.length === 1 ? "scope" : "scopes"}`
+                              : "Isolated"}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -416,7 +457,7 @@ export default function RunsList() {
           aria-modal="true"
           aria-labelledby="create-run-modal-title"
         >
-          <div className="w-full max-w-2xl bg-slate-800 border border-slate-700 rounded-xl shadow-2xl my-8">
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-slate-800 border border-slate-700 rounded-xl shadow-2xl my-8">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
               <h2
                 id="create-run-modal-title"
@@ -639,6 +680,22 @@ export default function RunsList() {
                   />
                 </div>
               </div>
+
+              <CodeRunPermissionsEditor
+                runtime={form.runtime}
+                grantedScopes={form.granted_scopes}
+                onGrantedScopesChange={(nextScopes) =>
+                  setForm((prev) => ({ ...prev, granted_scopes: nextScopes }))
+                }
+                allowedEgressDomains={form.allowed_egress_domains}
+                onAllowedEgressDomainsChange={(nextDomains) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    allowed_egress_domains: nextDomains,
+                  }))
+                }
+                idPrefix="create-run"
+              />
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-700">
                 <button

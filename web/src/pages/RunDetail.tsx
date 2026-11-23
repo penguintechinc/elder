@@ -17,6 +17,9 @@ import {
   Copy,
   Check,
   ExternalLink,
+  Shield,
+  ShieldCheck,
+  Globe,
 } from "lucide-react";
 import api, {
   type RunExecution,
@@ -24,6 +27,11 @@ import api, {
   type RunRuntime,
 } from "@/lib/api";
 import VillageIdBadge from "@/components/VillageIdBadge";
+import CodeRunPermissionsEditor from "@/components/runs/CodeRunPermissionsEditor";
+import {
+  formatEgressDomains,
+  parseEgressDomains,
+} from "@/modules/runs/permissions";
 import {
   RUN_RUNTIMES,
   getExecutionStatusBadgeClass,
@@ -41,6 +49,8 @@ interface EditFormState {
   schedule_cron: string;
   execution_namespace: string;
   worker_cluster: string;
+  granted_scopes: string[];
+  allowed_egress_domains: string;
 }
 
 export default function RunDetail() {
@@ -92,6 +102,8 @@ export default function RunDetail() {
       schedule_cron: fn.schedule_cron || "",
       execution_namespace: fn.execution_namespace || "elder-runs",
       worker_cluster: fn.worker_cluster || "",
+      granted_scopes: fn.granted_scopes ?? [],
+      allowed_egress_domains: formatEgressDomains(fn.allowed_egress_domains),
     });
   }, [fn]);
 
@@ -173,6 +185,8 @@ export default function RunDetail() {
       schedule_cron: form.schedule_cron.trim() || null,
       execution_namespace: form.execution_namespace.trim() || "elder-runs",
       worker_cluster: form.worker_cluster.trim() || null,
+      granted_scopes: form.granted_scopes,
+      allowed_egress_domains: parseEgressDomains(form.allowed_egress_domains),
     });
   };
 
@@ -291,6 +305,42 @@ export default function RunDetail() {
             {fn.description && (
               <p className="text-slate-400 text-sm">{fn.description}</p>
             )}
+            <div
+              data-testid="run-detail-granted-scopes"
+              className="flex flex-wrap items-center gap-1.5 pt-1"
+            >
+              {fn.granted_scopes && fn.granted_scopes.length > 0 ? (
+                fn.granted_scopes.map((scope) => (
+                  <span
+                    key={scope}
+                    data-testid={`granted-scope-pill-${scope}`}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono bg-amber-900/50 text-amber-200 border border-amber-700/60"
+                  >
+                    <ShieldCheck className="w-3 h-3" aria-hidden="true" />
+                    {scope}
+                  </span>
+                ))
+              ) : (
+                <span
+                  data-testid="granted-scope-isolated"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono bg-slate-800 text-slate-300 border border-slate-700"
+                >
+                  <Shield className="w-3 h-3" aria-hidden="true" />
+                  Isolated
+                </span>
+              )}
+              {fn.allowed_egress_domains &&
+                fn.allowed_egress_domains.length > 0 && (
+                  <span
+                    data-testid="granted-egress-domains-pill"
+                    title={`Allowed egress: ${fn.allowed_egress_domains.join(", ")}`}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono bg-sky-900/50 text-sky-200 border border-sky-700/60"
+                  >
+                    <Globe className="w-3 h-3" aria-hidden="true" />
+                    Egress: {fn.allowed_egress_domains.join(", ")}
+                  </span>
+                )}
+            </div>
           </div>
 
           <button
@@ -528,6 +578,25 @@ export default function RunDetail() {
                 />
               </div>
             </div>
+
+            <CodeRunPermissionsEditor
+              runtime={form.runtime}
+              grantedScopes={form.granted_scopes}
+              onGrantedScopesChange={(nextScopes) =>
+                setForm((prev) =>
+                  prev ? { ...prev, granted_scopes: nextScopes } : prev,
+                )
+              }
+              allowedEgressDomains={form.allowed_egress_domains}
+              onAllowedEgressDomainsChange={(nextDomains) =>
+                setForm((prev) =>
+                  prev
+                    ? { ...prev, allowed_egress_domains: nextDomains }
+                    : prev,
+                )
+              }
+              idPrefix="detail-run"
+            />
           </form>
 
           <div className="space-y-6 h-fit">

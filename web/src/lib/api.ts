@@ -4386,9 +4386,227 @@ class ApiClient {
       stderr: row.stderr ?? row.stderr_log ?? null,
     };
   }
+
+  async getRunPermissionsCatalog(): Promise<RunPermissionsCatalogResponse> {
+    try {
+      const response = await this.client.get("/runs/permissions/catalog");
+      const raw = response.data as
+        | {
+            groups?: Array<{
+              id?: string;
+              key?: string;
+              name?: string;
+              label?: string;
+              title?: string;
+              description?: string;
+              scopes?: Array<{
+                scope?: string;
+                id?: string;
+                key?: string;
+                label?: string;
+                name?: string;
+                description?: string;
+                grantable?: boolean;
+              }>;
+            }>;
+            scopes?: RunPermissionScopeItem[];
+          }
+        | undefined;
+
+      if (raw && Array.isArray(raw.groups) && raw.groups.length > 0) {
+        const groups: RunPermissionGroup[] = raw.groups.map((group, idx) => ({
+          id: group.id ?? group.key ?? group.name ?? `group-${idx}`,
+          label: group.label ?? group.title ?? group.name ?? `Group ${idx + 1}`,
+          description: group.description,
+          scopes: Array.isArray(group.scopes)
+            ? group.scopes
+                .filter((item) => Boolean(item.scope ?? item.id ?? item.key))
+                .map((item) => {
+                  const scopeId = (item.scope ?? item.id ?? item.key) as string;
+                  return {
+                    scope: scopeId,
+                    label: item.label ?? item.name ?? scopeId,
+                    description: item.description ?? "",
+                    grantable: item.grantable !== false,
+                  };
+                })
+            : [],
+        }));
+        return {
+          groups,
+          scopes: raw.scopes,
+          source: "api",
+        };
+      }
+
+      return DEFAULT_RUN_PERMISSIONS_CATALOG;
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response
+        ?.status;
+      if (status === 404) {
+        return DEFAULT_RUN_PERMISSIONS_CATALOG;
+      }
+      throw err;
+    }
+  }
 }
 
 export type RunRuntime = "nodejs" | "rust" | "python" | "golang" | "ruby";
+
+export interface RunPermissionScopeItem {
+  scope: string;
+  label: string;
+  description: string;
+  grantable: boolean;
+}
+
+export interface RunPermissionGroup {
+  id: string;
+  label: string;
+  description?: string;
+  scopes: RunPermissionScopeItem[];
+}
+
+export interface RunPermissionsCatalogResponse {
+  groups: RunPermissionGroup[];
+  scopes?: RunPermissionScopeItem[];
+  source?: "api" | "fallback";
+}
+
+export const DEFAULT_RUN_PERMISSIONS_CATALOG: RunPermissionsCatalogResponse = {
+  source: "fallback",
+  groups: [
+    {
+      id: "resources",
+      label: "Resources",
+      description:
+        "Read and update Elder CMDB entities, metadata, and relationships.",
+      scopes: [
+        {
+          scope: "entities:read",
+          label: "Read Entities",
+          description: "List and inspect entities, attributes, and metadata",
+          grantable: true,
+        },
+        {
+          scope: "entities:write",
+          label: "Write Entities",
+          description:
+            "Create or update entity metadata, tags, and attributes",
+          grantable: true,
+        },
+        {
+          scope: "entities:delete",
+          label: "Delete Entities",
+          description: "Delete entities and managed resources",
+          grantable: true,
+        },
+        {
+          scope: "relationships:read",
+          label: "Read Relationships",
+          description: "Inspect entity relationships and dependency graphs",
+          grantable: true,
+        },
+        {
+          scope: "relationships:write",
+          label: "Write Relationships",
+          description: "Create or update relationships between entities",
+          grantable: true,
+        },
+      ],
+    },
+    {
+      id: "integrations",
+      label: "Integrations",
+      description:
+        "Inspect connectors and trigger on-demand syncs (e.g. FleetDM).",
+      scopes: [
+        {
+          scope: "integrations:read",
+          label: "Read Integrations",
+          description: "View configured integrations and connector sync status",
+          grantable: true,
+        },
+        {
+          scope: "integrations:sync",
+          label: "Trigger Integration Sync",
+          description:
+            "Trigger on-demand syncs for connected integrations (e.g. FleetDM)",
+          grantable: true,
+        },
+        {
+          scope: "integrations:write",
+          label: "Manage Integrations",
+          description: "Create or modify integration configurations",
+          grantable: true,
+        },
+      ],
+    },
+    {
+      id: "workstreams_webhooks",
+      label: "Workstreams & Webhooks",
+      description: "Read or trigger workstreams and manage outbound webhooks.",
+      scopes: [
+        {
+          scope: "workstreams:read",
+          label: "Read Workstreams",
+          description: "Inspect workstreams, pipelines, and routing rules",
+          grantable: true,
+        },
+        {
+          scope: "workstreams:write",
+          label: "Manage Workstreams",
+          description: "Update workstream definitions and trigger executions",
+          grantable: true,
+        },
+        {
+          scope: "webhooks:read",
+          label: "Read Webhooks",
+          description: "View registered outbound webhooks and delivery logs",
+          grantable: true,
+        },
+        {
+          scope: "webhooks:write",
+          label: "Manage Webhooks",
+          description: "Create, update, or dispatch outbound webhooks",
+          grantable: true,
+        },
+      ],
+    },
+    {
+      id: "work_management",
+      label: "Work Management",
+      description:
+        "Access tickets, tasks, and programmatic CodeRun invocations.",
+      scopes: [
+        {
+          scope: "tickets:read",
+          label: "Read Tickets",
+          description: "View tickets, tasks, and work items",
+          grantable: true,
+        },
+        {
+          scope: "tickets:write",
+          label: "Manage Tickets",
+          description: "Create, update, or comment on tickets and work items",
+          grantable: true,
+        },
+        {
+          scope: "runs:read",
+          label: "Read CodeRuns",
+          description: "Inspect CodeRun definitions and execution history",
+          grantable: true,
+        },
+        {
+          scope: "runs:invoke",
+          label: "Invoke CodeRuns",
+          description: "Trigger other CodeRuns programmatically",
+          grantable: true,
+        },
+      ],
+    },
+  ],
+};
 
 export interface RunFunction {
   id: number;
@@ -4406,6 +4624,8 @@ export interface RunFunction {
   execution_namespace?: string | null;
   worker_cluster?: string | null;
   env_vars?: Record<string, string> | null;
+  granted_scopes?: string[];
+  allowed_egress_domains?: string[];
   is_enabled?: boolean;
   village_id?: string | null;
   last_run_at?: string | null;
@@ -4425,6 +4645,8 @@ export interface RunFunctionInput {
   execution_namespace?: string | null;
   worker_cluster?: string | null;
   env_vars?: Record<string, string>;
+  granted_scopes?: string[];
+  allowed_egress_domains?: string[];
   is_enabled?: boolean;
 }
 

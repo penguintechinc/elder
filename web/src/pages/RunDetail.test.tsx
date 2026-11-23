@@ -3,17 +3,22 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import RunDetail from "./RunDetail";
-import api from "@/lib/api";
+import api, { DEFAULT_RUN_PERMISSIONS_CATALOG } from "@/lib/api";
 
-vi.mock("@/lib/api", () => ({
-  default: {
-    getRunFunction: vi.fn(),
-    updateRunFunction: vi.fn(),
-    deleteRunFunction: vi.fn(),
-    invokeRunFunction: vi.fn(),
-    listRunExecutions: vi.fn(),
-  },
-}));
+vi.mock("@/lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api")>();
+  return {
+    ...actual,
+    default: {
+      getRunFunction: vi.fn(),
+      updateRunFunction: vi.fn(),
+      deleteRunFunction: vi.fn(),
+      invokeRunFunction: vi.fn(),
+      listRunExecutions: vi.fn(),
+      getRunPermissionsCatalog: vi.fn(),
+    },
+  };
+});
 
 vi.mock("react-hot-toast", () => ({
   default: {
@@ -44,6 +49,9 @@ function renderRunDetail(initialEntry = "/runs/7") {
 describe("RunDetail", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.getRunPermissionsCatalog).mockResolvedValue(
+      DEFAULT_RUN_PERMISSIONS_CATALOG,
+    );
     vi.mocked(api.getRunFunction).mockResolvedValue({
       id: 7,
       name: "enrich-alerts",
@@ -230,6 +238,81 @@ describe("RunDetail", () => {
     expect(shaEl.textContent).toBe("9f86d081884c7d65…");
     expect(shaEl.getAttribute("title")).toBe(
       "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    );
+  });
+
+  it("displays granted scope pills and persists updated permissions and egress domains", async () => {
+    vi.mocked(api.getRunFunction).mockResolvedValue({
+      id: 7,
+      name: "fleetdm-sync",
+      description: "Syncs FleetDM assets",
+      runtime: "python",
+      code: "import elder\ndef handler(d): return d",
+      timeout_seconds: 30,
+      memory_mb: 256,
+      execution_namespace: "elder-runs",
+      granted_scopes: ["entities:read", "integrations:sync"],
+      allowed_egress_domains: ["fleet.internal.example"],
+    });
+    vi.mocked(api.updateRunFunction).mockResolvedValue({
+      id: 7,
+      name: "fleetdm-sync",
+      description: "Syncs FleetDM assets",
+      runtime: "python",
+      code: "import elder\ndef handler(d): return d",
+      timeout_seconds: 30,
+      memory_mb: 256,
+      execution_namespace: "elder-runs",
+      granted_scopes: ["entities:read", "integrations:sync", "entities:write"],
+      allowed_egress_domains: [
+        "fleet.internal.example",
+        "hooks.slack.com",
+      ],
+    });
+
+    renderRunDetail();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("granted-scope-pill-entities:read")).toBeTruthy();
+      expect(
+        screen.getByTestId("granted-scope-pill-integrations:sync"),
+      ).toBeTruthy();
+      expect(screen.getByTestId("granted-egress-domains-pill")).toBeTruthy();
+    });
+
+    // Add entities:write scope and a second egress domain, then save
+    fireEvent.click(screen.getByLabelText(/Write Entities/i));
+    fireEvent.change(screen.getByLabelText(/Allowed External Egress Domains/i), {
+      target: { value: "fleet.internal.example, hooks.slack.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(api.updateRunFunction).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({
+          granted_scopes: [
+            "entities:read",
+            "integrations:sync",
+            "entities:write",
+          ],
+          allowed_egress_domains: [
+            "fleet.internal.example",
+            "hooks.slack.com",
+          ],
+        }),
+      );
+    });
+  });
+
+  it("displays Isolated pill when no scopes are granted", async () => {
+    renderRunDetail();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("granted-scope-isolated")).toBeTruthy();
+    });
+    expect(screen.getByTestId("granted-scope-isolated").textContent).toBe(
+      "Isolated",
     );
   });
 });

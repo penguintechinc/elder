@@ -3,16 +3,21 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import RunsList from "./RunsList";
-import api from "@/lib/api";
+import api, { DEFAULT_RUN_PERMISSIONS_CATALOG } from "@/lib/api";
 
-vi.mock("@/lib/api", () => ({
-  default: {
-    listRunFunctions: vi.fn(),
-    createRunFunction: vi.fn(),
-    deleteRunFunction: vi.fn(),
-    invokeRunFunction: vi.fn(),
-  },
-}));
+vi.mock("@/lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api")>();
+  return {
+    ...actual,
+    default: {
+      listRunFunctions: vi.fn(),
+      createRunFunction: vi.fn(),
+      deleteRunFunction: vi.fn(),
+      invokeRunFunction: vi.fn(),
+      getRunPermissionsCatalog: vi.fn(),
+    },
+  };
+});
 
 vi.mock("react-hot-toast", () => ({
   default: {
@@ -60,6 +65,8 @@ const SAMPLE_FUNCTIONS = [
     execution_namespace: "elder-runs",
     worker_cluster: "dal2-alpha",
     village_id: "vid-run-1",
+    granted_scopes: ["entities:read", "entities:write", "integrations:sync"],
+    allowed_egress_domains: ["api.fleetdm.local"],
   },
   {
     id: 2,
@@ -74,6 +81,7 @@ const SAMPLE_FUNCTIONS = [
     timeout_seconds: 60,
     memory_mb: 512,
     execution_namespace: "elder-runs",
+    granted_scopes: ["entities:read"],
   },
   {
     id: 3,
@@ -84,12 +92,16 @@ const SAMPLE_FUNCTIONS = [
     timeout_seconds: 15,
     memory_mb: 128,
     execution_namespace: "elder-runs",
+    granted_scopes: [],
   },
 ];
 
 describe("RunsList", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.getRunPermissionsCatalog).mockResolvedValue(
+      DEFAULT_RUN_PERMISSIONS_CATALOG,
+    );
   });
 
   it("renders function list with runtime badges, cron schedule, and namespace", async () => {
@@ -115,6 +127,15 @@ describe("RunsList", () => {
     expect(screen.getByTestId("storage-badge-1").textContent).toBe("S3");
     expect(screen.getByTestId("storage-badge-2").textContent).toBe("DB");
     expect(screen.queryByTestId("storage-badge-3")).toBeNull();
+    expect(screen.getByTestId("permissions-badge-1").textContent).toBe(
+      "3 scopes",
+    );
+    expect(screen.getByTestId("permissions-badge-2").textContent).toBe(
+      "1 scope",
+    );
+    expect(screen.getByTestId("permissions-badge-3").textContent).toBe(
+      "Isolated",
+    );
     expect(screen.getByText("*/5 * * * *")).toBeTruthy();
     expect(screen.getByText("elder-runs @ dal2-alpha")).toBeTruthy();
   });
@@ -180,6 +201,13 @@ describe("RunsList", () => {
     const codeInput = screen.getByLabelText("Code") as HTMLTextAreaElement;
     expect(codeInput.value).toContain("def handler");
 
+    // Grant scopes and egress domains in the permissions editor
+    fireEvent.click(screen.getByLabelText(/Write Entities/i));
+    fireEvent.click(screen.getByLabelText(/Trigger Integration Sync/i));
+    fireEvent.change(screen.getByLabelText(/Allowed External Egress Domains/i), {
+      target: { value: "api.github.com, hooks.slack.com" },
+    });
+
     const submitButtons = screen.getAllByRole("button", {
       name: "Create CodeRun",
     });
@@ -196,6 +224,8 @@ describe("RunsList", () => {
           schedule_cron: "0 * * * *",
           execution_namespace: "elder-runs",
           worker_cluster: "prod-west",
+          granted_scopes: ["entities:write", "integrations:sync"],
+          allowed_egress_domains: ["api.github.com", "hooks.slack.com"],
         }),
       );
     });
