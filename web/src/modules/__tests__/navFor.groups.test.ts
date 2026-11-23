@@ -24,7 +24,9 @@ describe("navFor — one section per WIRED pillar", () => {
       "Workstreams",
       "Work Management",
       "Relationships",
-      "Resources",
+      "Resources — Infrastructure",
+      "Resources — Software",
+      "Resources — Security",
       "Documents",
     ]);
   });
@@ -36,17 +38,19 @@ describe("navFor — one section per WIRED pillar", () => {
     }
   });
 
-  it("merges items from every module in a pillar into that one section", () => {
-    // sbom and services_oncall both live in `entities` and both authored a
-    // "Software & Services" category — the duplicate header is what this fixes.
+  it("merges items from every module in a Resources sub-section and routes cross-cutting items", () => {
+    // sbom and services_oncall share Resources — Software; On-Call routes to Work Management
+    // and Vulnerabilities routes to Resources — Security.
     const nav = navFor(new Set(["sbom", "services_oncall"]));
-    expect(nav).toHaveLength(1);
-    expect(nav[0].header).toBe("Resources");
+    const software = nav.find((c) => c.header === "Resources — Software");
+    const workMgmt = nav.find((c) => c.header === "Work Management");
+    const security = nav.find((c) => c.header === "Resources — Security");
 
-    const names = nav[0].items.map((i) => i.name);
-    expect(names).toEqual(
+    expect(software?.items.map((i) => i.name)).toEqual(
       expect.arrayContaining(["SBOM Dashboard", "Services"]),
     );
+    expect(workMgmt?.items.map((i) => i.href)).toContain("/on-call-rotations");
+    expect(security?.items.map((i) => i.href)).toContain("/vulnerabilities");
   });
 
   it("never emits the same header twice", () => {
@@ -113,16 +117,21 @@ describe("navFor — one section per WIRED pillar", () => {
     expect(navFor(new Set<string>())).toEqual([]);
   });
 
-  it("places Data Inventory under Resources and not under Work Management", () => {
-    const nav = navFor(new Set(["infrastructure", "issues"]));
-    const entitiesSection = nav.find((c) => c.header === "Resources");
+  it("places Data Inventory under Resources — Infrastructure, Dependencies under Relationships, and deduplicates Diagrams", () => {
+    const nav = navFor(new Set(["infrastructure", "issues", "nav_diagrams"]));
+    const infraSection = nav.find(
+      (c) => c.header === "Resources — Infrastructure",
+    );
+    const relSection = nav.find((c) => c.header === "Relationships");
     const workMgmtSection = nav.find((c) => c.header === "Work Management");
+    const docsSection = nav.find((c) => c.header === "Documents");
 
-    expect(entitiesSection).toBeDefined();
+    expect(infraSection).toBeDefined();
+    expect(relSection).toBeDefined();
     expect(workMgmtSection).toBeDefined();
     expect(workMgmtSection?.key).toBe("group-issues");
 
-    const entityItems = entitiesSection!.items.map((i) => ({
+    const entityItems = infraSection!.items.map((i) => ({
       name: i.name,
       href: i.href,
     }));
@@ -130,6 +139,12 @@ describe("navFor — one section per WIRED pillar", () => {
       name: "Data Inventory",
       href: "/data-inventory",
     });
+    expect(infraSection!.items.map((i) => i.href)).not.toContain("/diagram");
+    expect(infraSection!.items.map((i) => i.href)).not.toContain(
+      "/dependencies",
+    );
+    expect(relSection!.items.map((i) => i.href)).toContain("/dependencies");
+    expect(docsSection!.items.map((i) => i.href)).toContain("/diagrams");
 
     const workMgmtNames = workMgmtSection!.items.map((i) => i.name);
     const workMgmtHrefs = workMgmtSection!.items.map((i) => i.href);

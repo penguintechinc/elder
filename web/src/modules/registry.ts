@@ -61,51 +61,80 @@ export function routesFor(enabledModuleIds: Set<string>): RouteObject[] {
   return routes;
 }
 
-/** The five WIRED pillars, in acronym order — this is the sidebar's top level. */
-const GROUP_ORDER: [string, string][] = [
+/**
+ * Sidebar sections in WIRED order, with the Resources pillar split into
+ * Infrastructure, Software, and Security sub-sections.
+ */
+const NAV_SECTIONS: [string, string][] = [
   ["workstreams", "Workstreams"],
   ["issues", "Work Management"],
   ["relationships", "Relationships"],
-  ["entities", "Resources"],
+  ["resources-infrastructure", "Resources — Infrastructure"],
+  ["resources-software", "Resources — Software"],
+  ["resources-security", "Resources — Security"],
   ["documents", "Documents"],
 ];
 
+/** Per-route sidebar section overrides so cross-cutting pages sit in their natural home. */
+const HREF_SECTION_OVERRIDE: Record<string, string> = {
+  "/dependencies": "relationships",
+  "/on-call-rotations": "issues",
+  "/vulnerabilities": "resources-security",
+};
+
+/** Maps each `entities`-group module to its Resources sub-section. */
+const ENTITY_MODULE_SECTION: Record<string, string> = {
+  infrastructure: "resources-infrastructure",
+  ipam: "resources-infrastructure",
+  sbom: "resources-software",
+  services_oncall: "resources-software",
+  ai: "resources-software",
+  secrets: "resources-security",
+};
+
+function resolveNavSection(moduleId: string, moduleGroup: string, href: string): string {
+  const override = HREF_SECTION_OVERRIDE[href];
+  if (override) return override;
+  if (moduleGroup === "entities") {
+    return ENTITY_MODULE_SECTION[moduleId] ?? "resources-infrastructure";
+  }
+  return moduleGroup;
+}
+
 /**
- * Get navigation categories for enabled modules: exactly one collapsible section
- * per WIRED pillar, in acronym order, holding every enabled module's nav items.
+ * Get navigation categories for enabled modules: one collapsible section per
+ * sidebar group (with Resources split into Infrastructure, Software, and Security).
  *
- * Modules each author their own `nav` categories, and those headers collide across
- * modules — `sbom` and `services_oncall` both ship a "Software & Services", and a
- * single-item module renders its name twice (header + item). Emitting one section
- * per pillar removes both classes of duplicate by construction. It also has to be
- * this shape: `MenuCategory` is flat, and `SidebarMenu` drops any category whose
- * visible items are empty, so a header-only pillar row renders as nothing at all.
- *
- * Module sub-headers are intentionally discarded; the items themselves are still
- * contributed by module manifests and gated per tenant by the caller's enabled set.
+ * Enforces global href deduplication across all sections so no route appears
+ * twice in the sidebar, and omits empty sections.
  *
  * @param enabledModuleIds Set of module IDs that are enabled (effective=true)
- * @returns One MenuCategory per populated pillar; empty pillars are omitted
+ * @returns Populated MenuCategory sections in display order
  */
 export function navFor(enabledModuleIds: Set<string>): MenuCategory[] {
-  const out: MenuCategory[] = [];
+  const buckets = new Map<string, MenuItem[]>(
+    NAV_SECTIONS.map(([key]) => [key, []]),
+  );
+  const seenHrefs = new Set<string>();
 
-  for (const [key, label] of GROUP_ORDER) {
-    const items: MenuItem[] = [];
-    const seenHrefs = new Set<string>();
-
-    for (const module of MODULES) {
-      if (module.group !== key || !enabledModuleIds.has(module.id)) continue;
-      for (const category of module.nav) {
-        for (const item of category.items) {
-          // Two modules can surface the same route; keep the first registration.
-          if (seenHrefs.has(item.href)) continue;
-          seenHrefs.add(item.href);
-          items.push(item);
+  for (const module of MODULES) {
+    if (!enabledModuleIds.has(module.id)) continue;
+    for (const category of module.nav) {
+      for (const item of category.items) {
+        if (seenHrefs.has(item.href)) continue;
+        seenHrefs.add(item.href);
+        const sectionKey = resolveNavSection(module.id, module.group, item.href);
+        const bucket = buckets.get(sectionKey);
+        if (bucket) {
+          bucket.push(item);
         }
       }
     }
+  }
 
+  const out: MenuCategory[] = [];
+  for (const [key, label] of NAV_SECTIONS) {
+    const items = buckets.get(key) ?? [];
     if (items.length) {
       out.push({
         header: label,
