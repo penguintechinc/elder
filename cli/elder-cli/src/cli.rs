@@ -5,7 +5,7 @@
 //! dynamically generated `elder <service> <operation>` subcommands covering every
 //! endpoint in `hub-api`.
 
-use clap::{Arg, ArgAction, Command};
+use clap::{Arg, ArgAction, ArgGroup, Command};
 use elder_sdk::{ApiOperation, Catalog, HttpMethod};
 
 /// Flag long-names that are strictly forbidden anywhere in the CLI parser tree
@@ -88,6 +88,7 @@ pub fn build_cli_from_catalog(catalog: &Catalog) -> Command {
         .subcommand(build_id_cmd())
         .subcommand(build_search_cmd(catalog))
         .subcommand(build_ai_research_cmd())
+        .subcommand(build_runs_cmd())
         .subcommand(build_api_cmd())
         .subcommand(build_version_cmd())
         .subcommand(build_completions_cmd())
@@ -96,7 +97,7 @@ pub fn build_cli_from_catalog(catalog: &Catalog) -> Command {
 
     // Dynamically attach every remaining catalog service as `elder <service> <operation>`.
     for service in catalog.services() {
-        if matches!(service, "auth" | "search" | "services") {
+        if matches!(service, "auth" | "search" | "services" | "runs") {
             continue;
         }
         let mut svc_cmd = Command::new(service.to_string())
@@ -277,6 +278,355 @@ fn build_ai_research_cmd() -> Command {
                 .value_name("N")
                 .value_parser(clap::value_parser!(u32).range(1..=50))
                 .help("Maximum reasoning/tool steps"),
+        )
+}
+
+fn build_runs_cmd() -> Command {
+    let runtimes = ["nodejs", "rust", "python", "golang", "ruby"];
+    let exec_statuses = ["pending", "running", "completed", "failed", "timed_out"];
+    let trigger_types = ["manual", "schedule", "stream"];
+
+    Command::new("runs")
+        .about("Manage and invoke Elder Runs serverless functions (/api/v1/runs)")
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .subcommand(
+            Command::new("list")
+                .about("List serverless functions (GET /api/v1/runs)")
+                .arg(
+                    Arg::new("page")
+                        .long("page")
+                        .value_name("N")
+                        .value_parser(clap::value_parser!(u32).range(1..=10_000))
+                        .help("1-based page number"),
+                )
+                .arg(
+                    Arg::new("per-page")
+                        .long("per-page")
+                        .value_name("N")
+                        .value_parser(clap::value_parser!(u32).range(1..=1000))
+                        .help("Items per page"),
+                )
+                .arg(
+                    Arg::new("runtime")
+                        .long("runtime")
+                        .value_name("RUNTIME")
+                        .value_parser(runtimes)
+                        .help("Filter by runtime"),
+                )
+                .arg(
+                    Arg::new("search")
+                        .long("search")
+                        .value_name("TEXT")
+                        .help("Search function name or description"),
+                )
+                .arg(
+                    Arg::new("worker-cluster")
+                        .long("worker-cluster")
+                        .value_name("CLUSTER")
+                        .help("Filter by worker cluster"),
+                )
+                .arg(
+                    Arg::new("is-enabled")
+                        .long("is-enabled")
+                        .value_name("BOOL")
+                        .value_parser(clap::value_parser!(bool))
+                        .help("Filter by enabled state (true/false)"),
+                ),
+        )
+        .subcommand(
+            Command::new("get")
+                .about("Get a serverless function with latest version, executions, and storage metadata")
+                .arg(
+                    Arg::new("func_id")
+                        .required(true)
+                        .value_name("FUNC_ID")
+                        .value_parser(clap::value_parser!(i64))
+                        .help("Numeric function ID"),
+                ),
+        )
+        .subcommand(
+            Command::new("create")
+                .about("Create a new serverless function (POST /api/v1/runs)")
+                .arg(
+                    Arg::new("name")
+                        .long("name")
+                        .required(true)
+                        .value_name("NAME")
+                        .help("Function name"),
+                )
+                .arg(
+                    Arg::new("runtime")
+                        .long("runtime")
+                        .required(true)
+                        .value_name("RUNTIME")
+                        .value_parser(runtimes)
+                        .help("Execution runtime"),
+                )
+                .arg(
+                    Arg::new("code")
+                        .long("code")
+                        .value_name("SOURCE")
+                        .help("Inline function source code"),
+                )
+                .arg(
+                    Arg::new("code-file")
+                        .long("code-file")
+                        .value_name("PATH|-")
+                        .help("Read function source code from file path (or '-' for stdin)"),
+                )
+                .group(
+                    ArgGroup::new("code_source")
+                        .args(["code", "code-file"])
+                        .required(true),
+                )
+                .arg(
+                    Arg::new("description")
+                        .long("description")
+                        .value_name("TEXT")
+                        .help("Optional function description"),
+                )
+                .arg(
+                    Arg::new("entrypoint")
+                        .long("entrypoint")
+                        .value_name("ENTRYPOINT")
+                        .help("Optional entrypoint symbol or command"),
+                )
+                .arg(
+                    Arg::new("timeout-seconds")
+                        .long("timeout-seconds")
+                        .value_name("SECS")
+                        .value_parser(clap::value_parser!(u32).range(1..=3600))
+                        .help("Execution timeout in seconds (1..=3600)"),
+                )
+                .arg(
+                    Arg::new("memory-mb")
+                        .long("memory-mb")
+                        .value_name("MB")
+                        .value_parser(clap::value_parser!(u32).range(32..=16384))
+                        .help("Memory limit in MiB (32..=16384)"),
+                )
+                .arg(
+                    Arg::new("env")
+                        .short('e')
+                        .long("env")
+                        .action(ArgAction::Append)
+                        .value_name("KEY=VAL")
+                        .help("Environment variable KEY=VAL (repeatable)"),
+                )
+                .arg(
+                    Arg::new("schedule-cron")
+                        .long("schedule-cron")
+                        .value_name("EXPR")
+                        .help("Optional cron schedule expression"),
+                )
+                .arg(
+                    Arg::new("execution-namespace")
+                        .long("execution-namespace")
+                        .value_name("NAMESPACE")
+                        .help("Kubernetes namespace for executions"),
+                )
+                .arg(
+                    Arg::new("worker-cluster")
+                        .long("worker-cluster")
+                        .value_name("CLUSTER")
+                        .help("Target worker cluster"),
+                )
+                .arg(
+                    Arg::new("is-enabled")
+                        .long("is-enabled")
+                        .value_name("BOOL")
+                        .value_parser(clap::value_parser!(bool))
+                        .help("Whether the function starts enabled (true/false)"),
+                ),
+        )
+        .subcommand(
+            Command::new("update")
+                .about("Update an existing serverless function (PUT /api/v1/runs/{func_id})")
+                .arg(
+                    Arg::new("func_id")
+                        .required(true)
+                        .value_name("FUNC_ID")
+                        .value_parser(clap::value_parser!(i64))
+                        .help("Numeric function ID"),
+                )
+                .arg(
+                    Arg::new("name")
+                        .long("name")
+                        .value_name("NAME")
+                        .help("Updated function name"),
+                )
+                .arg(
+                    Arg::new("runtime")
+                        .long("runtime")
+                        .value_name("RUNTIME")
+                        .value_parser(runtimes)
+                        .help("Updated runtime"),
+                )
+                .arg(
+                    Arg::new("code")
+                        .long("code")
+                        .value_name("SOURCE")
+                        .conflicts_with("code-file")
+                        .help("Updated inline source code"),
+                )
+                .arg(
+                    Arg::new("code-file")
+                        .long("code-file")
+                        .value_name("PATH|-")
+                        .conflicts_with("code")
+                        .help("Read updated source code from file path (or '-' for stdin)"),
+                )
+                .arg(
+                    Arg::new("description")
+                        .long("description")
+                        .value_name("TEXT")
+                        .help("Updated function description"),
+                )
+                .arg(
+                    Arg::new("entrypoint")
+                        .long("entrypoint")
+                        .value_name("ENTRYPOINT")
+                        .help("Updated entrypoint"),
+                )
+                .arg(
+                    Arg::new("timeout-seconds")
+                        .long("timeout-seconds")
+                        .value_name("SECS")
+                        .value_parser(clap::value_parser!(u32).range(1..=3600))
+                        .help("Updated timeout in seconds (1..=3600)"),
+                )
+                .arg(
+                    Arg::new("memory-mb")
+                        .long("memory-mb")
+                        .value_name("MB")
+                        .value_parser(clap::value_parser!(u32).range(32..=16384))
+                        .help("Updated memory limit in MiB (32..=16384)"),
+                )
+                .arg(
+                    Arg::new("env")
+                        .short('e')
+                        .long("env")
+                        .action(ArgAction::Append)
+                        .value_name("KEY=VAL")
+                        .help("Environment variable KEY=VAL (repeatable; replaces env_vars)"),
+                )
+                .arg(
+                    Arg::new("schedule-cron")
+                        .long("schedule-cron")
+                        .value_name("EXPR")
+                        .help("Updated cron schedule expression"),
+                )
+                .arg(
+                    Arg::new("execution-namespace")
+                        .long("execution-namespace")
+                        .value_name("NAMESPACE")
+                        .help("Updated Kubernetes execution namespace"),
+                )
+                .arg(
+                    Arg::new("worker-cluster")
+                        .long("worker-cluster")
+                        .value_name("CLUSTER")
+                        .help("Updated worker cluster"),
+                )
+                .arg(
+                    Arg::new("is-enabled")
+                        .long("is-enabled")
+                        .value_name("BOOL")
+                        .value_parser(clap::value_parser!(bool))
+                        .help("Enable or disable the function (true/false)"),
+                ),
+        )
+        .subcommand(
+            Command::new("delete")
+                .about("Delete a serverless function (DELETE /api/v1/runs/{func_id})")
+                .arg(
+                    Arg::new("func_id")
+                        .required(true)
+                        .value_name("FUNC_ID")
+                        .value_parser(clap::value_parser!(i64))
+                        .help("Numeric function ID"),
+                ),
+        )
+        .subcommand(
+            Command::new("invoke")
+                .about("Queue an execution for a serverless function (POST /api/v1/runs/{func_id}/invoke)")
+                .arg(
+                    Arg::new("func_id")
+                        .required(true)
+                        .value_name("FUNC_ID")
+                        .value_parser(clap::value_parser!(i64))
+                        .help("Numeric function ID"),
+                )
+                .arg(
+                    Arg::new("input")
+                        .long("input")
+                        .value_name("JSON|@FILE|-")
+                        .help("JSON input payload string, @path/to/file.json, or '-' for stdin"),
+                )
+                .arg(
+                    Arg::new("trigger-type")
+                        .long("trigger-type")
+                        .value_name("TYPE")
+                        .value_parser(trigger_types)
+                        .help("Execution trigger type (manual, schedule, stream)"),
+                ),
+        )
+        .subcommand(
+            Command::new("executions")
+                .about("List function executions (GET /api/v1/runs/executions)")
+                .arg(
+                    Arg::new("func_id")
+                        .value_name("FUNC_ID")
+                        .value_parser(clap::value_parser!(i64))
+                        .help("Optional numeric function ID filter"),
+                )
+                .arg(
+                    Arg::new("function-id")
+                        .long("function-id")
+                        .value_name("FUNC_ID")
+                        .value_parser(clap::value_parser!(i64))
+                        .conflicts_with("func_id")
+                        .help("Optional numeric function ID filter"),
+                )
+                .arg(
+                    Arg::new("status")
+                        .long("status")
+                        .value_name("STATUS")
+                        .value_parser(exec_statuses)
+                        .help("Filter by execution status"),
+                )
+                .arg(
+                    Arg::new("trigger-type")
+                        .long("trigger-type")
+                        .value_name("TYPE")
+                        .value_parser(trigger_types)
+                        .help("Filter by trigger type"),
+                )
+                .arg(
+                    Arg::new("page")
+                        .long("page")
+                        .value_name("N")
+                        .value_parser(clap::value_parser!(u32).range(1..=10_000))
+                        .help("1-based page number"),
+                )
+                .arg(
+                    Arg::new("per-page")
+                        .long("per-page")
+                        .value_name("N")
+                        .value_parser(clap::value_parser!(u32).range(1..=1000))
+                        .help("Items per page"),
+                ),
+        )
+        .subcommand(
+            Command::new("execution")
+                .about("Get a single execution record (GET /api/v1/runs/executions/{execution_id})")
+                .arg(
+                    Arg::new("execution_id")
+                        .required(true)
+                        .value_name("EXECUTION_ID")
+                        .help("Execution UUID"),
+                ),
         )
 }
 

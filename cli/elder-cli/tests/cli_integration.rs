@@ -125,6 +125,8 @@ impl MockServer {
                     let reason = match resp.status {
                         200 => "OK",
                         201 => "Created",
+                        202 => "Accepted",
+                        204 => "No Content",
                         401 => "Unauthorized",
                         403 => "Forbidden",
                         404 => "Not Found",
@@ -693,4 +695,371 @@ async fn rejects_forbidden_secret_flags_at_cli_parser() {
         }
     }
     walk(&build_cli());
+}
+
+#[tokio::test]
+async fn runs_subcommands_cover_crud_invoke_executions_and_s3_metadata() {
+    let sample_fn = |id: i64, with_details: bool| {
+        let mut obj = json!({
+            "id": id,
+            "tenant_id": 7,
+            "village_id": format!("RUN-{id}"),
+            "name": "resize-avatar",
+            "description": "Resizes uploaded avatars",
+            "runtime": "python",
+            "code": "def handler(event): return {'ok': True}",
+            "entrypoint": "handler",
+            "timeout_seconds": 60,
+            "memory_mb": 256,
+            "env_vars": {"BUCKET": "avatars"},
+            "schedule_cron": null,
+            "execution_namespace": "elder-runs",
+            "worker_cluster": "dal2-alpha",
+            "is_enabled": true,
+            "created_at": "2026-11-20T12:00:00+00:00",
+            "updated_at": "2026-11-20T12:05:00+00:00",
+            "storage_backend": "s3",
+            "storage_key": format!("runs/7/{id}/v1/code.py"),
+            "code_sha256": "abc123def456"
+        });
+        if with_details {
+            obj["latest_version"] = json!(1);
+            obj["recent_executions"] = json!([{
+                "id": 101,
+                "execution_id": "exec-uuid-1",
+                "function_id": id,
+                "status": "completed",
+                "trigger_type": "manual",
+                "exit_code": 0,
+                "duration_ms": 215
+            }]);
+        }
+        obj
+    };
+
+    let sample_exec = |func_id: i64, exec_id: &str, status: &str| {
+        json!({
+            "id": 101,
+            "tenant_id": 7,
+            "execution_id": exec_id,
+            "function_id": func_id,
+            "status": status,
+            "trigger_type": "manual",
+            "worker_id": "svc-runworker-1",
+            "input_data": {"width": 128},
+            "output_data": {"ok": true},
+            "stdout_log": "done\n",
+            "stderr_log": "",
+            "exit_code": 0,
+            "duration_ms": 215,
+            "created_at": "2026-11-20T12:01:00+00:00"
+        })
+    };
+
+    let server = MockServer::start(
+        move |req| match (req.method.as_str(), req.target.as_str()) {
+            ("GET", t) if t.starts_with("/api/v1/runs/executions/") => {
+                MockResponse::json(200, sample_exec(42, "exec-uuid-1", "completed"))
+            }
+            ("GET", t) if t.starts_with("/api/v1/runs/executions") => MockResponse::json(
+                200,
+                json!({
+                    "items": [sample_exec(42, "exec-uuid-1", "completed")],
+                    "total": 1,
+                    "page": 1,
+                    "per_page": 20,
+                    "pages": 1
+                }),
+            ),
+            ("GET", "/api/v1/runs/42") => MockResponse::json(200, sample_fn(42, true)),
+            ("GET", t) if t.starts_with("/api/v1/runs") => MockResponse::json(
+                200,
+                json!({
+                    "items": [sample_fn(42, false)],
+                    "total": 1,
+                    "page": 1,
+                    "per_page": 20,
+                    "pages": 1
+                }),
+            ),
+            ("POST", "/api/v1/runs") => MockResponse::json(201, sample_fn(42, false)),
+            ("PUT", "/api/v1/runs/42") => MockResponse::json(200, sample_fn(42, false)),
+            ("DELETE", "/api/v1/runs/42") => MockResponse {
+                status: 204,
+                body: String::new(),
+            },
+            ("POST", "/api/v1/runs/42/invoke") => MockResponse::json(
+                202,
+                json!({
+                    "execution_id": "exec-uuid-1",
+                    "execution": sample_exec(42, "exec-uuid-1", "pending")
+                }),
+            ),
+            _ => MockResponse::json(404, json!({"error": "not found"})),
+        },
+    )
+    .await;
+
+    let tmp = TempDir::new().unwrap();
+    let cfg_path = tmp.path().join("config.toml");
+    let store = MemoryCredentialStore::new();
+    let env = [
+        ("ELDER_API_URL", server.base_url.as_str()),
+        ("ELDER_TOKEN", "runs-jwt-token"),
+    ];
+
+    // 1. list (table output includes storage_backend, storage_key, code_sha256)
+    let (res, out, _) = run_cli(
+        &[
+            "-o",
+            "table",
+            "runs",
+            "list",
+            "--runtime",
+            "python",
+            "--search",
+            "avatar",
+            "--is-enabled",
+            "true",
+        ],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    assert!(out.contains("s3"));
+    assert!(out.contains("runs/"));
+    assert!(out.contains("abc1"));
+
+    // 2. get (JSON + table both surface storage metadata)
+    let (res, out_json, _) = run_cli(
+        &["-o", "json", "runs", "get", "42"],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    let fetched: Value = serde_json::from_str(&out_json).unwrap();
+    assert_eq!(fetched["storage_backend"], "s3");
+    assert_eq!(fetched["storage_key"], "runs/7/42/v1/code.py");
+    assert_eq!(fetched["code_sha256"], "abc123def456");
+    assert_eq!(fetched["latest_version"], 1);
+
+    let (res, out_table, _) = run_cli(
+        &["-o", "table", "runs", "get", "42"],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    assert!(out_table.contains("storage_backend"));
+    assert!(out_table.contains("runs/7/42/v1/code.py"));
+    assert!(out_table.contains("abc123def456"));
+
+    // 3. create with --code-file and --env
+    let mut code_file = NamedTempFile::new().unwrap();
+    std::io::Write::write_all(&mut code_file, b"def handler(e): return {'ok': True}\n").unwrap();
+    let code_path = code_file.path().to_string_lossy().to_string();
+
+    let (res, out, _) = run_cli(
+        &[
+            "-o",
+            "json",
+            "runs",
+            "create",
+            "--name",
+            "resize-avatar",
+            "--runtime",
+            "python",
+            "--code-file",
+            &code_path,
+            "--entrypoint",
+            "handler",
+            "--timeout-seconds",
+            "90",
+            "--memory-mb",
+            "512",
+            "--env",
+            "BUCKET=avatars",
+            "--worker-cluster",
+            "dal2-alpha",
+        ],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    let created: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(created["id"], 42);
+
+    // 4. create with inline --code
+    let (res, _, _) = run_cli(
+        &[
+            "-o",
+            "json",
+            "runs",
+            "create",
+            "--name",
+            "inline-fn",
+            "--runtime",
+            "nodejs",
+            "--code",
+            "console.log('hi')",
+        ],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+
+    // 5. update
+    let (res, _, _) = run_cli(
+        &[
+            "-o",
+            "json",
+            "runs",
+            "update",
+            "42",
+            "--timeout-seconds",
+            "120",
+            "--is-enabled",
+            "false",
+        ],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+
+    // 6. invoke with --input JSON
+    let (res, out, _) = run_cli(
+        &[
+            "-o",
+            "json",
+            "runs",
+            "invoke",
+            "42",
+            "--input",
+            r#"{"width":128}"#,
+            "--trigger-type",
+            "manual",
+        ],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    let invoked: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(invoked["execution_id"], "exec-uuid-1");
+
+    // 7. executions (with positional func_id and --status)
+    let (res, out, _) = run_cli(
+        &[
+            "-o",
+            "json",
+            "runs",
+            "executions",
+            "42",
+            "--status",
+            "completed",
+            "--per-page",
+            "10",
+        ],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    let execs: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(execs["items"][0]["execution_id"], "exec-uuid-1");
+
+    // 8. execution
+    let (res, out, _) = run_cli(
+        &["-o", "json", "runs", "execution", "exec-uuid-1"],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    let exec: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(exec["duration_ms"], 215);
+
+    // 9. delete
+    let (res, out, _) = run_cli(
+        &["-o", "json", "runs", "delete", "42"],
+        cfg_path.clone(),
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    res.unwrap();
+    let deleted: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(deleted["deleted"], true);
+    assert_eq!(deleted["id"], 42);
+
+    // 10. invalid --input JSON fails with usage exit code 2
+    let (res, _, _) = run_cli(
+        &["runs", "invoke", "42", "--input", "{not-json"],
+        cfg_path,
+        &store,
+        b"",
+        &env,
+    )
+    .await;
+    assert_eq!(res.unwrap_err().exit_code_u8(), 2);
+
+    // Verify wire requests recorded by mock server.
+    let reqs = server.requests();
+    assert_eq!(reqs.len(), 10);
+    assert_eq!(reqs[0].method, "GET");
+    assert_eq!(
+        reqs[0].target,
+        "/api/v1/runs?runtime=python&search=avatar&is_enabled=true"
+    );
+    assert_eq!(reqs[3].method, "POST");
+    assert_eq!(reqs[3].target, "/api/v1/runs");
+    let create_payload: Value = serde_json::from_str(&reqs[3].body).unwrap();
+    assert_eq!(
+        create_payload["code"],
+        "def handler(e): return {'ok': True}\n"
+    );
+    assert_eq!(create_payload["env_vars"]["BUCKET"], "avatars");
+    assert_eq!(reqs[5].method, "PUT");
+    assert_eq!(reqs[5].target, "/api/v1/runs/42");
+    let update_payload: Value = serde_json::from_str(&reqs[5].body).unwrap();
+    assert_eq!(update_payload["timeout_seconds"], 120);
+    assert_eq!(update_payload["is_enabled"], false);
+    assert_eq!(reqs[6].method, "POST");
+    assert_eq!(reqs[6].target, "/api/v1/runs/42/invoke");
+    let invoke_payload: Value = serde_json::from_str(&reqs[6].body).unwrap();
+    assert_eq!(invoke_payload["input_data"]["width"], 128);
+    assert_eq!(invoke_payload["trigger_type"], "manual");
+    assert_eq!(reqs[7].method, "GET");
+    assert_eq!(
+        reqs[7].target,
+        "/api/v1/runs/executions?per_page=10&function_id=42&status=completed"
+    );
+    assert_eq!(reqs[8].method, "GET");
+    assert_eq!(reqs[8].target, "/api/v1/runs/executions/exec-uuid-1");
+    assert_eq!(reqs[9].method, "DELETE");
+    assert_eq!(reqs[9].target, "/api/v1/runs/42");
 }
