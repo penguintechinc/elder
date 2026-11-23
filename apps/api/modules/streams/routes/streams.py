@@ -1484,20 +1484,153 @@ async def execute_stream(stream_id):
     return ApiResponse.success(data=result, status_code=status_code)
 
 
+VALID_EXECUTION_SOURCES: frozenset[str] = frozenset(
+    {"all", "playbook", "coderun", "webhook"}
+)
+
+
+def _iso_timestamp(value: Any) -> str | None:
+    """Serialize a datetime or string timestamp to ISO-8601."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
+def _execution_sort_key(entry: dict[str, Any]) -> tuple[datetime, int]:
+    """Return a UTC datetime + id sort key for unified execution entries."""
+    raw = entry.get("started_at") or entry.get("created_at")
+    dt = datetime.min.replace(tzinfo=UTC)
+    if isinstance(raw, datetime):
+        dt = raw.replace(tzinfo=UTC) if raw.tzinfo is None else raw.astimezone(UTC)
+    elif isinstance(raw, str) and raw.strip():
+        candidate = raw.strip()
+        if candidate.endswith("Z"):
+            candidate = candidate[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(candidate)
+            dt = (
+                parsed.replace(tzinfo=UTC)
+                if parsed.tzinfo is None
+                else parsed.astimezone(UTC)
+            )
+        except ValueError:
+            pass
+    try:
+        entry_id = int(entry.get("id") or 0)
+    except (TypeError, ValueError):
+        entry_id = 0
+    return (dt, entry_id)
+
+
+def _matches_execution_filters(
+    entry: dict[str, Any],
+    status_filter: str | None,
+    search_term: str,
+) -> bool:
+    """Return True when a normalized execution entry satisfies status and search filters."""
+    if status_filter:
+        if str(entry.get("status") or "").strip().lower() != status_filter:
+            return False
+    if search_term:
+        haystack_parts = (
+            entry.get("execution_id"),
+            entry.get("source_name"),
+            entry.get("stream_name"),
+            entry.get("source_type"),
+            entry.get("status"),
+            entry.get("trigger_type"),
+            entry.get("error_message"),
+            entry.get("event_type"),
+            entry.get("runtime"),
+        )
+        haystack = " ".join(str(p).lower() for p in haystack_parts if p is not None)
+        if search_term not in haystack:
+            return False
+    return True
+
+
+def _serialize_coderun_execution(row: Any, fn: Any | None) -> dict[str, Any]:
+    """Normalize a run_executions row into the unified execution audit schema."""
+    fn_name = getattr(fn, "name", None) if fn is not None else None
+    display_name = fn_name or f"CodeRun #{row.function_id}"
+    fn_runtime = getattr(fn, "runtime", None) if fn is not None else None
+    started_iso = _iso_timestamp(
+        getattr(row, "started_at", None) or getattr(row, "created_at", None)
+    )
+    completed_iso = _iso_timestamp(getattr(row, "completed_at", None))
+    created_iso = _iso_timestamp(
+        getattr(row, "created_at", None) or getattr(row, "started_at", None)
+    )
+    return {
+        "id": row.id,
+        "execution_id": row.execution_id,
+        "playbook_id": None,
+        "stream_id": None,
+        "stream_name": display_name,
+        "source_type": "coderun",
+        "source_name": display_name,
+        "function_id": row.function_id,
+        "runtime": fn_runtime,
+        "status": row.status,
+        "trigger_type": getattr(row, "trigger_type", None) or "manual",
+        "started_at": started_iso,
+        "completed_at": completed_iso,
+        "created_at": created_iso,
+        "duration_ms": getattr(row, "duration_ms", None),
+        "error_message": getattr(row, "error_message", None),
+    }
+
+
+def _serialize_webhook_delivery(row: Any, webhook: Any | None) -> dict[str, Any]:
+    """Normalize a webhook_deliveries row into the unified execution audit schema."""
+    wh_name = getattr(webhook, "name", None) if webhook is not None else None
+    display_name = wh_name or f"Webhook #{row.webhook_id}"
+    delivered_iso = _iso_timestamp(getattr(row, "delivered_at", None))
+    created_iso = _iso_timestamp(
+        getattr(row, "created_at", None) or getattr(row, "delivered_at", None)
+    )
+    started_iso = created_iso or delivered_iso
+    event_type = getattr(row, "event_type", None)
+    return {
+        "id": row.id,
+        "execution_id": f"wh-{row.id}",
+        "playbook_id": None,
+        "stream_id": None,
+        "stream_name": display_name,
+        "source_type": "webhook",
+        "source_name": display_name,
+        "webhook_id": row.webhook_id,
+        "event_type": event_type,
+        "http_status": getattr(row, "http_status", None),
+        "status": getattr(row, "status", None) or "unknown",
+        "trigger_type": event_type or "webhook",
+        "started_at": started_iso,
+        "completed_at": delivered_iso,
+        "created_at": created_iso,
+        "duration_ms": None,
+        "error_message": getattr(row, "error_message", None),
+    }
+
+
 @bp.route("/executions", methods=["GET"])
 @login_required
 @require_scope("streams:read")
 async def list_all_executions():
-    """List execution history across all streams for the tenant (global view).
+    """List unified execution history across playbooks, CodeRuns, and webhooks.
 
     Query params:
         - page: Page number (default: 1)
         - per_page: Items per page (default: 20, max: 100)
+        - source: Filter by source ('all' | 'playbook' | 'coderun' | 'webhook';
+          defaults to 'playbook' when stream_id is provided, else 'all')
         - status: Filter by status
-        - stream_id: Optional filter by specific stream
+        - stream_id: Optional filter by specific stream/playbook
+        - search: Optional case-insensitive text search
 
     Returns:
-        200: Paginated list of executions across all tenant streams
+        200: Paginated list of normalized executions and per-source counts
     """
     db = current_app.db
     tenant_id = _get_tenant_id()
@@ -1507,103 +1640,170 @@ async def list_all_executions():
         return ApiResponse.error("Tenant not found", 403)
 
     pagination = PaginationParams.from_request()
-    status_filter = request.args.get("status")
+    raw_status = request.args.get("status")
+    status_filter = (
+        raw_status.strip().lower() if raw_status and raw_status.strip() else None
+    )
     stream_filter = request.args.get("stream_id")
+    search_term = (request.args.get("search") or "").strip().lower()
+
+    raw_source = request.args.get("source")
+    if raw_source is None or not raw_source.strip():
+        source_filter = "playbook" if stream_filter else "all"
+    else:
+        source_filter = raw_source.strip().lower()
+        if source_filter not in VALID_EXECUTION_SOURCES:
+            return ApiResponse.validation_error(
+                "source", "must be one of: all, playbook, coderun, webhook"
+            )
 
     def list_all_execs():
-        # Build query scoped to tenant
-        query = db.stream_executions.tenant_id == tenant_id
+        playbook_items: list[dict[str, Any]] = []
+        coderun_items: list[dict[str, Any]] = []
+        webhook_items: list[dict[str, Any]] = []
 
-        # Determine which streams this caller can read (public, owned, or shared)
-        readable_streams_query = (db.stream_playbooks.tenant_id == tenant_id) & (
-            (db.stream_playbooks.is_public == True)
-            | (db.stream_playbooks.owner_identity_id == identity_id)
-        )
-        readable_stream_ids = db(readable_streams_query).select(db.stream_playbooks.id)
-        readable_ids_set = {s.id for s in readable_stream_ids}
+        # 1. Playbook executions (db.stream_executions)
+        if hasattr(db, "stream_executions") and hasattr(db, "stream_playbooks"):
+            readable_streams_query = (db.stream_playbooks.tenant_id == tenant_id) & (
+                (db.stream_playbooks.is_public == True)  # noqa: E712
+                | (db.stream_playbooks.owner_identity_id == identity_id)
+            )
+            readable_stream_ids = db(readable_streams_query).select(
+                db.stream_playbooks.id
+            )
+            readable_ids_set = {s.id for s in readable_stream_ids}
 
-        # Add shared streams
-        if identity_id:
-            shared_streams = db(
-                db.stream_shares.shared_with_identity_id == identity_id
-            ).select(db.stream_shares.playbook_id)
-            readable_ids_set.update(s.playbook_id for s in shared_streams)
+            if identity_id and hasattr(db, "stream_shares"):
+                shared_streams = db(
+                    db.stream_shares.shared_with_identity_id == identity_id
+                ).select(db.stream_shares.playbook_id)
+                readable_ids_set.update(s.playbook_id for s in shared_streams)
 
-        # Filter executions to only readable streams
-        if readable_ids_set:
-            query = query & (db.stream_executions.playbook_id.belongs(readable_ids_set))
-        else:
-            # No readable streams, return empty
-            return [], 0
+            target_stream_ids = readable_ids_set
+            if stream_filter:
+                try:
+                    stream_id = int(stream_filter)
+                    target_stream_ids = (
+                        {stream_id} if stream_id in readable_ids_set else set()
+                    )
+                except (ValueError, TypeError):
+                    target_stream_ids = set()
 
-        # Optional stream filter (must be readable)
-        if stream_filter:
-            try:
-                stream_id = int(stream_filter)
-                if stream_id in readable_ids_set:
-                    query = query & (db.stream_executions.playbook_id == stream_id)
-                else:
-                    # Requested stream not readable
-                    return [], 0
-            except (ValueError, TypeError):
-                pass
-
-        # Optional status filter
-        if status_filter:
-            query = query & (db.stream_executions.status == status_filter)
-
-        # Count total (now access-filtered)
-        total = db(query).count()
-
-        # Fetch paginated executions
-        executions = db(query).select(
-            orderby=~db.stream_executions.started_at,
-            limitby=(pagination.offset, pagination.offset + pagination.per_page),
-        )
-
-        # Pre-fetch all unique streams needed for this page
-        stream_ids_in_page = {e.playbook_id for e in executions}
-        streams_map = {}
-        if stream_ids_in_page:
-            streams = db(
-                (db.stream_playbooks.id.belongs(stream_ids_in_page))
-                & (db.stream_playbooks.tenant_id == tenant_id)
-            ).select()
-            for stream in streams:
-                streams_map[stream.id] = stream
-
-        result = []
-        for exec_row in executions:
-            stream_row = streams_map.get(exec_row.playbook_id)
-
-            # Check stream access before including execution
-            # (execution inherits access from stream)
-            if stream_row:
-                can_read = _can_read_stream(db, stream_row, tenant_id, identity_id)
-                if not can_read:
-                    continue
-
-                serialized = _serialize_execution(
-                    exec_row,
-                    stream_id=stream_row.id,
-                    stream_name=stream_row.name,
+            if target_stream_ids:
+                query = (db.stream_executions.tenant_id == tenant_id) & (
+                    db.stream_executions.playbook_id.belongs(target_stream_ids)
                 )
-            else:
-                # No stream (orphaned execution) — skip
-                continue
+                exec_rows = db(query).select(orderby=~db.stream_executions.started_at)
 
-            result.append(serialized)
+                stream_ids_needed = {e.playbook_id for e in exec_rows}
+                streams_map: dict[int, Any] = {}
+                if stream_ids_needed:
+                    streams = db(
+                        (db.stream_playbooks.id.belongs(stream_ids_needed))
+                        & (db.stream_playbooks.tenant_id == tenant_id)
+                    ).select()
+                    for stream in streams:
+                        streams_map[stream.id] = stream
 
-        return result, total
+                for exec_row in exec_rows:
+                    stream_row = streams_map.get(exec_row.playbook_id)
+                    if not stream_row:
+                        continue
+                    if not _can_read_stream(db, stream_row, tenant_id, identity_id):
+                        continue
 
-    result, total = await run_in_threadpool(list_all_execs)
+                    serialized = _serialize_execution(
+                        exec_row,
+                        stream_id=stream_row.id,
+                        stream_name=stream_row.name,
+                    )
+                    serialized["source_type"] = "playbook"
+                    serialized["source_name"] = stream_row.name
+                    if _matches_execution_filters(
+                        serialized, status_filter, search_term
+                    ):
+                        playbook_items.append(serialized)
+
+        # 2. CodeRun executions (db.run_executions joined with db.run_functions)
+        if (
+            not stream_filter
+            and hasattr(db, "run_executions")
+            and hasattr(db, "run_functions")
+        ):
+            run_rows = db(db.run_executions.tenant_id == tenant_id).select()
+            func_ids = {r.function_id for r in run_rows if r.function_id is not None}
+            functions_map: dict[int, Any] = {}
+            if func_ids:
+                funcs = db(
+                    (db.run_functions.id.belongs(func_ids))
+                    & (db.run_functions.tenant_id == tenant_id)
+                ).select()
+                for fn in funcs:
+                    functions_map[fn.id] = fn
+
+            for run_row in run_rows:
+                fn_row = functions_map.get(run_row.function_id)
+                serialized = _serialize_coderun_execution(run_row, fn_row)
+                if _matches_execution_filters(serialized, status_filter, search_term):
+                    coderun_items.append(serialized)
+
+        # 3. Webhook deliveries (db.webhook_deliveries joined with db.webhooks)
+        if (
+            not stream_filter
+            and hasattr(db, "webhook_deliveries")
+            and hasattr(db, "webhooks")
+        ):
+            tenant_webhooks = db(db.webhooks.tenant_id == tenant_id).select()
+            webhooks_map = {w.id: w for w in tenant_webhooks}
+            if webhooks_map:
+                delivery_rows = db(
+                    db.webhook_deliveries.webhook_id.belongs(set(webhooks_map.keys()))
+                ).select()
+                for delivery_row in delivery_rows:
+                    wh_row = webhooks_map.get(delivery_row.webhook_id)
+                    serialized = _serialize_webhook_delivery(delivery_row, wh_row)
+                    if _matches_execution_filters(
+                        serialized, status_filter, search_term
+                    ):
+                        webhook_items.append(serialized)
+
+        counts_by_source = {
+            "playbook": len(playbook_items),
+            "coderun": len(coderun_items),
+            "webhook": len(webhook_items),
+        }
+
+        if source_filter == "playbook":
+            merged = playbook_items
+        elif source_filter == "coderun":
+            merged = coderun_items
+        elif source_filter == "webhook":
+            merged = webhook_items
+        else:
+            merged = playbook_items + coderun_items + webhook_items
+
+        merged.sort(key=_execution_sort_key, reverse=True)
+        total = len(merged)
+        page_items = merged[pagination.offset : pagination.offset + pagination.per_page]
+        return page_items, total, counts_by_source
+
+    page_items, total, counts_by_source = await run_in_threadpool(list_all_execs)
+    pages = (
+        (total + pagination.per_page - 1) // pagination.per_page
+        if total > 0 and pagination.per_page > 0
+        else 0
+    )
 
     return ApiResponse.success(
         {
-            "data": result,
+            "data": page_items,
+            "executions": page_items,
+            "items": page_items,
             "total": total,
             "page": pagination.page,
             "per_page": pagination.per_page,
+            "pages": pages,
+            "counts_by_source": counts_by_source,
         }
     )
 

@@ -14,13 +14,16 @@ import pytest
 from apps.runworker import healthcheck
 from apps.runworker.k8s_runner import (
     MAX_MEMORY_MB,
+    MAX_TIMEOUT_SECONDS,
     MIN_MEMORY_MB,
+    MIN_TIMEOUT_SECONDS,
     K8sRunner,
     RunExecutionResult,
     RunJobRequest,
     build_configmap_manifest,
     build_job_manifest,
     clamp_memory_mb,
+    clamp_timeout_seconds,
     extract_structured_output,
     sanitize_k8s_name,
 )
@@ -157,6 +160,33 @@ class TestManifestBuilders:
         manifest = build_job_manifest(req)
         resources = manifest["spec"]["template"]["spec"]["containers"][0]["resources"]
         assert resources["limits"]["memory"] == f"{expected_limit}Mi"
+
+    @pytest.mark.parametrize(
+        ("requested", "expected_limit"),
+        [
+            (0, MIN_TIMEOUT_SECONDS),
+            (-5, MIN_TIMEOUT_SECONDS),
+            (1, 1),
+            (60, 60),
+            (300, 300),
+            (301, MAX_TIMEOUT_SECONDS),
+            (900, MAX_TIMEOUT_SECONDS),
+            (3600, MAX_TIMEOUT_SECONDS),
+        ],
+    )
+    def test_timeout_clamping_max_300s(
+        self, requested: int, expected_limit: int
+    ) -> None:
+        assert MAX_TIMEOUT_SECONDS == 300
+        assert clamp_timeout_seconds(requested) == expected_limit
+        req = RunJobRequest(
+            execution_id="exec-timeout-clamp",
+            runtime="python",
+            code="print(1)",
+            timeout_seconds=requested,
+        )
+        manifest = build_job_manifest(req)
+        assert manifest["spec"]["activeDeadlineSeconds"] == expected_limit
 
     def test_build_configmap_manifest_contains_script_and_input(self) -> None:
         req = RunJobRequest(

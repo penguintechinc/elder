@@ -39,12 +39,12 @@ def _unwrap_input(value: Any) -> Any:
     return value
 
 
-@register_node("action_run", "actions", "Run Function")
+@register_node("action_run", "actions", "CodeRun")
 class RunFunctionAction(BaseNode):
     """Invoke an Elder Runs serverless function from a Streams playbook."""
 
     node_type = "action_run"
-    name = "Run Function"
+    name = "CodeRun"
     description = (
         "Invoke an Elder Runs serverless function and optionally wait for its result"
     )

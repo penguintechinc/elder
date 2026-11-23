@@ -25,7 +25,7 @@ MAX_MEMORY_MB = 2048
 DEFAULT_MEMORY_MB = 256
 
 MIN_TIMEOUT_SECONDS = 1
-MAX_TIMEOUT_SECONDS = 900
+MAX_TIMEOUT_SECONDS = 300
 DEFAULT_TIMEOUT_SECONDS = 30
 
 DEFAULT_TTL_SECONDS = 120
@@ -109,7 +109,7 @@ def clamp_memory_mb(memory_mb: int | None) -> int:
 
 
 def clamp_timeout_seconds(timeout_seconds: int | None) -> int:
-    """Clamp requested timeout (seconds) into the safe [1, 900] range."""
+    """Clamp requested timeout (seconds) into the safe [1, 300] range."""
     if timeout_seconds is None:
         return DEFAULT_TIMEOUT_SECONDS
     return max(MIN_TIMEOUT_SECONDS, min(MAX_TIMEOUT_SECONDS, int(timeout_seconds)))

@@ -158,8 +158,37 @@ class TestActionRunRegistrationAndCatalog:
         assert node_cls is RunFunctionAction
         assert node_cls.node_type == "action_run"
         assert node_cls.category == "actions"
-        assert node_cls.name == "Run Function"
+        assert node_cls.name == "CodeRun"
         assert node_cls.required_module == "runs"
+
+    @pytest.mark.asyncio
+    async def test_runs_api_max_timeout_is_300_seconds(self) -> None:
+        from quart import Quart
+
+        from apps.api.modules.runs.routes.runs import (
+            MAX_TIMEOUT_SECONDS,
+            _validate_timeout,
+        )
+
+        assert MAX_TIMEOUT_SECONDS == 300
+        app = Quart(__name__)
+        async with app.app_context():
+            val_ok, err_ok = _validate_timeout(300)
+            assert val_ok == 300
+            assert err_ok is None
+
+            val_bad, err_bad = _validate_timeout(301)
+            assert val_bad is None
+            assert err_bad is not None
+            resp_bad, status_bad = err_bad
+            assert status_bad == 400
+            body_bad = await resp_bad.get_json()
+            assert "300" in body_bad["error"]
+
+            val_old, err_old = _validate_timeout(3600)
+            assert val_old is None
+            assert err_old is not None
+            assert err_old[1] == 400
 
     def test_builtin_ui_meta_action_run_schema(self) -> None:
         assert "action_run" in BUILTIN_UI_META
