@@ -429,6 +429,17 @@ class PlaybookExecutor:
             node_config = node_data.get("config") or data_obj.get("config") or {}
             node_label = node_data.get("label") or data_obj.get("label", "")
 
+            associated_resource = None
+            res_type = data_obj.get("resourceType") or node_data.get("resourceType")
+            res_id = data_obj.get("resourceId") or node_data.get("resourceId")
+            if res_type and res_id is not None and res_id != "":
+                associated_resource = {
+                    "resource_type": str(res_type),
+                    "resource_id": res_id,
+                    "resource_name": data_obj.get("resourceName")
+                    or node_data.get("resourceName"),
+                }
+
             context = {
                 "execution_id": self.execution_id,
                 "playbook_id": self.playbook_id,
@@ -438,6 +449,7 @@ class PlaybookExecutor:
                 "node_outputs": dict(self._node_context_outputs),
                 "trigger_data": global_config.get("trigger_data", {}),
                 "tenant_id": global_config.get("tenant_id"),
+                "associated_resource": associated_resource,
                 "metadata": {
                     "label": node_label,
                     "category": node_data.get("category")

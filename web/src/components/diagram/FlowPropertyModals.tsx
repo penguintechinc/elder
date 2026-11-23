@@ -3,45 +3,15 @@ import { useQuery } from "@tanstack/react-query";
 import { MarkerType, type Node, type Edge } from "@xyflow/react";
 import { X } from "lucide-react";
 import toast from "react-hot-toast";
-import api from "@/lib/api";
 import SearchableSelect from "@/components/SearchableSelect";
+import {
+  PRIMARY_12_COLORS,
+  RESOURCE_CATEGORY_OPTIONS,
+  fetchCategoryResources,
+  type ResourceCategory,
+} from "./resourceLookup";
 
-const PRIMARY_12_COLORS = [
-  { hex: "#1f2937", name: "Slate" },
-  { hex: "#3b82f6", name: "Blue" },
-  { hex: "#6366f1", name: "Indigo" },
-  { hex: "#8b5cf6", name: "Purple" },
-  { hex: "#ec4899", name: "Pink" },
-  { hex: "#ef4444", name: "Red" },
-  { hex: "#f97316", name: "Orange" },
-  { hex: "#f59e0b", name: "Amber" },
-  { hex: "#eab308", name: "Yellow" },
-  { hex: "#22c55e", name: "Green" },
-  { hex: "#14b8a6", name: "Teal" },
-  { hex: "#06b6d4", name: "Cyan" },
-];
-
-export type ResourceCategory =
-  | ""
-  | "network"
-  | "entity"
-  | "data_store"
-  | "service"
-  | "software"
-  | "ai_resource";
-
-const RESOURCE_CATEGORY_OPTIONS: {
-  value: ResourceCategory;
-  label: string;
-}[] = [
-  { value: "", label: "None" },
-  { value: "network", label: "Network Resources" },
-  { value: "entity", label: "Entities / Systems" },
-  { value: "data_store", label: "Data Stores" },
-  { value: "service", label: "Services" },
-  { value: "software", label: "Software" },
-  { value: "ai_resource", label: "AI Resources" },
-];
+export type { ResourceCategory, ResourceOption } from "./resourceLookup";
 
 const LINE_TYPE_OPTIONS = [
   { value: "virtual", label: "Virtual" },
@@ -121,87 +91,15 @@ export function NodePropertyModal({
     setResourceId(data.resourceId ? String(data.resourceId) : "");
   }, [node]);
 
-  const { data: categoryResources = [], isLoading: loadingResources } =
-    useQuery({
-      queryKey: ["flow-modal-resources", resourceCategory],
-      enabled: node !== null && resourceCategory !== "",
-      queryFn: async () => {
-        if (resourceCategory === "network") {
-          const res = await api.listNetworks();
-          const items = Array.isArray(res) ? res : res?.items || [];
-          return items.map(
-            (n: {
-              id: number;
-              name?: string;
-              network_type?: string;
-              provider?: string;
-              region?: string;
-            }) => ({
-              value: String(n.id),
-              label: [
-                n.name || `Network #${n.id}`,
-                n.provider,
-                n.network_type,
-                n.region,
-              ]
-                .filter(Boolean)
-                .join(" · "),
-              rawName: n.name || `Network #${n.id}`,
-            }),
-          );
-        }
-        if (resourceCategory === "entity") {
-          const res = await api.getEntities({ per_page: 250 });
-          return (res?.items || []).map(
-            (e: { id: number; name: string; entity_type?: string }) => ({
-              value: String(e.id),
-              label: e.entity_type ? `${e.name} (${e.entity_type})` : e.name,
-              rawName: e.name,
-            }),
-          );
-        }
-        if (resourceCategory === "data_store") {
-          const res = await api.getDataStores({ per_page: 250 });
-          const items = Array.isArray(res) ? res : res?.items || [];
-          return items.map(
-            (d: { id: number; name: string; store_type?: string }) => ({
-              value: String(d.id),
-              label: d.store_type ? `${d.name} (${d.store_type})` : d.name,
-              rawName: d.name,
-            }),
-          );
-        }
-        if (resourceCategory === "service") {
-          const res = await api.getServices({ per_page: 250 });
-          return (res?.items || []).map((s: { id: number; name: string }) => ({
-            value: String(s.id),
-            label: s.name,
-            rawName: s.name,
-          }));
-        }
-        if (resourceCategory === "software") {
-          const res = await api.getSoftware({ per_page: 250 });
-          return (res?.items || []).map(
-            (s: { id: number; name: string; vendor?: string }) => ({
-              value: String(s.id),
-              label: s.vendor ? `${s.name} (${s.vendor})` : s.name,
-              rawName: s.name,
-            }),
-          );
-        }
-        if (resourceCategory === "ai_resource") {
-          const res = await api.getAIResources({ per_page: 250 });
-          return (res?.items || []).map(
-            (a: { id: number; name: string; provider?: string | null }) => ({
-              value: String(a.id),
-              label: a.provider ? `${a.name} (${a.provider})` : a.name,
-              rawName: a.name,
-            }),
-          );
-        }
-        return [];
-      },
-    });
+  const {
+    data: categoryResources = [],
+    isLoading: loadingResources,
+    isError: resourcesError,
+  } = useQuery({
+    queryKey: ["flow-modal-resources", resourceCategory],
+    enabled: node !== null && resourceCategory !== "",
+    queryFn: () => fetchCategoryResources(resourceCategory),
+  });
 
   if (!node) return null;
 
@@ -371,6 +269,11 @@ export function NodePropertyModal({
                 allowClear
                 ariaLabel="Associate resource"
               />
+              {resourcesError && (
+                <p className="text-xs text-rose-400 mt-1">
+                  Failed to load resources for this category.
+                </p>
+              )}
             </div>
           )}
 

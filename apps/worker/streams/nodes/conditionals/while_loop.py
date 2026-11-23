@@ -1,47 +1,34 @@
 """While Loop Conditional Node for Streams Workflow.
 
-Loop node that continues executing while a condition is true, with configurable
-max iterations safety limit to prevent infinite loops.
+Loop node that continues executing while 1 or more conditions match (AND/OR),
+supporting upstream fields, prior node fields, bare-string any-field search,
+and associated resource states/relationships, with a configurable max
+iterations safety limit. Backwards-compatible with legacy single ``condition``
+dict configuration.
 """
 
 from __future__ import annotations
 
 import logging
-import operator
-from collections.abc import Callable
-from typing import Any, Dict, List
+from typing import Any
 
 from ...executor.node_registry import register_node
 from ..base import BaseNode
+from .if_then import OPERATORS, evaluate_condition, get_field_value
 
 logger = logging.getLogger(__name__)
-
-# Operator mapping for loop conditions
-OPERATORS: dict[str, Callable] = {
-    "eq": operator.eq,
-    "ne": operator.ne,
-    "gt": operator.gt,
-    "gte": operator.ge,
-    "lt": operator.lt,
-    "lte": operator.le,
-    "contains": lambda a, b: b in a if hasattr(a, "__contains__") else False,
-    "not_contains": lambda a, b: b not in a if hasattr(a, "__contains__") else True,
-    "starts_with": lambda a, b: str(a).startswith(str(b)),
-    "ends_with": lambda a, b: str(a).endswith(str(b)),
-    "is_null": lambda a, b: a is None,
-    "is_not_null": lambda a, b: a is not None,
-    "in": lambda a, b: a in b if isinstance(b, (list, tuple, set)) else False,
-    "not_in": lambda a, b: a not in b if isinstance(b, (list, tuple, set)) else True,
-}
 
 
 @register_node("conditional_while", "conditionals", "While Loop")
 class WhileConditional(BaseNode):
-    """Loop node that continues while condition is true with max iterations safety."""
+    """Loop node that continues while condition(s) are true with max iterations safety."""
 
     node_type = "conditional_while"
     name = "While Loop"
-    description = "Continue looping while condition is true with max iterations safety"
+    description = (
+        "Continue looping while 1 or more conditions match (supports upstream fields, "
+        "bare string search, and associated resource states/relationships)"
+    )
     category = "conditionals"
 
     @classmethod
@@ -76,14 +63,29 @@ class WhileConditional(BaseNode):
         """Validate while loop configuration."""
         errors = []
 
-        condition = config.get("condition", {})
-        if not condition.get("field"):
-            errors.append("Condition field is required")
+        conditions = config.get("conditions")
+        legacy_condition = config.get("condition")
 
-        op = condition.get("operator", "eq")
-        if op not in OPERATORS:
-            valid_ops = ", ".join(sorted(OPERATORS.keys()))
-            errors.append(f"Invalid operator '{op}'. Valid: {valid_ops}")
+        if isinstance(conditions, list) and len(conditions) > 0:
+            for idx, cond in enumerate(conditions):
+                if not isinstance(cond, dict):
+                    errors.append(f"Condition {idx + 1} must be an object")
+                    continue
+                op = cond.get("operator", "eq")
+                if op not in OPERATORS:
+                    valid_ops = ", ".join(sorted(OPERATORS.keys()))
+                    errors.append(
+                        f"Condition {idx + 1}: invalid operator '{op}'. Valid: {valid_ops}"
+                    )
+        elif isinstance(legacy_condition, dict) and legacy_condition:
+            if not legacy_condition.get("field"):
+                errors.append("Condition field is required")
+            op = legacy_condition.get("operator", "eq")
+            if op not in OPERATORS:
+                valid_ops = ", ".join(sorted(OPERATORS.keys()))
+                errors.append(f"Invalid operator '{op}'. Valid: {valid_ops}")
+        else:
+            errors.append("At least one loop condition is required")
 
         max_iterations = config.get("maxIterations", 100)
         if not isinstance(max_iterations, int) or max_iterations <= 0:
@@ -93,31 +95,7 @@ class WhileConditional(BaseNode):
 
     def _get_field_value(self, data: dict, field: str) -> Any:
         """Get nested field value using dot notation."""
-        parts = field.split(".")
-        value = data
-        for part in parts:
-            if isinstance(value, dict):
-                value = value.get(part)
-            elif isinstance(value, list) and part.isdigit():
-                idx = int(part)
-                value = value[idx] if idx < len(value) else None
-            else:
-                return None
-        return value
-
-    def _evaluate_condition(self, data: dict, condition: dict) -> bool:
-        """Evaluate the loop condition against data."""
-        field = condition.get("field", "")
-        op_name = condition.get("operator", "eq")
-        expected = condition.get("value")
-
-        actual = self._get_field_value(data, field)
-        op_func = OPERATORS.get(op_name, operator.eq)
-
-        try:
-            return op_func(actual, expected)
-        except Exception:
-            return False
+        return get_field_value(data, field)
 
     async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the while loop conditional."""
@@ -125,20 +103,30 @@ class WhileConditional(BaseNode):
             raise ValueError("Required input 'in' is missing")
 
         input_data = inputs.get("in")
-        condition = self.get_config_value("condition", {})
-        max_iterations = self.get_config_value("maxIterations", 100)
+        conditions = self.get_config_value("conditions", [])
+        legacy_condition = self.get_config_value("condition", {})
+        logic = str(self.get_config_value("logic", "and") or "and").lower()
 
-        # NOTE: In the old contract, iteration count was tracked in context.variables.
-        # Since the new contract doesn't provide a variables dict, iteration tracking
-        # is the executor's responsibility. This node evaluates one iteration only.
+        active_conditions: list[dict[str, Any]] = []
+        if isinstance(conditions, list) and len(conditions) > 0:
+            active_conditions = [c for c in conditions if isinstance(c, dict)]
+        elif isinstance(legacy_condition, dict) and legacy_condition:
+            active_conditions = [legacy_condition]
 
-        # Evaluate condition - support both dict and non-dict data
-        condition_met = False
-        if isinstance(input_data, dict):
-            condition_met = self._evaluate_condition(input_data, condition)
+        if active_conditions:
+            results = [
+                await evaluate_condition(
+                    input_data,
+                    cond,
+                    self.context,
+                    {"in": input_data},
+                    log_warning=self.log_warning,
+                )
+                for cond in active_conditions
+            ]
+            condition_met = any(results) if logic == "or" else all(results)
         else:
-            # For non-dict data, always continue looping (caller defines condition)
-            condition_met = True
+            condition_met = False
 
         if condition_met:
             self.log_info("While loop: condition true, continuing")
@@ -154,17 +142,17 @@ class WhileConditional(BaseNode):
                     "source_node_id": self.context.get("node_id", ""),
                 },
             }
-        else:
-            self.log_info("While loop: condition false, exiting")
-            return {
-                "loop": {
-                    "data": None,
-                    "metadata": {},
-                    "source_node_id": self.context.get("node_id", ""),
-                },
-                "done": {
-                    "data": input_data,
-                    "metadata": {},
-                    "source_node_id": self.context.get("node_id", ""),
-                },
-            }
+
+        self.log_info("While loop: condition false, exiting")
+        return {
+            "loop": {
+                "data": None,
+                "metadata": {},
+                "source_node_id": self.context.get("node_id", ""),
+            },
+            "done": {
+                "data": input_data,
+                "metadata": {},
+                "source_node_id": self.context.get("node_id", ""),
+            },
+        }

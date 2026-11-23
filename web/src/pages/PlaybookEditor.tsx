@@ -35,10 +35,7 @@ import {
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import {
-  EdgePropertyModal,
-  NodePropertyModal,
-} from "@/components/diagram/FlowPropertyModals";
+import { EdgePropertyModal } from "@/components/diagram/FlowPropertyModals";
 import NodeInspector from "@/components/playbooks/NodeInspector";
 import NodePalette from "@/components/playbooks/NodePalette";
 import PlaybookNodeCard from "@/components/playbooks/PlaybookNodeCard";
@@ -114,9 +111,6 @@ export default function PlaybookEditor() {
     Edge
   > | null>(null);
 
-  const [doubleClickNode, setDoubleClickNode] = useState<PlaybookNode | null>(
-    null,
-  );
   const [doubleClickEdge, setDoubleClickEdge] = useState<Edge | null>(null);
 
   // Execute modal state
@@ -441,6 +435,18 @@ export default function PlaybookEditor() {
     [],
   );
 
+  const handleUpdateNodeData = useCallback(
+    (nodeId: string, patch: Partial<PlaybookNodeData>) => {
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === nodeId ? { ...n, data: { ...n.data, ...patch } } : n,
+        ),
+      );
+      setIsDirty(true);
+    },
+    [],
+  );
+
   const handleDeleteNode = useCallback((nodeId: string) => {
     setNodes((prev) => prev.filter((n) => n.id !== nodeId));
     setEdges((prev) =>
@@ -653,7 +659,7 @@ export default function PlaybookEditor() {
               nodeTypes={nodeTypes}
               onNodeClick={(_, node) => setSelectedNodeId(node.id)}
               onPaneClick={() => setSelectedNodeId(null)}
-              onNodeDoubleClick={(_, node) => setDoubleClickNode(node)}
+              onNodeDoubleClick={(_, node) => setSelectedNodeId(node.id)}
               onEdgeDoubleClick={(_, edge) => setDoubleClickEdge(edge)}
               fitView
             >
@@ -669,7 +675,7 @@ export default function PlaybookEditor() {
           )}
         </div>
 
-        {/* Typed Schema Inspector */}
+        {/* Typed Schema Inspector (includes Appearance & Resource Linking) */}
         {selectedNode && (
           <NodeInspector
             node={selectedNode}
@@ -678,6 +684,7 @@ export default function PlaybookEditor() {
             operatorOptions={catalogData?.operators || []}
             onChangeLabel={handleChangeNodeLabel}
             onChangeConfig={handleChangeNodeConfig}
+            onUpdateNodeData={handleUpdateNodeData}
             onDeleteNode={handleDeleteNode}
             onClose={() => setSelectedNodeId(null)}
           />
@@ -782,21 +789,7 @@ export default function PlaybookEditor() {
         </div>
       )}
 
-      {/* Existing Double-Click Modals for Elder Resource Linking & Edge Labels */}
-      <NodePropertyModal
-        node={doubleClickNode}
-        onClose={() => setDoubleClickNode(null)}
-        onSave={(updatedNode) => {
-          setNodes((nds) =>
-            nds.map((n) =>
-              n.id === updatedNode.id ? (updatedNode as PlaybookNode) : n,
-            ),
-          );
-          setDoubleClickNode(null);
-          setIsDirty(true);
-        }}
-      />
-
+      {/* Edge Double-Click Modal */}
       <EdgePropertyModal
         edge={doubleClickEdge}
         onClose={() => setDoubleClickEdge(null)}
