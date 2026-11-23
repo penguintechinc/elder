@@ -310,6 +310,14 @@ def _ai_blueprints() -> list[tuple[Blueprint, str]]:
     return [(ai_routes.bp, f"{api_prefix}/ai/resources")]
 
 
+def _runs_blueprints() -> list[tuple[Blueprint, str]]:
+    """Load Elder Runs serverless functions module blueprints."""
+    from apps.api.modules.runs.routes import runs as runs_routes
+
+    api_prefix = "/api/v1"
+    return [(runs_routes.bp, f"{api_prefix}/runs")]
+
+
 # Explicit module registry — Phase 0 modules
 MODULES = (
     ModuleManifest(
@@ -591,6 +599,21 @@ MODULES = (
         worker_task_groups=(),
         optional_services=(),
         group="entities",
+        default_enabled=True,
+    ),
+    ModuleManifest(
+        name="runs",
+        title="Runs (Serverless Functions)",
+        license_feature=None,
+        depends_on=(),
+        blueprints=_runs_blueprints,
+        models_import=("apps.api.modules.runs.models.runs",),
+        table_prefix="run_",
+        nav_id="nav_runs",
+        scopes=("runs:read", "runs:write", "runs:invoke"),
+        worker_task_groups=(),
+        optional_services=(),
+        group="workstreams",
         default_enabled=True,
     ),
 )

@@ -45,6 +45,13 @@ SERVICE_WORKER_ALLOWED_SCOPES: dict[str, frozenset[str]] = {
             "integrations:sync",
         }
     ),
+    "svc-runworker": frozenset(
+        {
+            "runs:read",
+            "runs:write",
+            "runs:invoke",
+        }
+    ),
 }
 
 

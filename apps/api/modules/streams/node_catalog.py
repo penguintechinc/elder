@@ -75,6 +75,7 @@ _ELDER_MODULE_COLORS: dict[str, str] = {
     "flows": "#0ea5e9",
     "helpdesk": "#f43f5e",
     "ai": "#c026d3",
+    "runs": "#06b6d4",
 }
 
 
@@ -991,6 +992,82 @@ BUILTIN_UI_META: dict[str, dict[str, Any]] = {
             {"name": "body", "type": "any", "description": "Formatted response body"},
         ],
     },
+    "action_run": {
+        "stage": "actions",
+        "subcategory": "Serverless Runs",
+        "icon": "Terminal",
+        "color": "#06b6d4",
+        "required_module": "runs",
+        "config_schema": [
+            _cf(
+                "function_id",
+                "Run Function ID",
+                "number",
+                required=True,
+                placeholder="1",
+                supports_expressions=True,
+                description="ID of the Elder Runs serverless function to invoke.",
+            ),
+            _cf(
+                "payload",
+                "Input Payload (JSON)",
+                "json",
+                supports_expressions=True,
+                description="Optional JSON payload or expression passed to the function (defaults to upstream input).",
+            ),
+            _cf(
+                "wait_for_result",
+                "Wait for Result",
+                "boolean",
+                default=True,
+                description="Poll execution until completion instead of returning immediately.",
+            ),
+            _cf(
+                "timeout_seconds",
+                "Timeout (s)",
+                "number",
+                default=60,
+                description="Maximum seconds to wait for execution completion.",
+            ),
+        ],
+        "output_schema": [
+            {
+                "name": "execution_id",
+                "type": "string",
+                "description": "Unique UUID of the queued/completed execution",
+            },
+            {
+                "name": "status",
+                "type": "string",
+                "description": "Execution status (pending, completed, failed, timed_out)",
+            },
+            {
+                "name": "exit_code",
+                "type": "number",
+                "description": "Process exit code (0 on success)",
+            },
+            {
+                "name": "output",
+                "type": "any",
+                "description": "Structured JSON output returned by the function",
+            },
+            {
+                "name": "stdout",
+                "type": "string",
+                "description": "Captured standard output log",
+            },
+            {
+                "name": "stderr",
+                "type": "string",
+                "description": "Captured standard error log",
+            },
+            {
+                "name": "error_message",
+                "type": "string",
+                "description": "Error message if execution failed or timed out",
+            },
+        ],
+    },
     "action_s3": {
         "stage": "actions",
         "subcategory": "Storage & Files",
@@ -1376,11 +1453,14 @@ def get_node_catalog(
             if node_type not in BUILTIN_UI_META:
                 continue
             ui_meta = BUILTIN_UI_META[node_type]
+            builtin_req_module = ui_meta.get("required_module") or getattr(
+                node_cls, "required_module", None
+            )
             enabled, disabled_code, disabled_reason = _evaluate_node_availability(
                 app,
                 db,
                 tenant_id,
-                required_module=getattr(node_cls, "required_module", None),
+                required_module=builtin_req_module,
                 required_license_feature=getattr(
                     node_cls, "required_license_feature", None
                 ),
@@ -1397,9 +1477,13 @@ def get_node_catalog(
                     "stage": ui_meta["stage"],
                     "source": "builtin",
                     "connector_id": None,
-                    "module": "core",
-                    "required_module": None,
-                    "module_label": "Core & Generic",
+                    "module": builtin_req_module or "core",
+                    "required_module": builtin_req_module,
+                    "module_label": (
+                        _MODULES_BY_NAME[builtin_req_module].title
+                        if builtin_req_module and builtin_req_module in _MODULES_BY_NAME
+                        else "Core & Generic"
+                    ),
                     "subcategory": ui_meta["subcategory"],
                     "icon": ui_meta["icon"],
                     "color": ui_meta["color"],
