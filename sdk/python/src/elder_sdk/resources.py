@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator, Mapping
 from typing import TYPE_CHECKING, Any, ClassVar
+from urllib.parse import quote
 
 from elder_sdk.catalog import AsyncServiceProxy, ServiceProxy
 
@@ -50,15 +51,16 @@ class _ResourceBase:
 
     def operations(self) -> list[str]:
         """Return sorted catalog operation names for this resource."""
-        return self._proxy.operations()
+        return self._proxy.operations() if self._proxy is not None else []
 
     def __getattr__(self, name: str) -> Any:
-        if name.startswith("_"):
+        if name.startswith("_") or self._proxy is None:
             raise AttributeError(name)
         return getattr(self._proxy, name)
 
     def __dir__(self) -> list[str]:
-        return sorted(set(super().__dir__()) | set(self._proxy.operations()))
+        extra = set(self._proxy.operations()) if self._proxy is not None else set()
+        return sorted(set(super().__dir__()) | extra)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(service={self._service!r})"
@@ -1361,6 +1363,234 @@ class AsyncRunsResource(AsyncCrudResource, _RunsMixin):
             yield item
 
 
+class _WorkersMixin:
+    """Shared constants and request builders for Remote Workers Fleet resources."""
+
+    SERVICE_NAME = "workers"
+    _BASE_PATH = "/api/v1/admin/workers"
+
+    @classmethod
+    def _worker_path(cls, worker_id: str | int) -> str:
+        raw = str(worker_id).strip()
+        if not raw:
+            raise ValueError("worker_id must not be empty")
+        return f"{cls._BASE_PATH}/{quote(raw, safe='')}"
+
+    @staticmethod
+    def _build_list_params(
+        worker_type: str | None,
+        cluster: str | None,
+        status: str | None,
+        page: int,
+        per_page: int,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"page": page, "per_page": per_page}
+        if worker_type is not None:
+            params["worker_type"] = worker_type
+        if cluster is not None:
+            params["cluster"] = cluster
+        if status is not None:
+            params["status"] = status
+        return params
+
+    @staticmethod
+    def _build_onboard_payload(
+        name: str,
+        worker_type: str,
+        *,
+        cluster: str | None = None,
+        config: Mapping[str, Any] | None = None,
+        capabilities: Any = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"name": name, "worker_type": worker_type}
+        if cluster is not None:
+            payload["cluster"] = cluster
+        if config is not None:
+            payload["config"] = dict(config)
+        if capabilities is not None:
+            payload["capabilities"] = capabilities
+        return payload
+
+    @staticmethod
+    def _build_heartbeat_payload(
+        worker_type: str,
+        *,
+        worker_id: str | int | None = None,
+        hostname: str | None = None,
+        version: str | None = None,
+        cluster: str | None = None,
+        capabilities: Any = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"worker_type": worker_type}
+        if worker_id is not None:
+            payload["worker_id"] = worker_id
+        if hostname is not None:
+            payload["hostname"] = hostname
+        if version is not None:
+            payload["version"] = version
+        if cluster is not None:
+            payload["cluster"] = cluster
+        if capabilities is not None:
+            payload["capabilities"] = capabilities
+        return payload
+
+
+class WorkersResource(SyncResourceBase, _WorkersMixin):
+    """Synchronous Remote Workers Fleet management resource."""
+
+    @staticmethod
+    def _build_proxy(client: ElderClient, service_name: str) -> Any:
+        if client.catalog.has_service(service_name):
+            return ServiceProxy(client, service_name)
+        return None
+
+    def list(
+        self,
+        worker_type: str | None = None,
+        cluster: str | None = None,
+        status: str | None = None,
+        page: int = 1,
+        per_page: int = 50,
+    ) -> Any:
+        """List registered remote workers with optional filters."""
+        params = self._build_list_params(worker_type, cluster, status, page, per_page)
+        return self._client.get(self._BASE_PATH, params=params)
+
+    def get(self, worker_id: str | int) -> Any:
+        """Fetch a single remote worker by ID."""
+        return self._client.get(self._worker_path(worker_id))
+
+    def onboard(
+        self,
+        name: str,
+        worker_type: str,
+        *,
+        cluster: str | None = None,
+        config: Mapping[str, Any] | None = None,
+        capabilities: Any = None,
+    ) -> Any:
+        """Onboard a new remote worker and return its credentials."""
+        payload = self._build_onboard_payload(
+            name,
+            worker_type,
+            cluster=cluster,
+            config=config,
+            capabilities=capabilities,
+        )
+        return self._client.post(self._BASE_PATH, json=payload)
+
+    def update(self, worker_id: str | int, **fields: Any) -> Any:
+        """Update fields on an existing remote worker."""
+        return self._client.put(self._worker_path(worker_id), json=fields)
+
+    def rotate_token(self, worker_id: str | int) -> Any:
+        """Rotate the authentication token for a remote worker."""
+        return self._client.post(f"{self._worker_path(worker_id)}/rotate-token")
+
+    def offboard(self, worker_id: str | int) -> Any:
+        """Offboard and remove a remote worker."""
+        return self._client.delete(self._worker_path(worker_id))
+
+    def heartbeat(
+        self,
+        worker_type: str,
+        *,
+        worker_id: str | int | None = None,
+        hostname: str | None = None,
+        version: str | None = None,
+        cluster: str | None = None,
+        capabilities: Any = None,
+    ) -> Any:
+        """Send a worker liveness heartbeat."""
+        payload = self._build_heartbeat_payload(
+            worker_type,
+            worker_id=worker_id,
+            hostname=hostname,
+            version=version,
+            cluster=cluster,
+            capabilities=capabilities,
+        )
+        return self._client.post(f"{self._BASE_PATH}/heartbeat", json=payload)
+
+
+class AsyncWorkersResource(AsyncResourceBase, _WorkersMixin):
+    """Asynchronous Remote Workers Fleet management resource."""
+
+    @staticmethod
+    def _build_proxy(client: AsyncElderClient, service_name: str) -> Any:
+        if client.catalog.has_service(service_name):
+            return AsyncServiceProxy(client, service_name)
+        return None
+
+    async def list(
+        self,
+        worker_type: str | None = None,
+        cluster: str | None = None,
+        status: str | None = None,
+        page: int = 1,
+        per_page: int = 50,
+    ) -> Any:
+        """Asynchronously list registered remote workers with optional filters."""
+        params = self._build_list_params(worker_type, cluster, status, page, per_page)
+        return await self._client.get(self._BASE_PATH, params=params)
+
+    async def get(self, worker_id: str | int) -> Any:
+        """Asynchronously fetch a single remote worker by ID."""
+        return await self._client.get(self._worker_path(worker_id))
+
+    async def onboard(
+        self,
+        name: str,
+        worker_type: str,
+        *,
+        cluster: str | None = None,
+        config: Mapping[str, Any] | None = None,
+        capabilities: Any = None,
+    ) -> Any:
+        """Asynchronously onboard a new remote worker and return its credentials."""
+        payload = self._build_onboard_payload(
+            name,
+            worker_type,
+            cluster=cluster,
+            config=config,
+            capabilities=capabilities,
+        )
+        return await self._client.post(self._BASE_PATH, json=payload)
+
+    async def update(self, worker_id: str | int, **fields: Any) -> Any:
+        """Asynchronously update fields on an existing remote worker."""
+        return await self._client.put(self._worker_path(worker_id), json=fields)
+
+    async def rotate_token(self, worker_id: str | int) -> Any:
+        """Asynchronously rotate the authentication token for a remote worker."""
+        return await self._client.post(f"{self._worker_path(worker_id)}/rotate-token")
+
+    async def offboard(self, worker_id: str | int) -> Any:
+        """Asynchronously offboard and remove a remote worker."""
+        return await self._client.delete(self._worker_path(worker_id))
+
+    async def heartbeat(
+        self,
+        worker_type: str,
+        *,
+        worker_id: str | int | None = None,
+        hostname: str | None = None,
+        version: str | None = None,
+        cluster: str | None = None,
+        capabilities: Any = None,
+    ) -> Any:
+        """Asynchronously send a worker liveness heartbeat."""
+        payload = self._build_heartbeat_payload(
+            worker_type,
+            worker_id=worker_id,
+            hostname=hostname,
+            version=version,
+            cluster=cluster,
+            capabilities=capabilities,
+        )
+        return await self._client.post(f"{self._BASE_PATH}/heartbeat", json=payload)
+
+
 SYNC_RESOURCE_CLASSES: dict[str, type[SyncResourceBase]] = {
     "auth": AuthResource,
     "organizations": OrganizationsResource,
@@ -1411,6 +1641,7 @@ SYNC_RESOURCE_CLASSES: dict[str, type[SyncResourceBase]] = {
     "api_keys": ApiKeysResource,
     "modules": ModulesResource,
     "runs": RunsResource,
+    "workers": WorkersResource,
 }
 
 ASYNC_RESOURCE_CLASSES: dict[str, type[AsyncResourceBase]] = {
@@ -1463,4 +1694,5 @@ ASYNC_RESOURCE_CLASSES: dict[str, type[AsyncResourceBase]] = {
     "api_keys": AsyncApiKeysResource,
     "modules": AsyncModulesResource,
     "runs": AsyncRunsResource,
+    "workers": AsyncWorkersResource,
 }

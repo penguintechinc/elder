@@ -81,6 +81,7 @@ from elder_sdk.resources import (
     AsyncVillageIdResource,
     AsyncVulnerabilitiesResource,
     AsyncWebhooksResource,
+    AsyncWorkersResource,
     AuditResource,
     AuthResource,
     BackupResource,
@@ -128,6 +129,7 @@ from elder_sdk.resources import (
     VillageIdResource,
     VulnerabilitiesResource,
     WebhooksResource,
+    WorkersResource,
 )
 
 RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({429, 502, 503, 504})
@@ -162,6 +164,7 @@ _PREFERRED_ITEMS_KEYS: tuple[str, ...] = (
     "vulnerabilities",
     "software",
     "services",
+    "workers",
 )
 
 
@@ -466,6 +469,7 @@ class ElderClient(_BaseElderClient):
     api_keys: ApiKeysResource
     modules: ModulesResource
     runs: RunsResource
+    workers: WorkersResource
 
     def __init__(
         self,
@@ -835,6 +839,7 @@ class AsyncElderClient(_BaseElderClient):
     api_keys: AsyncApiKeysResource
     modules: AsyncModulesResource
     runs: AsyncRunsResource
+    workers: AsyncWorkersResource
 
     def __init__(
         self,
