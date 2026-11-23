@@ -148,6 +148,11 @@ export default function Layout() {
     }
   };
 
+  const isFullBleedCanvas =
+    /^\/(streams|diagrams)\/[^/]+$/.test(location.pathname) &&
+    !location.pathname.startsWith("/streams/executions") &&
+    !location.pathname.startsWith("/streams/approvals");
+
   return (
     <div className="min-h-screen bg-slate-900">
       {/* Sidebar */}
@@ -166,7 +171,13 @@ export default function Layout() {
 
       {/* Main content */}
       <div className="lg:pl-64 pl-0">
-        <main className="min-h-screen max-w-screen-2xl mx-auto">
+        <main
+          className={
+            isFullBleedCanvas
+              ? "h-[100dvh] w-full max-w-none"
+              : "min-h-screen max-w-screen-2xl mx-auto"
+          }
+        >
           <Outlet />
         </main>
       </div>

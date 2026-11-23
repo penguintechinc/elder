@@ -632,7 +632,7 @@ function DiagramEditorContent() {
   }
 
   return (
-    <div className="h-screen bg-slate-900 flex flex-col relative">
+    <div className="h-[100dvh] w-full bg-slate-900 flex flex-col relative overflow-hidden">
       <RemoteCursors cursors={collaborators} />
       {/* Toolbar */}
       <div className="bg-slate-800 border-b border-slate-700 p-4 flex items-center justify-between gap-4 relative z-10">

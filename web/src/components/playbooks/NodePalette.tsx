@@ -146,7 +146,7 @@ export default function NodePalette({
   return (
     <aside
       aria-label="Playbook Node Palette"
-      className="w-72 bg-slate-800 border-r border-slate-700 flex flex-col shrink-0 overflow-hidden"
+      className="w-56 md:w-64 xl:w-72 bg-slate-800 border-r border-slate-700 flex flex-col shrink-0 overflow-hidden"
     >
       {/* Search + Stage Tabs */}
       <div className="p-3 border-b border-slate-700 space-y-2.5">

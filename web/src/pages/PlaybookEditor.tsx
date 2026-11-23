@@ -497,7 +497,7 @@ export default function PlaybookEditor() {
   }
 
   return (
-    <div className="h-screen bg-slate-900 flex flex-col overflow-hidden">
+    <div className="h-[100dvh] w-full bg-slate-900 flex flex-col overflow-hidden">
       {/* Top Toolbar */}
       <header className="bg-slate-800 border-b border-slate-700 px-4 py-3 shrink-0">
         <div className="flex flex-wrap items-center justify-between gap-3">
