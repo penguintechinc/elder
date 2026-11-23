@@ -125,6 +125,23 @@ function buildTimelineSteps(
       ? `exit ${execution.exit_code}`
       : null;
 
+  const stdoutText = execution.stdout || execution.stdout_log || "";
+  const isWarmingUp =
+    isRunning &&
+    (stdoutText.trim().length === 0 ||
+      stdoutText.trim().endsWith("warming up..."));
+  const warmingState: StepState = isPending
+    ? "pending"
+    : isWarmingUp
+      ? "active"
+      : "completed";
+  const runningCodeState: StepState =
+    isPending || isWarmingUp
+      ? "pending"
+      : isRunning
+        ? "active"
+        : runningState;
+
   return [
     {
       id: "queued",
@@ -145,9 +162,16 @@ function buildTimelineSteps(
           : null,
     },
     {
+      id: "warming",
+      label: "Warming Up",
+      state: warmingState,
+      timestamp: execution.started_at,
+      detail: isWarmingUp ? "Preparing sandbox..." : null,
+    },
+    {
       id: "running",
-      label: "Running Container",
-      state: runningState,
+      label: "Running Code",
+      state: runningCodeState,
       timestamp: execution.started_at,
       detail: durationDetail,
     },

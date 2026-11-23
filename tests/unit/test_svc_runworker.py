@@ -561,13 +561,23 @@ class TestRunWorkerPollAndReport:
             == "Bearer super-secret-token-value"
         )
 
-        assert len(reported) == 2
-        reported_by_path = dict(reported)
+        result_posts = [(p, body) for p, body in reported if p.endswith("/result")]
+        log_posts = [(p, body) for p, body in reported if p.endswith("/logs")]
+        assert len(result_posts) == 2
+        assert len(log_posts) == 2
+        assert "warming up" in log_posts[0][1]["logs"]
+        reported_by_path = dict(result_posts)
         assert (
             reported_by_path["/api/v1/runs/internal/executions/exec-abc/result"][
                 "status"
             ]
-            == "succeeded"
+            == "completed"
+        )
+        assert (
+            reported_by_path["/api/v1/runs/internal/executions/exec-abc/result"][
+                "stdout_log"
+            ]
+            == '{"ok": true}\n'
         )
         assert (
             reported_by_path["/api/v1/runs/internal/executions/exec-def/result"][
@@ -611,9 +621,11 @@ class TestRunWorkerPollAndReport:
                 return await service.poll_once()
 
         assert asyncio.run(_run()) == 1
-        assert len(reported) == 1
-        assert reported[0]["status"] == "failed"
-        assert "k8s api unreachable" in reported[0]["error"]
+        result_reports = [r for r in reported if "status" in r]
+        assert len(result_reports) == 1
+        assert result_reports[0]["status"] == "failed"
+        assert "k8s api unreachable" in result_reports[0]["error"]
+        assert "k8s api unreachable" in result_reports[0]["error_message"]
 
     def test_healthcheck_passes_with_fresh_heartbeat(
         self, tmp_path, monkeypatch
@@ -765,9 +777,11 @@ class TestRunWorkerPollAndReport:
 
         assert asyncio.run(_run()) == 1
         mock_runner.execute.assert_not_called()
-        assert len(reported) == 1
-        assert reported[0]["status"] == "failed"
-        assert "SHA-256 mismatch" in reported[0]["error"]
+        result_reports = [r for r in reported if "status" in r]
+        assert len(result_reports) == 1
+        assert result_reports[0]["status"] == "failed"
+        assert "SHA-256 mismatch" in result_reports[0]["error"]
+        assert "SHA-256 mismatch" in result_reports[0]["error_message"]
 
     def test_init_container_manifest_uses_emptydir_and_hides_presigned_url(
         self,
@@ -858,11 +872,14 @@ class TestRunWorkerPollAndReport:
         assert [p for p, _ in posted] == [
             "/api/v1/runs/internal/executions/exec-stream-1/logs",
             "/api/v1/runs/internal/executions/exec-stream-1/logs",
+            "/api/v1/runs/internal/executions/exec-stream-1/logs",
             "/api/v1/runs/internal/executions/exec-stream-1/result",
         ]
-        assert posted[0][1] == {"logs": "chunk 1\n", "worker_id": "runworker-live-1"}
-        assert posted[1][1] == {
+        assert "warming up" in posted[0][1]["logs"]
+        assert posted[1][1] == {"logs": "chunk 1\n", "worker_id": "runworker-live-1"}
+        assert posted[2][1] == {
             "logs": "chunk 1\nchunk 2\n",
             "worker_id": "runworker-live-1",
         }
-        assert posted[2][1]["status"] == "succeeded"
+        assert posted[3][1]["status"] == "completed"
+        assert posted[3][1]["stdout_log"] == "chunk 1\nchunk 2\nfinal\n"

@@ -104,7 +104,7 @@ describe("RunsList", () => {
     );
   });
 
-  it("renders function list with runtime badges, cron schedule, and namespace", async () => {
+  it("renders function list with runtime badges, cron schedule, and worker cluster", async () => {
     vi.mocked(api.listRunFunctions).mockResolvedValue({
       data: SAMPLE_FUNCTIONS,
       total: 3,
@@ -137,7 +137,7 @@ describe("RunsList", () => {
       "Isolated",
     );
     expect(screen.getByText("*/5 * * * *")).toBeTruthy();
-    expect(screen.getByText("elder-runs @ dal2-alpha")).toBeTruthy();
+    expect(screen.getByText("dal2-alpha")).toBeTruthy();
   });
 
   it("creates a new function via the Create Function modal", async () => {
@@ -194,7 +194,8 @@ describe("RunsList", () => {
     fireEvent.change(screen.getByLabelText("Schedule (cron)"), {
       target: { value: "0 * * * *" },
     });
-    fireEvent.change(screen.getByLabelText("Worker Cluster"), {
+    expect(screen.queryByLabelText(/Execution Namespace/i)).toBeNull();
+    fireEvent.change(screen.getByLabelText(/Worker Cluster/i), {
       target: { value: "prod-west" },
     });
 
@@ -222,7 +223,6 @@ describe("RunsList", () => {
           timeout_seconds: 45,
           memory_mb: 512,
           schedule_cron: "0 * * * *",
-          execution_namespace: "elder-runs",
           worker_cluster: "prod-west",
           granted_scopes: ["entities:write", "integrations:sync"],
           allowed_egress_domains: ["api.github.com", "hooks.slack.com"],
