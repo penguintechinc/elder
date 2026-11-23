@@ -126,6 +126,26 @@ export function getStarterCode(runtime: string): string {
   );
 }
 
+export function getStorageBackendMeta(backend: "database" | "s3"): {
+  shortLabel: string;
+  label: string;
+  badgeClass: string;
+} {
+  if (backend === "s3") {
+    return {
+      shortLabel: "S3",
+      label: "S3 Bucket",
+      badgeClass:
+        "bg-indigo-900/70 text-indigo-200 border border-indigo-700/60",
+    };
+  }
+  return {
+    shortLabel: "DB",
+    label: "Database",
+    badgeClass: "bg-slate-900 text-slate-300 border border-slate-700",
+  };
+}
+
 export function getExecutionStatusBadgeClass(status: string): string {
   switch (status.toLowerCase()) {
     case "success":

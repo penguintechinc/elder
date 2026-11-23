@@ -12,6 +12,10 @@ import {
   RefreshCw,
   Terminal,
   Clock,
+  Database,
+  HardDrive,
+  Copy,
+  Check,
 } from "lucide-react";
 import api, {
   type RunExecution,
@@ -23,6 +27,7 @@ import {
   RUN_RUNTIMES,
   getExecutionStatusBadgeClass,
   getRuntimeMeta,
+  getStorageBackendMeta,
 } from "@/modules/runs/runtimes";
 
 interface EditFormState {
@@ -50,6 +55,7 @@ export default function RunDetail() {
   const [expandedExecutions, setExpandedExecutions] = useState<
     Record<string, boolean>
   >({});
+  const [copiedSha256, setCopiedSha256] = useState(false);
 
   const {
     data: fn,
@@ -190,6 +196,17 @@ export default function RunDetail() {
       ...prev,
       [executionId]: !prev[executionId],
     }));
+  };
+
+  const handleCopySha256 = async (sha256: string) => {
+    try {
+      await navigator.clipboard.writeText(sha256);
+      setCopiedSha256(true);
+      toast.success("SHA-256 copied to clipboard");
+      setTimeout(() => setCopiedSha256(false), 2000);
+    } catch {
+      toast.error("Failed to copy SHA-256");
+    }
   };
 
   if (!isValidId) {
@@ -504,44 +521,137 @@ export default function RunDetail() {
             </div>
           </form>
 
-          <section className="bg-slate-800 border border-slate-700 rounded-xl p-6 space-y-4 h-fit">
-            <h2 className="text-lg font-semibold text-amber-400 border-b border-slate-700 pb-3">
-              Test Run
-            </h2>
-            <div>
-              <label
-                htmlFor="test-run-payload"
-                className="block text-sm font-medium text-slate-300 mb-1"
+          <div className="space-y-6 h-fit">
+            <section className="bg-slate-800 border border-slate-700 rounded-xl p-6 space-y-4">
+              <h2 className="text-lg font-semibold text-amber-400 border-b border-slate-700 pb-3">
+                Test Run
+              </h2>
+              <div>
+                <label
+                  htmlFor="test-run-payload"
+                  className="block text-sm font-medium text-slate-300 mb-1"
+                >
+                  JSON Input Payload
+                </label>
+                <textarea
+                  id="test-run-payload"
+                  rows={8}
+                  value={payloadText}
+                  onChange={(e) => {
+                    setPayloadText(e.target.value);
+                    if (payloadError) setPayloadError(null);
+                  }}
+                  spellCheck={false}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs font-mono text-slate-100 focus:outline-none focus:border-amber-400"
+                />
+                {payloadError && (
+                  <p role="alert" className="text-xs text-rose-300 mt-1">
+                    {payloadError}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleTestRun}
+                disabled={invokeMutation.isPending}
+                className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
               >
-                JSON Input Payload
-              </label>
-              <textarea
-                id="test-run-payload"
-                rows={8}
-                value={payloadText}
-                onChange={(e) => {
-                  setPayloadText(e.target.value);
-                  if (payloadError) setPayloadError(null);
-                }}
-                spellCheck={false}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs font-mono text-slate-100 focus:outline-none focus:border-amber-400"
-              />
-              {payloadError && (
-                <p role="alert" className="text-xs text-rose-300 mt-1">
-                  {payloadError}
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={handleTestRun}
-              disabled={invokeMutation.isPending}
-              className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
-            >
-              <Play className="w-4 h-4" aria-hidden="true" />
-              {invokeMutation.isPending ? "Running..." : "Run Function"}
-            </button>
-          </section>
+                <Play className="w-4 h-4" aria-hidden="true" />
+                {invokeMutation.isPending ? "Running..." : "Run Function"}
+              </button>
+            </section>
+
+            {(fn.storage_backend || fn.storage_key || fn.code_sha256) && (
+              <section
+                data-testid="artifact-storage-section"
+                className="bg-slate-800 border border-slate-700 rounded-xl p-6 space-y-4"
+              >
+                <h2 className="text-lg font-semibold text-amber-400 border-b border-slate-700 pb-3 flex items-center gap-2">
+                  {fn.storage_backend === "s3" ? (
+                    <HardDrive className="w-5 h-5" aria-hidden="true" />
+                  ) : (
+                    <Database className="w-5 h-5" aria-hidden="true" />
+                  )}
+                  Artifact Storage
+                </h2>
+
+                <dl className="space-y-3 text-sm">
+                  {fn.storage_backend &&
+                    (() => {
+                      const storageMeta = getStorageBackendMeta(
+                        fn.storage_backend,
+                      );
+                      return (
+                        <div>
+                          <dt className="text-xs font-medium text-slate-400 mb-1">
+                            Storage Backend
+                          </dt>
+                          <dd>
+                            <span
+                              data-testid="artifact-storage-backend"
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${storageMeta.badgeClass}`}
+                            >
+                              {storageMeta.label}
+                            </span>
+                          </dd>
+                        </div>
+                      );
+                    })()}
+
+                  {fn.storage_key && (
+                    <div>
+                      <dt className="text-xs font-medium text-slate-400 mb-1">
+                        Storage Key
+                      </dt>
+                      <dd>
+                        <code
+                          data-testid="artifact-storage-key"
+                          className="block text-xs font-mono text-slate-200 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 break-all"
+                        >
+                          {fn.storage_key}
+                        </code>
+                      </dd>
+                    </div>
+                  )}
+
+                  {fn.code_sha256 && (
+                    <div>
+                      <dt className="text-xs font-medium text-slate-400 mb-1">
+                        Code SHA-256
+                      </dt>
+                      <dd className="flex items-center gap-2">
+                        <code
+                          data-testid="artifact-code-sha256"
+                          title={fn.code_sha256}
+                          className="flex-1 min-w-0 truncate text-xs font-mono text-slate-200 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5"
+                        >
+                          {fn.code_sha256.length > 16
+                            ? `${fn.code_sha256.slice(0, 16)}…`
+                            : fn.code_sha256}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => handleCopySha256(fn.code_sha256!)}
+                          aria-label="Copy SHA-256"
+                          title="Copy SHA-256"
+                          className="inline-flex items-center justify-center p-1.5 rounded-md bg-slate-900 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-amber-300 transition-colors shrink-0"
+                        >
+                          {copiedSha256 ? (
+                            <Check
+                              className="w-3.5 h-3.5 text-emerald-400"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                          )}
+                        </button>
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </section>
+            )}
+          </div>
         </div>
 
         <section className="bg-slate-800 border border-slate-700 rounded-xl p-6 space-y-4">
