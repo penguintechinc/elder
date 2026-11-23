@@ -157,7 +157,7 @@ Entities use a flexible schema for infrastructure components:
 
 ## Screenshots
 
-> Captured against seeded mock data (`make seed-mock-data`). The full set lives in [`docs/screenshots/`](docs/screenshots/). Streams and the Relationship Graph do not have captures yet; Flows and the internal Helpdesk have no web UI at all (see Modules above).
+> Captured against seeded demo data (`make seed-demo`, see [`docs/demo-data.md`](docs/demo-data.md)). The full set lives in [`docs/screenshots/`](docs/screenshots/). Streams and the Relationship Graph do not have captures yet; Flows and the internal Helpdesk have no web UI at all (see Modules above).
 
 ### Login & Dashboard
 

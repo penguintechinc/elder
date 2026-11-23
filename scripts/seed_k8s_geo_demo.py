@@ -650,12 +650,12 @@ def _seed_geo_entities(db: Any, organization_id: int) -> int:
 # ---------------------------------------------------------------------------
 
 
-def seed_k8s_geo_demo() -> None:
+def seed_k8s_geo_demo(app: Any | None = None) -> None:
     """Seed the demo K8s cluster hierarchy + geo-located entities."""
     print("Seeding demo Kubernetes cluster hierarchy + geo-located entities...")
 
     # See seed_cloud_discovery.py for why this isn't `with app.app_context():`.
-    app = create_app()
+    app = app if app is not None else create_app()
     db = app.db
 
     cd = _load_seed_cloud_discovery()
