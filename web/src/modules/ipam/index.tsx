@@ -1,32 +1,23 @@
-import { lazy } from 'react'
-import type { RouteObject } from 'react-router-dom'
-import type { MenuCategory } from '@penguintechinc/react-libs/components'
-import type { FrontendModule } from '../types'
-import { Globe } from 'lucide-react'
+import { Navigate } from "react-router-dom";
+import type { RouteObject } from "react-router-dom";
+import type { MenuCategory } from "@penguintechinc/react-libs/components";
+import type { FrontendModule } from "../types";
 
-// eslint-disable-next-line react-refresh/only-export-components -- Intentional: exports both lazy component and module manifest
-const IPAM = lazy(() => import('@/pages/IPAM'))
-
-const navigation: MenuCategory[] = [
-  {
-    header: 'Networking',
-    collapsible: true,
-    items: [
-      { name: 'IPAM', href: '/ipam', icon: Globe },
-    ],
-  },
-]
+// IPAM is consolidated as a tab inside Networking (/networking?tab=ipam).
+// Keep an empty navigation array so the `ipam` module toggle controls IPAM tab
+// visibility without adding a duplicate top-level sidebar item.
+const navigation: MenuCategory[] = [];
 
 const routes: RouteObject[] = [
-  { path: 'ipam', element: <IPAM /> },
-]
+  { path: "ipam", element: <Navigate to="/networking?tab=ipam" replace /> },
+];
 
 const ipamModule: FrontendModule = {
-  id: 'ipam',
-  name: 'IPAM',
-  group: 'entities',
+  id: "ipam",
+  name: "IPAM",
+  group: "entities",
   nav: navigation,
   routes,
-}
+};
 
-export default ipamModule
+export default ipamModule;

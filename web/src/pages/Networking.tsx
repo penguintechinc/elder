@@ -33,6 +33,8 @@ import SearchableSelect from "@/components/SearchableSelect";
 import NetworkTopologyGraph from "@/components/NetworkTopologyGraph";
 import ModalFormBuilder from "@/components/ModalFormBuilder";
 import VillageIdBadge from "@/components/VillageIdBadge";
+import { useModules } from "@/hooks/useModules";
+import IPAM from "./IPAM";
 import type { FormField } from "@/types/form";
 
 interface Organization {
@@ -141,11 +143,42 @@ const COMMON_LOCATIONS = [
   "Zayo",
 ];
 
-const TABS = ["Networks", "Topology", "Connections"] as const;
-type Tab = (typeof TABS)[number];
+const BASE_TABS = ["Networks", "Topology", "Connections"] as const;
+type Tab = (typeof BASE_TABS)[number] | "IPAM";
+
+function parseNetworkingTab(raw: string | null, ipamEnabled: boolean): Tab {
+  if (!raw) return "Networks";
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "topology") return "Topology";
+  if (normalized === "connections") return "Connections";
+  if (
+    ipamEnabled &&
+    (normalized === "ipam" ||
+      normalized === "prefixes" ||
+      normalized === "addresses" ||
+      normalized === "vlans")
+  ) {
+    return "IPAM";
+  }
+  return "Networks";
+}
 
 export default function Networking() {
-  const [activeTab, setActiveTab] = useState<Tab>("Networks");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const highlightId = searchParams.get("highlight");
+  const { enabled: enabledModules, modules: allModules } = useModules();
+  const ipamEnabled =
+    allModules.length === 0 ||
+    enabledModules.has("ipam") ||
+    enabledModules.has("nav_ipam");
+  const visibleTabs: readonly Tab[] = ipamEnabled
+    ? [...BASE_TABS, "IPAM"]
+    : BASE_TABS;
+
+  const [activeTab, setActiveTab] = useState<Tab>(() =>
+    parseNetworkingTab(tabParam, ipamEnabled),
+  );
   const [selectedNetworkType, setSelectedNetworkType] = useState<string>("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [pendingOverwrite, setPendingOverwrite] = useState<{
@@ -170,9 +203,28 @@ export default function Networking() {
   const [createVlanId, setCreateVlanId] = useState("");
   const [createRegion, setCreateRegion] = useState("");
   const [createLocation, setCreateLocation] = useState("");
-  const [searchParams] = useSearchParams();
-  const highlightId = searchParams.get("highlight");
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    setActiveTab(parseNetworkingTab(tabParam, ipamEnabled));
+  }, [tabParam, ipamEnabled]);
+
+  const handleTabChange = (tab: Tab) => {
+    setActiveTab(tab);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (tab === "Networks") {
+          next.delete("tab");
+        } else {
+          next.set("tab", tab.toLowerCase());
+        }
+        next.delete("subtab");
+        return next;
+      },
+      { replace: true },
+    );
+  };
 
   const resetCreateForm = () => {
     setCreateOrgId(selectedOrg ? String(selectedOrg) : "");
@@ -210,6 +262,14 @@ export default function Networking() {
     queryKey: ["organizations"],
     queryFn: () => api.getOrganizations(),
   });
+
+  useEffect(() => {
+    if (selectedOrg !== null || highlightId) return;
+    const firstOrg = (orgs?.items as Organization[] | undefined)?.[0];
+    if (firstOrg) {
+      setSelectedOrg(firstOrg.id);
+    }
+  }, [orgs?.items, selectedOrg, highlightId]);
 
   const { data: allNetworks } = useQuery({
     queryKey: ["allNetworks"],
@@ -637,45 +697,55 @@ export default function Networking() {
     <div className="p-8">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-white">Network Topology</h1>
+          <h1 className="text-3xl font-bold text-white">Networking</h1>
           <p className="mt-2 text-slate-400">
-            Manage networking resources and visualize topology
+            {ipamEnabled
+              ? "Manage networking resources, topology, connections, and IP address management"
+              : "Manage networking resources and visualize topology"}
           </p>
         </div>
-        <div className="flex gap-3">
-          <Button variant="ghost" onClick={() => setShowTopologyModal(true)}>
-            <Activity className="w-4 h-4 mr-2" />
-            View Topology
-          </Button>
-          <Button onClick={openCreateModal}>
-            <Plus className="w-4 h-4 mr-2" />
-            Add Network
-          </Button>
-        </div>
+        {activeTab !== "IPAM" && (
+          <div className="flex gap-3">
+            <Button variant="ghost" onClick={() => setShowTopologyModal(true)}>
+              <Activity className="w-4 h-4 mr-2" />
+              View Topology
+            </Button>
+            <Button onClick={openCreateModal}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Network
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Organization Selector */}
-      <div className="mb-6 max-w-md">
-        <Select
-          label="Organization"
-          value={selectedOrg?.toString() || ""}
-          onChange={(e) => setSelectedOrg(parseInt(e.target.value))}
-          options={[
-            { value: "", label: "Select organization" },
-            ...(orgs?.items || []).map((o: Organization) => ({
-              value: o.id,
-              label: o.name,
-            })),
-          ]}
-        />
-      </div>
+      {activeTab !== "IPAM" && (
+        <div className="mb-6 max-w-md">
+          <Select
+            label="Organization"
+            value={selectedOrg?.toString() || ""}
+            onChange={(e) =>
+              setSelectedOrg(
+                e.target.value ? parseInt(e.target.value, 10) : null,
+              )
+            }
+            options={[
+              { value: "", label: "Select organization" },
+              ...(orgs?.items || []).map((o: Organization) => ({
+                value: o.id,
+                label: o.name,
+              })),
+            ]}
+          />
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 border-b border-slate-700">
-        {TABS.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => handleTabChange(tab)}
             className={`px-4 py-2 font-medium transition-colors border-b-2 ${
               activeTab === tab
                 ? "text-primary-400 border-primary-400"
@@ -926,6 +996,8 @@ export default function Networking() {
           )}
         </div>
       )}
+
+      {activeTab === "IPAM" && ipamEnabled && <IPAM embedded />}
 
       {showCreateModal && (
         <div

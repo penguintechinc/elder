@@ -100,8 +100,11 @@ def test_screenshot_tool_covers_all_v4_routes_and_excludes_stale_ones() -> None:
         not uncovered_nav
     ), f"Module nav routes missing from screenshot tool: {sorted(uncovered_nav)}"
 
+    # IPAM is consolidated into Networking via ?tab=ipam
+    assert "/networking?tab=ipam" in paths
+
     # Stale / removed routes must not be present
-    stale_paths = {"/diagram", "/helpdesk/tickets", "/admin/sync-config"}
+    stale_paths = {"/diagram", "/helpdesk/tickets", "/admin/sync-config", "/ipam"}
     present_stale = stale_paths & paths
     assert (
         not present_stale
