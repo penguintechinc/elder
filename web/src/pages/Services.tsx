@@ -12,6 +12,9 @@ import {
   ExternalLink,
   Clock,
   Play,
+  Route,
+  Check,
+  X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "@/lib/api";
@@ -175,6 +178,27 @@ function formatEndpointRowsToPaths(rows: EndpointRow[]): string[] {
   return paths;
 }
 
+function countValidEndpoints(rows: EndpointRow[]): number {
+  return formatEndpointRowsToPaths(rows).length;
+}
+
+function getEndpointMethodColor(method: EndpointMethod): string {
+  switch (method) {
+    case "GET":
+      return "bg-blue-500/20 text-blue-400";
+    case "POST":
+      return "bg-green-500/20 text-green-400";
+    case "PUT":
+      return "bg-yellow-500/20 text-yellow-400";
+    case "DELETE":
+      return "bg-red-500/20 text-red-400";
+    case "PATCH":
+      return "bg-purple-500/20 text-purple-400";
+    default:
+      return "bg-slate-500/20 text-slate-300";
+  }
+}
+
 export default function Services() {
   const [search, setSearch] = useState("");
   const [organizationFilter, setOrganizationFilter] = useState<string>("");
@@ -184,6 +208,9 @@ export default function Services() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [viewingService, setViewingService] = useState<Service | null>(null);
+  const [viewingServiceTab, setViewingServiceTab] = useState<
+    "details" | "endpoints" | "schedules"
+  >("details");
   const [searchParams] = useSearchParams();
   const highlightId = searchParams.get("highlight");
   const appliedHighlightRef = useRef<string | null>(null);
@@ -305,7 +332,7 @@ export default function Services() {
   const { data: allServicesData } = useQuery({
     queryKey: queryKeys.services.list({ per_page: 1000 }),
     queryFn: () => api.getServices({ per_page: 1000 }),
-    enabled: showCreateModal || !!editingService,
+    enabled: showCreateModal || !!editingService || !!viewingService,
   });
 
   // Collect unique existing endpoint paths across all services for lookup/autocomplete
@@ -461,7 +488,10 @@ export default function Services() {
                     ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
                     : ""
                 }`}
-                onClick={() => setViewingService(service)}
+                onClick={() => {
+                  setViewingServiceTab("details");
+                  setViewingService(service);
+                }}
               >
                 <CardContent>
                   <div className="flex items-start justify-between mb-3">
@@ -480,8 +510,24 @@ export default function Services() {
                         </span>
                       )}
                     </div>
-                    <div className="flex gap-2 flex-shrink-0">
+                    <div className="flex gap-1.5 flex-shrink-0">
                       <button
+                        type="button"
+                        title="Manage Endpoints"
+                        aria-label={`Manage endpoints for ${service.name}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewingServiceTab("endpoints");
+                          setViewingService(service);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-primary-400 hover:bg-primary-500/10 rounded transition-colors"
+                      >
+                        <Route className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Edit Service"
+                        aria-label={`Edit ${service.name}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           setEditingService(service);
@@ -491,6 +537,9 @@ export default function Services() {
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
+                        type="button"
+                        title="Delete Service"
+                        aria-label={`Delete ${service.name}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDelete(service.id, service.name);
@@ -528,6 +577,21 @@ export default function Services() {
                     <span className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300">
                       {service.deployment_method}
                     </span>
+                    {service.paths && service.paths.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewingServiceTab("endpoints");
+                          setViewingService(service);
+                        }}
+                        className="text-xs px-2 py-1 rounded bg-primary-500/15 text-primary-300 hover:bg-primary-500/25 transition-colors inline-flex items-center gap-1"
+                      >
+                        <Route className="w-3 h-3" />
+                        {service.paths.length}{" "}
+                        {service.paths.length === 1 ? "endpoint" : "endpoints"}
+                      </button>
+                    )}
                   </div>
 
                   {service.port && (
@@ -601,7 +665,11 @@ export default function Services() {
       {/* View Details Modal */}
       {viewingService && (
         <ServiceDetailsModal
+          key={`${viewingService.id}-${viewingServiceTab}`}
           service={viewingService}
+          initialTab={viewingServiceTab}
+          endpointPathOptions={endpointPathOptions}
+          onServiceUpdated={(updated) => setViewingService(updated)}
           onClose={() => setViewingService(null)}
           onEdit={() => {
             setEditingService(viewingService);
@@ -618,6 +686,7 @@ interface ServiceFormModalProps {
   title: string;
   submitLabel: string;
   initialService?: Service | null;
+  initialTab?: "details" | "endpoints";
   organizationOptions: Array<{ value: string; label: string }>;
   endpointPathOptions: Array<{ value: string; label: string }>;
   onSubmit: (data: Parameters<typeof api.createService>[0]) => void;
@@ -629,11 +698,15 @@ function ServiceFormModal({
   title,
   submitLabel,
   initialService,
+  initialTab = "details",
   organizationOptions,
   endpointPathOptions,
   onSubmit,
   isLoading,
 }: ServiceFormModalProps) {
+  const [activeTab, setActiveTab] = useState<"details" | "endpoints">(
+    initialTab,
+  );
   const [name, setName] = useState(initialService?.name || "");
   const [description, setDescription] = useState(
     initialService?.description || "",
@@ -662,6 +735,11 @@ function ServiceFormModal({
     return [createEmptyEndpointRow(0)];
   });
 
+  const validEndpointCount = useMemo(
+    () => countValidEndpoints(endpointRows),
+    [endpointRows],
+  );
+
   const handleAddEndpointRow = () => {
     setEndpointRows((prev) => [...prev, createEmptyEndpointRow(prev.length)]);
   };
@@ -682,10 +760,12 @@ function ServiceFormModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
+      setActiveTab("details");
       toast.error("Service name is required");
       return;
     }
     if (!organizationId) {
+      setActiveTab("details");
       toast.error("Organization is required");
       return;
     }
@@ -713,188 +793,252 @@ function ServiceFormModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
         <CardHeader>
           <h2 className="text-xl font-semibold text-white">{title}</h2>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              label="Name *"
-              required
-              placeholder="api-gateway"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-
-            <div>
-              <label
-                htmlFor="service-description"
-                className="block text-sm font-medium text-yellow-500 mb-1.5"
-              >
-                Description
-              </label>
-              <textarea
-                id="service-description"
-                rows={2}
-                placeholder="Service description (optional)"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="block w-full px-4 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              />
-            </div>
-
-            <div>
-              <span className="block text-sm font-medium text-yellow-500 mb-1.5">
-                Organization *
+          <div
+            role="tablist"
+            aria-label="Service form sections"
+            className="flex gap-4 mt-4 border-b border-slate-700"
+          >
+            <button
+              type="button"
+              id="service-form-tab-details"
+              role="tab"
+              aria-selected={activeTab === "details"}
+              aria-controls="service-form-panel-details"
+              onClick={() => setActiveTab("details")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                activeTab === "details"
+                  ? "border-primary-500 text-primary-400"
+                  : "border-transparent text-slate-400 hover:text-white"
+              }`}
+            >
+              Details
+            </button>
+            <button
+              type="button"
+              id="service-form-tab-endpoints"
+              role="tab"
+              aria-selected={activeTab === "endpoints"}
+              aria-controls="service-form-panel-endpoints"
+              onClick={() => setActiveTab("endpoints")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors inline-flex items-center gap-2 ${
+                activeTab === "endpoints"
+                  ? "border-primary-500 text-primary-400"
+                  : "border-transparent text-slate-400 hover:text-white"
+              }`}
+            >
+              <span>Endpoints</span>
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-200">
+                {validEndpointCount}
               </span>
-              <SearchableSelect
-                options={organizationOptions}
-                value={organizationId}
-                onChange={(val) => setOrganizationId(String(val))}
-                placeholder={
-                  organizationOptions.length
-                    ? "Select organization"
-                    : "No organizations found"
-                }
-                ariaLabel="Organization"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Select
-                label="Language"
-                options={LANGUAGES}
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-              />
-              <Select
-                label="Deployment Method"
-                options={DEPLOYMENT_METHODS}
-                value={deploymentMethod}
-                onChange={(e) => setDeploymentMethod(e.target.value)}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Select
-                label="Status"
-                options={SERVICE_STATUSES}
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-              />
-              <Input
-                label="Port"
-                type="number"
-                placeholder="8080"
-                value={port}
-                onChange={(e) => setPort(e.target.value)}
-              />
-            </div>
-
-            <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isPublic}
-                onChange={(e) => setIsPublic(e.target.checked)}
-                className="rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500"
-              />
-              Public service (accessible from internet)
-            </label>
-
-            <div>
-              <label
-                htmlFor="service-domains"
-                className="block text-sm font-medium text-yellow-500 mb-1.5"
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent className="overflow-y-auto flex-1">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {activeTab === "details" ? (
+              <div
+                id="service-form-panel-details"
+                role="tabpanel"
+                aria-labelledby="service-form-tab-details"
+                className="space-y-4"
               >
-                Domains (one per line)
-              </label>
-              <textarea
-                id="service-domains"
-                rows={2}
-                placeholder={"api.example.com\napi-v2.example.com"}
-                value={domainsText}
-                onChange={(e) => setDomainsText(e.target.value)}
-                className="block w-full px-4 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              />
-            </div>
+                <Input
+                  label="Name *"
+                  required
+                  placeholder="api-gateway"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
 
-            {/* Service Endpoints / Paths Repeater */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="block text-sm font-medium text-yellow-500">
-                  Service Endpoints / Paths
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleAddEndpointRow}
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" />
-                  Add more
-                </Button>
-              </div>
-
-              {endpointRows.length === 0 ? (
-                <p className="text-xs text-slate-500 py-2">
-                  No endpoints added. Click &ldquo;+ Add more&rdquo; to add an
-                  endpoint path.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {endpointRows.map((row, idx) => (
-                    <div key={row.id} className="flex items-center gap-2">
-                      <select
-                        aria-label={`Endpoint ${idx + 1} method`}
-                        value={row.method}
-                        onChange={(e) =>
-                          handleUpdateEndpointRow(row.id, {
-                            method: e.target.value as EndpointMethod,
-                          })
-                        }
-                        className="w-24 shrink-0 px-2.5 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                      >
-                        {ENDPOINT_METHODS.map((m) => (
-                          <option key={m} value={m}>
-                            {m}
-                          </option>
-                        ))}
-                      </select>
-
-                      <SearchableSelect
-                        options={endpointPathOptions}
-                        value={row.path}
-                        onChange={(val) =>
-                          handleUpdateEndpointRow(row.id, { path: String(val) })
-                        }
-                        placeholder="/api/v1/resource"
-                        allowCustom
-                        allowClear
-                        ariaLabel={`Endpoint ${idx + 1} path`}
-                        className="flex-1"
-                      />
-
-                      <button
-                        type="button"
-                        aria-label={`Remove endpoint ${idx + 1}`}
-                        onClick={() => handleRemoveEndpointRow(row.id)}
-                        className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
+                <div>
+                  <label
+                    htmlFor="service-description"
+                    className="block text-sm font-medium text-yellow-500 mb-1.5"
+                  >
+                    Description
+                  </label>
+                  <textarea
+                    id="service-description"
+                    rows={2}
+                    placeholder="Service description (optional)"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="block w-full px-4 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
                 </div>
-              )}
 
-              <p className="text-xs text-slate-500 mt-1.5">
-                Pick an existing endpoint path or type a new one and press Enter
-                (or click &ldquo;Use ...&rdquo;).
-              </p>
-            </div>
+                <div>
+                  <span className="block text-sm font-medium text-yellow-500 mb-1.5">
+                    Organization *
+                  </span>
+                  <SearchableSelect
+                    options={organizationOptions}
+                    value={organizationId}
+                    onChange={(val) => setOrganizationId(String(val))}
+                    placeholder={
+                      organizationOptions.length
+                        ? "Select organization"
+                        : "No organizations found"
+                    }
+                    ariaLabel="Organization"
+                  />
+                </div>
 
-            <div className="flex justify-end gap-3 pt-2 border-t border-slate-700">
+                <div className="grid grid-cols-2 gap-3">
+                  <Select
+                    label="Language"
+                    options={LANGUAGES}
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                  />
+                  <Select
+                    label="Deployment Method"
+                    options={DEPLOYMENT_METHODS}
+                    value={deploymentMethod}
+                    onChange={(e) => setDeploymentMethod(e.target.value)}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Select
+                    label="Status"
+                    options={SERVICE_STATUSES}
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                  />
+                  <Input
+                    label="Port"
+                    type="number"
+                    placeholder="8080"
+                    value={port}
+                    onChange={(e) => setPort(e.target.value)}
+                  />
+                </div>
+
+                <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isPublic}
+                    onChange={(e) => setIsPublic(e.target.checked)}
+                    className="rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500"
+                  />
+                  Public service (accessible from internet)
+                </label>
+
+                <div>
+                  <label
+                    htmlFor="service-domains"
+                    className="block text-sm font-medium text-yellow-500 mb-1.5"
+                  >
+                    Domains (one per line)
+                  </label>
+                  <textarea
+                    id="service-domains"
+                    rows={2}
+                    placeholder={"api.example.com\napi-v2.example.com"}
+                    value={domainsText}
+                    onChange={(e) => setDomainsText(e.target.value)}
+                    className="block w-full px-4 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div
+                id="service-form-panel-endpoints"
+                role="tabpanel"
+                aria-labelledby="service-form-tab-endpoints"
+                className="space-y-4"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-medium text-white">
+                      Service Endpoints / Paths
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {initialService
+                        ? "Add, edit, or remove endpoints for this service. Changes are saved when you click Update."
+                        : "Stage endpoints now — they will be saved automatically when you create the service."}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleAddEndpointRow}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    Add Endpoint
+                  </Button>
+                </div>
+
+                {endpointRows.length === 0 ? (
+                  <div className="text-center py-6 bg-slate-800/30 rounded-lg border border-slate-700/60">
+                    <Route className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                    <p className="text-xs text-slate-400">
+                      No endpoints configured yet. Click &ldquo;Add
+                      Endpoint&rdquo; to add one.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {endpointRows.map((row, idx) => (
+                      <div key={row.id} className="flex items-center gap-2">
+                        <select
+                          aria-label={`Endpoint ${idx + 1} method`}
+                          value={row.method}
+                          onChange={(e) =>
+                            handleUpdateEndpointRow(row.id, {
+                              method: e.target.value as EndpointMethod,
+                            })
+                          }
+                          className="w-24 shrink-0 px-2.5 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        >
+                          {ENDPOINT_METHODS.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+
+                        <SearchableSelect
+                          options={endpointPathOptions}
+                          value={row.path}
+                          onChange={(val) =>
+                            handleUpdateEndpointRow(row.id, {
+                              path: String(val),
+                            })
+                          }
+                          placeholder="/api/v1/resource"
+                          allowCustom
+                          allowClear
+                          ariaLabel={`Endpoint ${idx + 1} path`}
+                          className="flex-1"
+                        />
+
+                        <button
+                          type="button"
+                          aria-label={`Remove endpoint ${idx + 1}`}
+                          onClick={() => handleRemoveEndpointRow(row.id)}
+                          className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <p className="text-xs text-slate-500">
+                  Pick an existing endpoint path or type a new one and press
+                  Enter (or click &ldquo;Use ...&rdquo;).
+                </p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-700">
               <Button
                 type="button"
                 variant="ghost"
@@ -916,18 +1060,25 @@ function ServiceFormModal({
 
 interface ServiceDetailsModalProps {
   service: Service;
+  initialTab?: "details" | "endpoints" | "schedules";
+  endpointPathOptions: Array<{ value: string; label: string }>;
+  onServiceUpdated: (updated: Service) => void;
   onClose: () => void;
   onEdit: () => void;
 }
 
 function ServiceDetailsModal({
   service,
+  initialTab = "details",
+  endpointPathOptions,
+  onServiceUpdated,
   onClose,
   onEdit,
 }: ServiceDetailsModalProps) {
-  const [activeTab, setActiveTab] = useState<"details" | "schedules">(
-    "details",
-  );
+  const [activeTab, setActiveTab] = useState<
+    "details" | "endpoints" | "schedules"
+  >(initialTab);
+  const endpointCount = service.paths?.length ?? 0;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -953,16 +1104,27 @@ function ServiceDetailsModal({
               )}
             </div>
             <button
+              type="button"
+              aria-label={`Edit ${service.name}`}
               onClick={onEdit}
               className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
             >
               <Edit className="w-4 h-4" />
             </button>
           </div>
-          <div className="flex gap-4 mt-4">
+          <div
+            role="tablist"
+            aria-label="Service details sections"
+            className="flex gap-4 mt-4 border-b border-slate-700"
+          >
             <button
+              type="button"
+              id="service-details-tab-details"
+              role="tab"
+              aria-selected={activeTab === "details"}
+              aria-controls="service-details-panel-details"
               onClick={() => setActiveTab("details")}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 activeTab === "details"
                   ? "border-primary-500 text-primary-400"
                   : "border-transparent text-slate-400 hover:text-white"
@@ -971,8 +1133,31 @@ function ServiceDetailsModal({
               Details
             </button>
             <button
+              type="button"
+              id="service-details-tab-endpoints"
+              role="tab"
+              aria-selected={activeTab === "endpoints"}
+              aria-controls="service-details-panel-endpoints"
+              onClick={() => setActiveTab("endpoints")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors inline-flex items-center gap-2 ${
+                activeTab === "endpoints"
+                  ? "border-primary-500 text-primary-400"
+                  : "border-transparent text-slate-400 hover:text-white"
+              }`}
+            >
+              <span>Endpoints</span>
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-200">
+                {endpointCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              id="service-details-tab-schedules"
+              role="tab"
+              aria-selected={activeTab === "schedules"}
+              aria-controls="service-details-panel-schedules"
               onClick={() => setActiveTab("schedules")}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 activeTab === "schedules"
                   ? "border-primary-500 text-primary-400"
                   : "border-transparent text-slate-400 hover:text-white"
@@ -984,9 +1169,36 @@ function ServiceDetailsModal({
         </CardHeader>
         <CardContent className="overflow-y-auto flex-1">
           {activeTab === "details" ? (
-            <ServiceDetailsTab service={service} />
+            <div
+              id="service-details-panel-details"
+              role="tabpanel"
+              aria-labelledby="service-details-tab-details"
+            >
+              <ServiceDetailsTab
+                service={service}
+                onOpenEndpoints={() => setActiveTab("endpoints")}
+              />
+            </div>
+          ) : activeTab === "endpoints" ? (
+            <div
+              id="service-details-panel-endpoints"
+              role="tabpanel"
+              aria-labelledby="service-details-tab-endpoints"
+            >
+              <ServiceEndpointsTab
+                service={service}
+                endpointPathOptions={endpointPathOptions}
+                onServiceUpdated={onServiceUpdated}
+              />
+            </div>
           ) : (
-            <ServiceSchedulesTab service={service} />
+            <div
+              id="service-details-panel-schedules"
+              role="tabpanel"
+              aria-labelledby="service-details-tab-schedules"
+            >
+              <ServiceSchedulesTab service={service} />
+            </div>
           )}
         </CardContent>
         <div className="border-t border-slate-700 p-4 flex justify-end">
@@ -999,7 +1211,13 @@ function ServiceDetailsModal({
   );
 }
 
-function ServiceDetailsTab({ service }: { service: Service }) {
+function ServiceDetailsTab({
+  service,
+  onOpenEndpoints,
+}: {
+  service: Service;
+  onOpenEndpoints: () => void;
+}) {
   return (
     <div className="space-y-4">
       {service.description && (
@@ -1008,7 +1226,7 @@ function ServiceDetailsTab({ service }: { service: Service }) {
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="text-xs text-slate-500 uppercase">Status</label>
+          <span className="block text-xs text-slate-500 uppercase">Status</span>
           <div className="mt-1">
             <span
               className={`text-sm px-2 py-1 rounded ${getStatusColor(service.status)}`}
@@ -1018,16 +1236,20 @@ function ServiceDetailsTab({ service }: { service: Service }) {
           </div>
         </div>
         <div>
-          <label className="text-xs text-slate-500 uppercase">Language</label>
+          <span className="block text-xs text-slate-500 uppercase">
+            Language
+          </span>
           <p className="text-sm text-white mt-1">{service.language}</p>
         </div>
         <div>
-          <label className="text-xs text-slate-500 uppercase">Deployment</label>
+          <span className="block text-xs text-slate-500 uppercase">
+            Deployment
+          </span>
           <p className="text-sm text-white mt-1">{service.deployment_method}</p>
         </div>
         {service.port && (
           <div>
-            <label className="text-xs text-slate-500 uppercase">Port</label>
+            <span className="block text-xs text-slate-500 uppercase">Port</span>
             <p className="text-sm text-white mt-1">{service.port}</p>
           </div>
         )}
@@ -1035,7 +1257,9 @@ function ServiceDetailsTab({ service }: { service: Service }) {
 
       {service.domains && service.domains.length > 0 && (
         <div>
-          <label className="text-xs text-slate-500 uppercase">Domains</label>
+          <span className="block text-xs text-slate-500 uppercase">
+            Domains
+          </span>
           <div className="flex flex-wrap gap-2 mt-2">
             {service.domains.map((domain: string, idx: number) => (
               <span
@@ -1050,19 +1274,394 @@ function ServiceDetailsTab({ service }: { service: Service }) {
         </div>
       )}
 
-      {service.paths && service.paths.length > 0 && (
-        <div>
-          <label className="text-xs text-slate-500 uppercase">Paths</label>
+      <div>
+        <div className="flex items-center justify-between">
+          <span className="block text-xs text-slate-500 uppercase">
+            Endpoints ({service.paths?.length ?? 0})
+          </span>
+          <button
+            type="button"
+            onClick={onOpenEndpoints}
+            className="text-xs text-primary-400 hover:text-primary-300 transition-colors"
+          >
+            Manage endpoints
+          </button>
+        </div>
+        {service.paths && service.paths.length > 0 ? (
           <div className="flex flex-wrap gap-2 mt-2">
-            {service.paths.map((path: string, idx: number) => (
-              <span
-                key={idx}
-                className="text-sm px-2 py-1 rounded bg-slate-700 text-slate-300"
-              >
-                {path}
-              </span>
-            ))}
+            {service.paths.map((rawPath: string, idx: number) => {
+              const parsed = parsePathToEndpointRow(rawPath, idx);
+              return (
+                <span
+                  key={idx}
+                  className="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300 inline-flex items-center gap-1.5 font-mono"
+                >
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold ${getEndpointMethodColor(parsed.method)}`}
+                  >
+                    {parsed.method}
+                  </span>
+                  {parsed.path}
+                </span>
+              );
+            })}
           </div>
+        ) : (
+          <p className="text-sm text-slate-500 mt-1">
+            No endpoints configured yet.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface ServiceEndpointsTabProps {
+  service: Service;
+  endpointPathOptions: Array<{ value: string; label: string }>;
+  onServiceUpdated: (updated: Service) => void;
+}
+
+function ServiceEndpointsTab({
+  service,
+  endpointPathOptions,
+  onServiceUpdated,
+}: ServiceEndpointsTabProps) {
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [methodFilter, setMethodFilter] = useState("");
+  const [newMethod, setNewMethod] = useState<EndpointMethod>("GET");
+  const [newPath, setNewPath] = useState("");
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editMethod, setEditMethod] = useState<EndpointMethod>("GET");
+  const [editPath, setEditPath] = useState("");
+
+  const parsedEndpoints = useMemo(
+    () =>
+      (service.paths || []).map((rawPath, idx) => ({
+        ...parsePathToEndpointRow(rawPath, idx),
+        index: idx,
+        raw: rawPath,
+      })),
+    [service.paths],
+  );
+
+  const filteredEndpoints = useMemo(
+    () =>
+      parsedEndpoints.filter((ep) => {
+        if (
+          search &&
+          !ep.path.toLowerCase().includes(search.toLowerCase()) &&
+          !ep.method.toLowerCase().includes(search.toLowerCase())
+        ) {
+          return false;
+        }
+        if (methodFilter && ep.method !== methodFilter) {
+          return false;
+        }
+        return true;
+      }),
+    [parsedEndpoints, search, methodFilter],
+  );
+
+  const updatePathsMutation = useMutation({
+    mutationFn: ({
+      nextPaths,
+    }: {
+      nextPaths: string[];
+      successMessage: string;
+    }) => api.updateService(service.id, { paths: nextPaths }),
+    onSuccess: async (_data, variables) => {
+      await invalidateCache.services(queryClient);
+      onServiceUpdated({ ...service, paths: variables.nextPaths });
+      toast.success(variables.successMessage);
+    },
+    onError: () => {
+      toast.error("Failed to update service endpoints");
+    },
+  });
+
+  const handleAddEndpoint = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newPath.trim();
+    if (!trimmed) {
+      toast.error("Endpoint path is required");
+      return;
+    }
+    const nextRows: EndpointRow[] = [
+      ...parsedEndpoints,
+      { id: "new", method: newMethod, path: trimmed },
+    ];
+    const nextPaths = formatEndpointRowsToPaths(nextRows);
+    updatePathsMutation.mutate(
+      { nextPaths, successMessage: "Endpoint added" },
+      {
+        onSuccess: () => {
+          setNewPath("");
+        },
+      },
+    );
+  };
+
+  const handleStartEdit = (idx: number, method: EndpointMethod, path: string) => {
+    setEditingIndex(idx);
+    setEditMethod(method);
+    setEditPath(path);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingIndex(null);
+    setEditPath("");
+  };
+
+  const handleSaveEdit = (idx: number) => {
+    const trimmed = editPath.trim();
+    if (!trimmed) {
+      toast.error("Endpoint path is required");
+      return;
+    }
+    const nextRows = parsedEndpoints.map((ep) =>
+      ep.index === idx ? { ...ep, method: editMethod, path: trimmed } : ep,
+    );
+    const nextPaths = formatEndpointRowsToPaths(nextRows);
+    updatePathsMutation.mutate(
+      { nextPaths, successMessage: "Endpoint updated" },
+      {
+        onSuccess: () => {
+          setEditingIndex(null);
+          setEditPath("");
+        },
+      },
+    );
+  };
+
+  const handleDeleteEndpoint = (idx: number) => {
+    const nextRows = parsedEndpoints.filter((ep) => ep.index !== idx);
+    const nextPaths = formatEndpointRowsToPaths(nextRows);
+    updatePathsMutation.mutate({
+      nextPaths,
+      successMessage: "Endpoint removed",
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Inline Add Endpoint Form */}
+      <form
+        onSubmit={handleAddEndpoint}
+        className="p-3 bg-slate-800/50 rounded-lg border border-slate-700 space-y-3"
+      >
+        <div className="text-xs font-medium text-slate-300 uppercase tracking-wider">
+          Add Endpoint
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="w-28">
+            <label
+              htmlFor="new-endpoint-method"
+              className="block text-xs text-slate-400 mb-1"
+            >
+              Method
+            </label>
+            <select
+              id="new-endpoint-method"
+              value={newMethod}
+              onChange={(e) => setNewMethod(e.target.value as EndpointMethod)}
+              className="w-full px-2.5 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            >
+              {ENDPOINT_METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <label
+              htmlFor="new-endpoint-path"
+              className="block text-xs text-slate-400 mb-1"
+            >
+              Path
+            </label>
+            <input
+              id="new-endpoint-path"
+              type="text"
+              list="service-endpoint-path-suggestions"
+              placeholder="/api/v1/resource"
+              value={newPath}
+              onChange={(e) => setNewPath(e.target.value)}
+              className="block w-full px-3 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-mono"
+            />
+            <datalist id="service-endpoint-path-suggestions">
+              {endpointPathOptions.map((opt) => (
+                <option key={opt.value} value={opt.value} />
+              ))}
+            </datalist>
+          </div>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={updatePathsMutation.isPending}
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            Add Endpoint
+          </Button>
+        </div>
+      </form>
+
+      {/* Search & Method Filter */}
+      {parsedEndpoints.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              aria-label="Search endpoints"
+              placeholder="Filter endpoints..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="block w-full pl-9 pr-3 py-1.5 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            />
+          </div>
+          <select
+            aria-label="Filter endpoints by method"
+            value={methodFilter}
+            onChange={(e) => setMethodFilter(e.target.value)}
+            className="px-3 py-1.5 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+          >
+            <option value="">All Methods</option>
+            {ENDPOINT_METHODS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Endpoints List */}
+      {parsedEndpoints.length === 0 ? (
+        <div className="text-center py-8 bg-slate-800/30 rounded-lg border border-slate-700/60">
+          <Route className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+          <p className="text-sm text-slate-400">
+            No endpoints configured for this service
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            Add an HTTP method and path above to register an endpoint.
+          </p>
+        </div>
+      ) : filteredEndpoints.length === 0 ? (
+        <div className="text-center py-6 bg-slate-800/30 rounded-lg">
+          <p className="text-sm text-slate-400">
+            No endpoints match the current filter
+          </p>
+        </div>
+      ) : (
+        <div className="border border-slate-700 rounded-lg overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-slate-800/60 border-b border-slate-700">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">
+                  Method
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-slate-400 uppercase">
+                  Path
+                </th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-slate-400 uppercase">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-700/80">
+              {filteredEndpoints.map((ep) => (
+                <tr key={`${ep.index}-${ep.raw}`} className="hover:bg-slate-800/30">
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {editingIndex === ep.index ? (
+                      <select
+                        aria-label={`Edit endpoint ${ep.index + 1} method`}
+                        value={editMethod}
+                        onChange={(e) =>
+                          setEditMethod(e.target.value as EndpointMethod)
+                        }
+                        className="w-24 px-2 py-1 text-xs bg-slate-900 border border-slate-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      >
+                        {ENDPOINT_METHODS.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded font-medium ${getEndpointMethodColor(ep.method)}`}
+                      >
+                        {ep.method}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {editingIndex === ep.index ? (
+                      <input
+                        type="text"
+                        aria-label={`Edit endpoint ${ep.index + 1} path`}
+                        value={editPath}
+                        onChange={(e) => setEditPath(e.target.value)}
+                        className="w-full px-2 py-1 text-sm bg-slate-900 border border-slate-600 rounded text-white font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      />
+                    ) : (
+                      <code className="text-sm text-slate-200 font-mono">
+                        {ep.path}
+                      </code>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-right">
+                    {editingIndex === ep.index ? (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          aria-label={`Save endpoint ${ep.index + 1}`}
+                          disabled={updatePathsMutation.isPending}
+                          onClick={() => handleSaveEdit(ep.index)}
+                          className="p-1 text-green-400 hover:bg-green-500/10 rounded transition-colors disabled:opacity-50"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Cancel editing endpoint ${ep.index + 1}`}
+                          onClick={handleCancelEdit}
+                          className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          aria-label={`Edit endpoint ${ep.method} ${ep.path}`}
+                          onClick={() =>
+                            handleStartEdit(ep.index, ep.method, ep.path)
+                          }
+                          className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete endpoint ${ep.method} ${ep.path}`}
+                          disabled={updatePathsMutation.isPending}
+                          onClick={() => handleDeleteEndpoint(ep.index)}
+                          className="p-1 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors disabled:opacity-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
