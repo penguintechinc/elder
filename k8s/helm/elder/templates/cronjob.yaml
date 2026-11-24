@@ -1,4 +1,3 @@
-{{- $hubApi := index .Values "hub-api" -}}
 {{- $svc := index .Values "svc-scanner" -}}
 {{- if and $svc.enabled (eq ($svc.mode | default "deployment") "cronjob") }}
 apiVersion: batch/v1
@@ -34,7 +33,7 @@ spec:
           serviceAccountName: {{ include "elder.serviceAccountName" . }}
           restartPolicy: Never
           securityContext:
-            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+            {{- include "elder.podSecurityContext" . | nindent 12 }}
           containers:
           - name: svc-scanner
             image: {{ include "elder.image" (list "svc-scanner" .) }}
@@ -54,8 +53,7 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: "svc-scanner"
             {{- end }}
-            - name: JWT_SECRET_KEY
-              value: {{ ($hubApi.env).JWT_SECRET_KEY | default (($hubApi.env).SECRET_KEY | default "CHANGE-IN-PRODUCTION") | quote }}
+            {{- include "elder.secretEnv" (list $svc .) | nindent 12 }}
             resources:
               {{- toYaml $svc.resources | nindent 14 }}
             volumeMounts:
@@ -64,11 +62,7 @@ spec:
             - name: tmp
               mountPath: /tmp
             securityContext:
-              {{- if $svc.securityContext }}
-              {{- toYaml $svc.securityContext | nindent 14 }}
-              {{- else }}
-              {{- toYaml .Values.securityContext | nindent 14 }}
-              {{- end }}
+              {{- include "elder.containerSecurityContext" (list $svc.securityContext .) | nindent 14 }}
           volumes:
           - name: screenshots
             emptyDir:
@@ -125,7 +119,7 @@ spec:
           serviceAccountName: {{ include "elder.serviceAccountName" . }}
           restartPolicy: Never
           securityContext:
-            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+            {{- include "elder.podSecurityContext" . | nindent 12 }}
           containers:
           - name: svc-integrations
             image: {{ include "elder.image" (list "svc-integrations" .) }}
@@ -145,19 +139,14 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: "svc-integrations"
             {{- end }}
-            - name: JWT_SECRET_KEY
-              value: {{ ($hubApi.env).JWT_SECRET_KEY | default (($hubApi.env).SECRET_KEY | default "CHANGE-IN-PRODUCTION") | quote }}
+            {{- include "elder.secretEnv" (list $int .) | nindent 12 }}
             resources:
               {{- toYaml $int.resources | nindent 14 }}
             volumeMounts:
             - name: tmp
               mountPath: /tmp
             securityContext:
-              {{- if $int.securityContext }}
-              {{- toYaml $int.securityContext | nindent 14 }}
-              {{- else }}
-              {{- toYaml .Values.securityContext | nindent 14 }}
-              {{- end }}
+              {{- include "elder.containerSecurityContext" (list $int.securityContext .) | nindent 14 }}
           volumes:
           - name: tmp
             emptyDir:
