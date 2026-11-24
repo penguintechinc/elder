@@ -220,8 +220,11 @@ export default function Vulnerabilities() {
     return colorMap[status] || "bg-slate-500/20 text-slate-400";
   };
 
-  const formatDate = (date: string): string => {
-    return new Date(date).toLocaleDateString("en-US", {
+  const formatDate = (date?: string | null): string => {
+    if (!date) return "—";
+    const parsed = new Date(date);
+    if (Number.isNaN(parsed.getTime())) return "—";
+    return parsed.toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
       day: "numeric",
@@ -464,15 +467,18 @@ export default function Vulnerabilities() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(vuln.status)}`}
-                          >
-                            {vuln.status
-                              .replace("_", " ")
-                              .charAt(0)
-                              .toUpperCase() +
-                              vuln.status.replace("_", " ").slice(1)}
-                          </span>
+                          {(() => {
+                            const statusKey = vuln.status || "open";
+                            const statusLabel = statusKey.replace(/_/g, " ");
+                            return (
+                              <span
+                                className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(statusKey)}`}
+                              >
+                                {statusLabel.charAt(0).toUpperCase() +
+                                  statusLabel.slice(1)}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2 text-slate-400 text-sm">
