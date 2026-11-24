@@ -4,6 +4,7 @@
 
 import hashlib
 import logging
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -595,13 +596,45 @@ def generate_service_researcher_token(
     return jwt.encode(payload, secret, algorithm=algorithm)
 
 
-def generate_token(identity: Row, token_type: str = "access") -> str:
+def interactive_auth_time() -> int:
+    """`auth_time` for a token minted by an interactive login happening right now.
+
+    Call this ONLY where the user has just proven who they are (password
+    login, MFA completion, SSO callback). A token refresh must carry the
+    original value forward with `carried_auth_time` instead, so `auth_time`
+    always answers "when did this person last actually authenticate".
+    """
+    return int(time.time())
+
+
+def carried_auth_time(payload: dict[str, Any] | None) -> int | None:
+    """The `auth_time` of a verified token, for copying into a refreshed token.
+
+    Returns None (the new token then has no `auth_time`, which every
+    recent-authentication check treats as "not recent") when the claim is
+    absent, malformed or in the future -- a refresh can never create or
+    renew it.
+    """
+    value = (payload or {}).get("auth_time")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if value <= 0 or value > int(time.time()) + 60:
+        return None
+    return value
+
+
+def generate_token(
+    identity: Row, token_type: str = "access", auth_time: int | None = None
+) -> str:
     """
     Generate JWT token for an identity.
 
     Args:
         identity: Identity model instance
         token_type: 'access' or 'refresh'
+        auth_time: Epoch seconds of the interactive authentication this
+            token descends from (`interactive_auth_time()` at login,
+            `carried_auth_time()` on refresh). Omitted -> no claim.
 
     Returns:
         JWT token string
@@ -632,6 +665,8 @@ def generate_token(identity: Row, token_type: str = "access") -> str:
         "iss": current_app.config.get("JWT_ISSUER", "elder-api"),
         "aud": current_app.config.get("JWT_AUDIENCE", "elder-api"),
     }
+    if auth_time is not None:
+        payload["auth_time"] = int(auth_time)
 
     secret = current_app.config["JWT_SECRET_KEY"] or current_app.config["SECRET_KEY"]
     algorithm = current_app.config["JWT_ALGORITHM"]

@@ -143,6 +143,8 @@ Elder enforces configurable retention windows for audit logs and automatic purge
 
 ## Legal Holds & Data Preservation
 
+Self-service and bulk erasure are refused (HTTP 409) while `tenants.legal_hold` is set. What erasure removes, what it retains and why, and what cannot be erased synchronously (backups within the operator's backup retention window, free text, external systems): [dsar-erasure-inventory.md](dsar-erasure-inventory.md).
+
 **Procedure for Legal Hold:**
 1. DPO receives legal notice or investigation request
 2. DPO issues hold order to system: `HOLD <tenant_id> <data_type> <until_date> <reason>`
