@@ -12,6 +12,7 @@ from apps.api.auth.decorators import login_required, require_scope
 from apps.api.licensing_fallback import license_required
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.access_review import AccessReviewService
+from apps.api.utils.pagination import parse_limit, parse_offset
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +51,8 @@ def list_reviews():
 
         status = request.args.get("status")
         group_id = request.args.get("group_id", type=int)
-        limit = request.args.get("limit", 50, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = parse_limit(request.args, 50)
+        offset = parse_offset(request.args)
 
         result = service.list_reviews(
             tenant_id=1,

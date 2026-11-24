@@ -157,12 +157,15 @@ export default function PageEditor() {
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      // Tiptap v3 bundles Link in StarterKit; disable it so the explicit Link config below is the only one.
+      StarterKit.configure({ link: false }),
       Link.configure({
         openOnClick: false,
       }),
     ],
     content: '',
+    // Tiptap v3 no longer re-renders on every transaction by default; the toolbar's active states need it.
+    shouldRerenderOnTransaction: true,
     editorProps: {
       attributes: {
         class:

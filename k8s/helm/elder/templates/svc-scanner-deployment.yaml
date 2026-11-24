@@ -1,5 +1,4 @@
 {{- $svc := index .Values "svc-scanner" }}
-{{- $hubApi := index .Values "hub-api" | default dict }}
 {{- $mode := ($svc | default dict).mode | default "deployment" }}
 {{- if and $svc $svc.enabled (eq $mode "deployment") }}
 {{- $svcEnv := $svc.env | default dict }}
@@ -31,15 +30,7 @@ spec:
       serviceAccountName: {{ include "elder.serviceAccountName" . }}
       automountServiceAccountToken: false
       securityContext:
-        {{- if .Values.podSecurityContext }}
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
-        {{- else }}
-        runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
-        {{- end }}
+        {{- include "elder.podSecurityContext" . | nindent 8 }}
       containers:
         - name: svc-scanner
           image: {{ include "elder.image" (list "svc-scanner" .) }}
@@ -77,8 +68,7 @@ spec:
                   name: {{ ($svc.internalTokenSecret).name | default "svc-scanner-token" }}
                   key: {{ ($svc.internalTokenSecret).key | default "token" }}
                   optional: {{ if hasKey ($svc.internalTokenSecret | default dict) "optional" }}{{ $svc.internalTokenSecret.optional }}{{ else }}true{{ end }}
-            - name: JWT_SECRET_KEY
-              value: {{ ($hubApi.env).JWT_SECRET_KEY | default (($hubApi.env).SECRET_KEY | default "CHANGE-IN-PRODUCTION") | quote }}
+            {{- include "elder.secretEnv" (list $svc .) | nindent 12 }}
             {{- if .Values.otel.enabled }}
             - name: OTEL_SERVICE_NAME
               value: "svc-scanner"
@@ -117,19 +107,7 @@ spec:
             - name: screenshots
               mountPath: /tmp/screenshots
           securityContext:
-            {{- if $svc.securityContext }}
-            {{- toYaml $svc.securityContext | nindent 12 }}
-            {{- else }}
-            runAsNonRoot: true
-            runAsUser: 1000
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-            seccompProfile:
-              type: RuntimeDefault
-            {{- end }}
+            {{- include "elder.containerSecurityContext" (list $svc.securityContext .) | nindent 12 }}
       volumes:
         - name: tmp
           emptyDir:
