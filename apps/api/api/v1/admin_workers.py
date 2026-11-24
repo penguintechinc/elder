@@ -95,7 +95,7 @@ def compute_worker_status(row: Any, now: datetime | None = None) -> str:
     Status rules:
     - ``revoked`` if ``revoked_at`` is set or ``is_enabled`` is False
     - ``offline`` if ``last_heartbeat_at`` is None
-    - ``threshold = max(2 * poll_interval + 60, 120)``
+    - ``threshold = max(2 * poll_interval + 60, 600)``
     - ``online`` if ``age <= threshold``
     - ``stale`` if ``age <= threshold * 3``
     - ``offline`` otherwise
@@ -112,7 +112,7 @@ def compute_worker_status(row: Any, now: datetime | None = None) -> str:
     ref_now = _parse_datetime_utc(now) if now is not None else datetime.now(UTC)
     assert ref_now is not None  # noqa: S101
     poll_interval = _extract_poll_interval(row)
-    threshold = max(2.0 * poll_interval + 60.0, 120.0)
+    threshold = max(2.0 * poll_interval + 60.0, 600.0)
     age = max(0.0, (ref_now - last_hb).total_seconds())
 
     if age <= threshold:

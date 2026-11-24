@@ -239,31 +239,31 @@ class TestComputeWorkerStatus:
         )
         assert compute_worker_status(row, now) == "offline"
 
-    def test_default_threshold_120s_boundaries(self) -> None:
+    def test_default_threshold_600s_boundaries(self) -> None:
         now = datetime(2026, 11, 23, 22, 0, 0, tzinfo=UTC)
-        # Default poll_interval=30 -> threshold = max(2*30+60, 120) = 120s
+        # Default poll_interval=30 -> threshold = max(2*30+60, 600) = 600s (10 min)
         online_row = SimpleNamespace(
             revoked_at=None,
             is_enabled=True,
-            last_heartbeat_at=now - timedelta(seconds=120),
+            last_heartbeat_at=now - timedelta(seconds=600),
             config_json={},
         )
         stale_row = SimpleNamespace(
             revoked_at=None,
             is_enabled=True,
-            last_heartbeat_at=now - timedelta(seconds=200),
+            last_heartbeat_at=now - timedelta(seconds=900),
             config_json={},
         )
         stale_edge_row = SimpleNamespace(
             revoked_at=None,
             is_enabled=True,
-            last_heartbeat_at=now - timedelta(seconds=360),
+            last_heartbeat_at=now - timedelta(seconds=1800),
             config_json={},
         )
         offline_row = SimpleNamespace(
             revoked_at=None,
             is_enabled=True,
-            last_heartbeat_at=now - timedelta(seconds=361),
+            last_heartbeat_at=now - timedelta(seconds=1801),
             config_json={},
         )
         assert compute_worker_status(online_row, now) == "online"
@@ -273,24 +273,24 @@ class TestComputeWorkerStatus:
 
     def test_custom_poll_interval_scales_threshold(self) -> None:
         now = datetime(2026, 11, 23, 22, 0, 0, tzinfo=UTC)
-        # poll_interval=60 -> threshold = max(2*60+60, 120) = 180s
+        # poll_interval=300 (scanner 5m default) -> threshold = max(2*300+60, 600) = 660s
         online_row = SimpleNamespace(
             revoked_at=None,
             is_enabled=True,
-            last_heartbeat_at=now - timedelta(seconds=175),
-            config_json={"poll_interval_seconds": 60},
+            last_heartbeat_at=now - timedelta(seconds=650),
+            config_json={"poll_interval_seconds": 300},
         )
         stale_row = SimpleNamespace(
             revoked_at=None,
             is_enabled=True,
-            last_heartbeat_at=now - timedelta(seconds=400),
-            config_json={"poll_interval_seconds": 60},
+            last_heartbeat_at=now - timedelta(seconds=1000),
+            config_json={"poll_interval_seconds": 300},
         )
         offline_row = SimpleNamespace(
             revoked_at=None,
             is_enabled=True,
-            last_heartbeat_at=now - timedelta(seconds=541),
-            config_json={"poll_interval_seconds": 60},
+            last_heartbeat_at=now - timedelta(seconds=1981),
+            config_json={"poll_interval_seconds": 300},
         )
         assert compute_worker_status(online_row, now) == "online"
         assert compute_worker_status(stale_row, now) == "stale"
