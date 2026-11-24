@@ -435,7 +435,11 @@ jobs:
     - name: Regenerate openapi/v4.yaml and fail on drift
       # Builds elder-test:3.13, starts the test Postgres/Redis containers and
       # runs scripts/generate_openapi_spec.py, then `git diff --exit-code openapi/`.
-      run: make openapi-check
+      # The elder-test image runs as a non-runner UID, so let it overwrite the
+      # bind-mounted spec file.
+      run: |
+        chmod a+w openapi/v4.yaml
+        make openapi-check
 
   release-check:
     runs-on: ubuntu-latest
