@@ -1,0 +1,11 @@
+# cargo-audit configuration. Every ignore MUST carry a justification.
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071 (rsa, Marvin timing attack on PKCS#1 v1.5 decryption; no patched release).
+    # Production builds do not link `rsa`: jsonwebtoken uses the `aws_lc_rs` backend.
+    # `rsa` remains only as a [dev-dependencies] entry in elder-int-cloud, elder-int-identity and
+    # elder-int-workmgmt, used to generate ephemeral test keys/PEMs. No RSA decryption is performed
+    # and no attacker-observable timing oracle exists in tests. Verify with `cargo tree -i rsa -e normal`
+    # (must be empty). Remove once rsa 0.10 is stable and the tests migrate.
+    "RUSTSEC-2023-0071",
+]

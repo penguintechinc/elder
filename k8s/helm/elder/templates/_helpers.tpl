@@ -112,7 +112,10 @@ must keep pulling from their own registry (docker.io).
 {{- $registry = $context.Values.global.imageRegistry -}}
 {{- end -}}
 {{- $repository := (index $context.Values $component).image.repository -}}
-{{- $tag := (index $context.Values $component).image.tag | default (printf "v%s" $context.Chart.AppVersion) -}}
+{{- $tag := toString ((index $context.Values $component).image.tag | default $context.Chart.AppVersion) -}}
+{{- if or (eq $tag "latest") (and (hasSuffix "latest" $tag) (not (include "elder.isDevEnvironment" $context))) -}}
+{{- fail (printf "%s.image.tag %q is a mutable 'latest' tag; pin an explicit version tag or digest (defaults to the chart appVersion when empty)." $component $tag) -}}
+{{- end -}}
 {{- if $registry }}
 {{- printf "%s/%s:%s" $registry $repository $tag }}
 {{- else }}

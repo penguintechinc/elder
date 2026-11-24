@@ -207,7 +207,7 @@ jobs:
         # Determine which named tags to create for this ref
         # Every build gets an immutable <version>-g<sha> tag; the channel tag
         # is a convenience alias. No `latest` tag is published — deploy by
-        # version (chart default is v<appVersion>) or by the -g<sha> tag.
+        # version (chart default is appVersion = .version) or the -g<sha> tag.
         TAGS=()
         if [ "$IS_RELEASE_TAG" = "true" ]; then
           TAGS+=("${IMAGE}:${VERSION}" "${IMAGE}:${REF_NAME}")

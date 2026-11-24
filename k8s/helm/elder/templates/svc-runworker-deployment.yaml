@@ -141,19 +141,7 @@ spec:
             - name: tmp
               mountPath: /tmp
           securityContext:
-            {{- if $cfg.securityContext }}
-            {{- toYaml $cfg.securityContext | nindent 12 }}
-            {{- else }}
-            runAsNonRoot: true
-            runAsUser: 1000
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-            seccompProfile:
-              type: RuntimeDefault
-            {{- end }}
+            {{- include "elder.containerSecurityContext" (list $cfg.securityContext .) | nindent 12 }}
       volumes:
         - name: tmp
           emptyDir:
