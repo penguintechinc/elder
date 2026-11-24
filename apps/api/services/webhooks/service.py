@@ -1680,12 +1680,28 @@ class WebhookService:
         table = self.db.webhook_deliveries
         cutoff = datetime.now(UTC) - timedelta(seconds=min_age)
         rows = self.db(
-            table.status.belongs(_RESUMABLE_STATUSES) & (table.created_at < cutoff)
+            table.status.belongs(_RESUMABLE_STATUSES)
+            & (table.created_at < cutoff)
+            & self._unclaimed(min_age)
         ).select(orderby=table.created_at, limitby=(0, batch))
         return [(int(r.id), int(r.attempt_count or 0), r.created_at) for r in rows]
 
+    def _unclaimed(self, min_age: float) -> Any:
+        """Rows no recovery pass has claimed within the last ``min_age`` seconds.
+
+        A claim stamps ``claimed_at``; until it ages out, the row is in
+        flight with some replica and must not be observed as an orphan.
+        """
+        table = self.db.webhook_deliveries
+        stale = datetime.now(UTC) - timedelta(seconds=min_age)
+        return (table.claimed_at == None) | (table.claimed_at < stale)  # noqa: E711
+
     def _transition_delivery(
-        self, delivery_id: int, seen_attempts: int, **fields: Any
+        self,
+        delivery_id: int,
+        seen_attempts: int,
+        min_age: float = 0.0,
+        **fields: Any,
     ) -> bool:
         """Atomically move a resumable row on, if nobody else has touched it.
 
@@ -1706,6 +1722,7 @@ class WebhookService:
             (table.id == delivery_id)
             & table.status.belongs(_RESUMABLE_STATUSES)
             & attempts_match
+            & self._unclaimed(min_age)
         ).update(**fields)
         self.db.commit()
         return changed == 1
@@ -1727,7 +1744,9 @@ class WebhookService:
         )
         self.db.commit()
 
-    async def _resume_delivery(self, delivery_id: int, seen_attempts: int) -> str:
+    async def _resume_delivery(
+        self, delivery_id: int, seen_attempts: int, min_age: float = 0.0
+    ) -> str:
         """Claim one orphaned row and deliver it; return the outcome label.
 
         The claim is taken immediately before sending (not for the whole
@@ -1739,8 +1758,10 @@ class WebhookService:
             lambda: self._transition_delivery(
                 delivery_id,
                 seen_attempts,
+                min_age,
                 status=DELIVERY_RETRYING,
                 attempt_count=seen_attempts + 1,
+                claimed_at=datetime.now(UTC),
             )
         )
         if not claimed:
@@ -1828,13 +1849,16 @@ class WebhookService:
                                 lambda d=delivery_id, a=seen: self._transition_delivery(
                                     d,
                                     a,
+                                    min_age,
                                     status=DELIVERY_EXPIRED,
                                     error_message="expired before delivery",
                                 )
                             )
                             counts["expired" if expired else "skipped"] += 1
                         else:
-                            counts[await self._resume_delivery(delivery_id, seen)] += 1
+                            counts[
+                                await self._resume_delivery(delivery_id, seen, min_age)
+                            ] += 1
                     except Exception as exc:
                         counts["failed"] += 1
                         logger.error(

@@ -772,6 +772,30 @@ async def test_two_replicas_recovering_at_once_send_each_row_once(
 
 
 @pytest.mark.asyncio
+async def test_recovery_leaves_rows_another_pass_just_claimed(
+    app, webhook_transport, _instant_recovery
+):
+    """A freshly claimed row is in flight elsewhere, not an orphan to resume."""
+    async with app.app_context():
+        db = current_app.db
+        webhook = _make_webhook(
+            db, _make_tenant(db, "Claimed"), url="https://hooks.example.com/claimed"
+        )
+        row_id = _insert_outbox_row(
+            db, webhook.id, age_seconds=600, status="retrying", attempts=1
+        )
+        db(db.webhook_deliveries.id == row_id).update(claimed_at=datetime.now(UTC))
+        db.commit()
+
+        counts = await WebhookService(db).recover_pending_deliveries()
+
+        assert [r for r in webhook_transport.requests if r.url.path == "/claimed"] == []
+        assert counts["candidates"] == 0
+        row = db.webhook_deliveries[row_id]
+        assert (row.status, row.attempt_count) == ("retrying", 1)
+
+
+@pytest.mark.asyncio
 async def test_recovery_skips_rows_a_live_owner_is_still_advancing(
     app, webhook_transport, _instant_recovery
 ):
