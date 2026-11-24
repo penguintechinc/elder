@@ -104,7 +104,13 @@ def test_screenshot_tool_covers_all_v4_routes_and_excludes_stale_ones() -> None:
     assert "/networking?tab=ipam" in paths
 
     # Stale / removed routes must not be present
-    stale_paths = {"/diagram", "/helpdesk/tickets", "/admin/sync-config", "/ipam"}
+    stale_paths = {
+        "/diagram",
+        "/helpdesk/tickets",
+        "/admin/sync-config",
+        "/ipam",
+        "/service-endpoints",
+    }
     present_stale = stale_paths & paths
     assert (
         not present_stale

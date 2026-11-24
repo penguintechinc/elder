@@ -41,7 +41,6 @@ const PAGES = [
   // Software, Services, AI & SBOM
   { name: 'software', path: '/software' },
   { name: 'services', path: '/services' },
-  { name: 'service-endpoints', path: '/service-endpoints' },
   { name: 'sbom', path: '/sbom' },
   { name: 'ai', path: '/ai' },
 
