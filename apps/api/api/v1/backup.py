@@ -13,6 +13,7 @@ from apps.api.auth.decorators import admin_required, login_required
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.backup import BackupService
 from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.pagination import parse_limit
 
 logger = logging.getLogger(__name__)
 
@@ -246,7 +247,7 @@ def list_backups():
         service = get_backup_service()
 
         job_id = request.args.get("job_id", type=int)
-        limit = request.args.get("limit", 50, type=int)
+        limit = parse_limit(request.args, 50)
 
         backups = service.list_backups(job_id=job_id, limit=limit)
 

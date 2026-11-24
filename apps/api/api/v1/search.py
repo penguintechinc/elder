@@ -14,6 +14,10 @@ from apps.api.auth.jwt_handler import (
     get_token_from_header,
 )
 from apps.api.logging_config import log_error_and_respond
+from apps.api.modules.infrastructure.routes.graph import (
+    graph_limited,
+    scoped_entity_search_graph,
+)
 from apps.api.services.ai_researcher import (
     AIResearchMcpUnavailableError,
     AIResearchPermissionError,
@@ -24,13 +28,24 @@ from apps.api.services.ai_researcher import (
 )
 from apps.api.services.search import SearchService
 from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.inflight_limiter import InflightLimiter
+from apps.api.utils.pagination import (
+    clamp_int,
+    env_bounded_int,
+    parse_limit,
+    parse_offset,
+)
 from apps.api.utils.rate_limiter import check_subject_rate_limit
+from apps.api.utils.tenant_scoping import get_current_tenant_id
 from apps.mcp.envutil import env_int
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("search", __name__)
+
+# Hard ceiling on traversal depth for POST /search/graph (shared with /graph).
+_GRAPH_SEARCH_MAX_DEPTH = env_bounded_int("ELDER_GRAPH_MAX_DEPTH", 6, 25)
 
 # Per-replica in-flight cap for /ai-research (see _ai_research_admit).
 _ai_research_inflight = InflightLimiter()
@@ -69,8 +84,8 @@ def search_all():
         query = request.args.get("q", "")
         types_str = request.args.get("types", "entity,organization,issue")
         filters_str = request.args.get("filters")
-        limit = request.args.get("limit", 50, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = parse_limit(request.args, 50)
+        offset = parse_offset(request.args)
 
         # Parse types
         resource_types = [t.strip() for t in types_str.split(",") if t.strip()]
@@ -129,8 +144,8 @@ def search_entities():
         organization_id = request.args.get("organization_id", type=int)
         tags_str = request.args.get("tags")
         filters_str = request.args.get("filters")
-        limit = request.args.get("limit", 50, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = parse_limit(request.args, 50)
+        offset = parse_offset(request.args)
 
         # Parse tags
         tags = None
@@ -188,8 +203,8 @@ def search_organizations():
         query = request.args.get("q")
         organization_type = request.args.get("organization_type")
         parent_id = request.args.get("parent_id", type=int)
-        limit = request.args.get("limit", 50, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = parse_limit(request.args, 50)
+        offset = parse_offset(request.args)
 
         results = service.search_organizations(
             query=query,
@@ -238,8 +253,8 @@ def search_issues():
         assignee_id = request.args.get("assignee_id", type=int)
         organization_id = request.args.get("organization_id", type=int)
         labels_str = request.args.get("labels")
-        limit = request.args.get("limit", 50, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = parse_limit(request.args, 50)
+        offset = parse_offset(request.args)
 
         # Parse labels
         labels = None
@@ -270,9 +285,14 @@ def search_issues():
 
 @bp.route("/graph", methods=["POST"])
 @login_required
+@require_scope("infrastructure:read")
+@graph_limited
 async def search_graph():
     """
     Graph-based search for entities and dependencies.
+
+    Scoped to the caller's tenant: the start entity must belong to it and
+    the traversal never leaves it. Depth, nodes and edges are capped.
 
     Request body:
         {
@@ -285,28 +305,48 @@ async def search_graph():
     Returns:
         200: Graph search results
         400: Invalid request
+        403: Missing scope or tenant claim
+        404: Start entity not found
     """
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Missing tenant claim in token"}), 403
+
+    data = await request.get_json(silent=True)
+    if not isinstance(data, dict) or "start_entity_id" not in data:
+        return ApiResponse.bad_request("start_entity_id is required")
+
+    start_entity_id = clamp_int(data["start_entity_id"], 0, 0, 2**63 - 1)
+    if not start_entity_id:
+        return ApiResponse.bad_request("start_entity_id must be a positive integer")
+
+    raw_types = data.get("dependency_types")
+    if raw_types is not None and (
+        not isinstance(raw_types, list)
+        or len(raw_types) > 50
+        or not all(isinstance(t, str) and len(t) <= 64 for t in raw_types)
+    ):
+        return ApiResponse.bad_request("dependency_types must be a list of strings")
+
+    max_depth = clamp_int(data.get("max_depth"), 3, 1, _GRAPH_SEARCH_MAX_DEPTH)
+    db = current_app.db_read
+
     try:
-        data = await request.get_json()
-
-        if not data or "start_entity_id" not in data:
-            return ApiResponse.bad_request("start_entity_id is required")
-
-        service = get_search_service()
-
-        results = service.search_graph(
-            start_entity_id=data["start_entity_id"],
-            max_depth=data.get("max_depth", 3),
-            dependency_types=data.get("dependency_types"),
-            entity_filters=data.get("entity_filters"),
+        results = await run_in_threadpool(
+            scoped_entity_search_graph,
+            db,
+            tenant_id,
+            start_entity_id,
+            max_depth,
+            raw_types,
         )
-
-        return jsonify(results), 200
-
     except Exception as e:
-        if "not found" in str(e).lower():
-            return log_error_and_respond(logger, e, "Failed to process request", 404)
         return log_error_and_respond(logger, e, "Failed to process request", 500)
+
+    if results is None:
+        return jsonify({"error": "Entity not found"}), 404
+
+    return jsonify(results), 200
 
 
 # ===========================
@@ -329,7 +369,7 @@ def list_saved_searches():
     try:
         service = get_search_service()
 
-        limit = request.args.get("limit", 50, type=int)
+        limit = parse_limit(request.args, 50)
 
         searches = service.list_saved_searches(user_id=g.current_user.id, limit=limit)
 
@@ -431,8 +471,8 @@ def execute_saved_search(search_id):
     try:
         service = get_search_service()
 
-        limit = request.args.get("limit", 50, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = parse_limit(request.args, 50)
+        offset = parse_offset(request.args)
 
         results = service.execute_saved_search(
             search_id=search_id, user_id=g.current_user.id, limit=limit, offset=offset
@@ -534,7 +574,7 @@ def get_popular_searches():
     try:
         service = get_search_service()
 
-        limit = request.args.get("limit", 10, type=int)
+        limit = parse_limit(request.args, 10)
 
         popular = service.get_popular_searches(limit=limit)
 
@@ -570,7 +610,7 @@ def search_suggestions():
 
         query = request.args.get("q", "")
         resource_type = request.args.get("type")
-        limit = request.args.get("limit", 10, type=int)
+        limit = parse_limit(request.args, 10)
 
         suggestions = service.get_search_suggestions(
             partial_query=query, resource_type=resource_type, limit=limit

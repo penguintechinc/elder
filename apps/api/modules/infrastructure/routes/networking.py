@@ -5,14 +5,16 @@
 import logging
 
 from pydantic import ValidationError
-from quart import Blueprint, jsonify, request
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.models.pydantic.network import CreateNetworkRequest, UpdateNetworkRequest
 from apps.api.services.networking import NetworkingService
 from apps.api.services.networking.service import DuplicateResourceError
+from apps.api.utils.pagination import parse_limit, parse_offset
 from apps.api.utils.quart_validation import ValidationErrorResponse
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,8 @@ def list_networks():
         network_type = request.args.get("network_type")
         parent_id = request.args.get("parent_id", type=int)
         region = request.args.get("region")
-        limit = request.args.get("limit", 100, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = parse_limit(request.args, 100)
+        offset = parse_offset(request.args)
 
         result = service.list_networks(
             organization_id=organization_id,
@@ -389,6 +391,15 @@ def get_topology_graph():
 
         if not organization_id:
             return jsonify({"error": "organization_id parameter required"}), 400
+
+        # The organization must belong to the caller's tenant; a mismatch is
+        # reported as not found so other tenants' ids cannot be enumerated.
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Missing tenant claim in token"}), 403
+        db = current_app.db_read
+        if not get_tenant_scoped(db, db.organizations, organization_id, tenant_id):
+            return jsonify({"error": "Organization not found"}), 404
 
         service = NetworkingService()
         graph = service.get_network_topology_graph(
