@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ReactFlow,
   Controls,
@@ -435,6 +435,7 @@ const colorOptions = [
 function DiagramEditorContent() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedColor, setSelectedColor] = useState("#3B82F6");
@@ -495,6 +496,8 @@ function DiagramEditorContent() {
     },
     onSuccess: () => {
       setImportedMeta(null);
+      queryClient.invalidateQueries({ queryKey: ["diagrams"] });
+      queryClient.invalidateQueries({ queryKey: ["diagram", id] });
       toast.success("Diagram saved");
     },
     onError: () => {

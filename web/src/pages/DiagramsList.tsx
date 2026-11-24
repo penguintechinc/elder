@@ -5,6 +5,7 @@ import { Plus, Trash2, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import VillageIdBadge from '@/components/VillageIdBadge'
+import DiagramPreview, { type DiagramPreviewData } from '@/components/diagram/DiagramPreview'
 import { parseDiagramBackup, type DiagramBackup } from '@/lib/flowExport'
 
 interface Diagram {
@@ -16,6 +17,7 @@ interface Diagram {
   is_template: boolean
   tags: string[]
   thumbnail_url?: string
+  preview?: DiagramPreviewData | null
   owner_identity_id: number
   village_id?: string | null
   created_at: string
@@ -187,16 +189,12 @@ export default function DiagramsList() {
                 }`}
               >
                 {/* Thumbnail */}
-                <div className="aspect-video bg-slate-700 border-b border-slate-700 flex items-center justify-center">
-                  {diagram.thumbnail_url ? (
-                    <img
-                      src={diagram.thumbnail_url}
-                      alt={diagram.title}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="text-slate-500 text-sm">No preview</div>
-                  )}
+                <div className="aspect-video bg-slate-900 border-b border-slate-700 flex items-center justify-center overflow-hidden">
+                  <DiagramPreview
+                    title={diagram.title}
+                    thumbnailUrl={diagram.thumbnail_url}
+                    preview={diagram.preview}
+                  />
                 </div>
 
                 {/* Content */}
