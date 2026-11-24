@@ -35,13 +35,25 @@ from apps.api.grpc.converters import (
     organization_to_proto,
 )
 from apps.api.grpc.generated import (
-    auth_pb2,
-    common_pb2,
-    dependency_pb2,
+    auth_pb2 as _auth_pb2,
+)
+from apps.api.grpc.generated import (
+    common_pb2 as _common_pb2,
+)
+from apps.api.grpc.generated import (
+    dependency_pb2 as _dependency_pb2,
+)
+from apps.api.grpc.generated import (
     elder_pb2_grpc,
-    entity_pb2,
-    graph_pb2,
-    organization_pb2,
+)
+from apps.api.grpc.generated import (
+    entity_pb2 as _entity_pb2,
+)
+from apps.api.grpc.generated import (
+    graph_pb2 as _graph_pb2,
+)
+from apps.api.grpc.generated import (
+    organization_pb2 as _organization_pb2,
 )
 from apps.api.models import DependencyDTO, EntityDTO, IdentityDTO, OrganizationDTO
 from apps.api.models.dataclasses import from_pydal_row
@@ -55,6 +67,15 @@ from apps.api.modules.infrastructure.routes.graph import (
 )
 from apps.api.utils.pagination import DEFAULT_LIMIT, MAX_LIMIT, MAX_OFFSET, clamp_int
 from apps.api.utils.tenant_scoping import get_tenant_scoped
+
+# The protobuf modules are generated at runtime descriptors and ship no type
+# stubs, so their message classes are invisible to mypy; bind them as Any.
+auth_pb2: Any = _auth_pb2
+common_pb2: Any = _common_pb2
+dependency_pb2: Any = _dependency_pb2
+entity_pb2: Any = _entity_pb2
+graph_pb2: Any = _graph_pb2
+organization_pb2: Any = _organization_pb2
 
 logger = structlog.get_logger(__name__)
 
@@ -156,7 +177,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
     # Helper Methods
     # ========================================================================
 
-    def _create_timestamp(self, dt: datetime | None) -> common_pb2.Timestamp:
+    def _create_timestamp(self, dt: datetime | None) -> Any:
         """Convert datetime to protobuf Timestamp."""
         if dt is None:
             return common_pb2.Timestamp(seconds=0, nanos=0)
@@ -176,25 +197,25 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         page = clamp_int(pagination.page or None, 1, 1, MAX_OFFSET // per_page + 1)
         return page, per_page, (page - 1) * per_page
 
-    def _scoped_org(self, db, org_id: int, tenant_id: int):
+    def _scoped_org(self, db, org_id: int, tenant_id: int | None):
         """Return the organization only if it belongs to ``tenant_id``."""
         return get_tenant_scoped(db, db.organizations, org_id, tenant_id)
 
-    def _scoped_entity(self, db, entity_id: int, tenant_id: int):
+    def _scoped_entity(self, db, entity_id: int, tenant_id: int | None):
         """Return the entity only if its organization belongs to ``tenant_id``."""
         return get_tenant_scoped(
             db, db.entities, entity_id, tenant_id, org_fk="organization_id"
         )
 
-    def _scoped_dependency(self, db, dep_id: int, tenant_id: int):
+    def _scoped_dependency(self, db, dep_id: int, tenant_id: int | None):
         """Return the dependency only if it is recorded for ``tenant_id``."""
         return get_tenant_scoped(db, db.dependencies, dep_id, tenant_id)
 
-    def _scoped_identity(self, db, identity_id: int, tenant_id: int):
+    def _scoped_identity(self, db, identity_id: int, tenant_id: int | None):
         """Return the identity only if it belongs to ``tenant_id``."""
         return get_tenant_scoped(db, db.identities, identity_id, tenant_id)
 
-    def _tenant_graph(self, db, tenant_id: int, org_id: int = 0):
+    def _tenant_graph(self, db, tenant_id: int | None, org_id: int = 0):
         """Load the caller's entity graph, bounded by the shared graph caps.
 
         Returns ``(entities, edges, truncated)`` where every entity belongs
@@ -216,9 +237,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         edges = [e for e in edges if e.tenant_id in (tenant_id, None)]
         return entities, edges, nodes_cut or edges_cut
 
-    def _create_pagination_response(
-        self, page: int, per_page: int, total: int
-    ) -> common_pb2.PaginationResponse:
+    def _create_pagination_response(self, page: int, per_page: int, total: int) -> Any:
         """Create pagination response."""
         pages = (total + per_page - 1) // per_page if per_page > 0 else 0
         return common_pb2.PaginationResponse(
@@ -229,8 +248,8 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         )
 
     def _create_status_response(
-        self, success: bool, message: str, details: dict = None
-    ) -> common_pb2.StatusResponse:
+        self, success: bool, message: str, details: dict | None = None
+    ) -> Any:
         """Create status response."""
         return common_pb2.StatusResponse(
             success=success,
@@ -363,7 +382,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return auth_pb2.RefreshTokenResponse()
 
     @_rpc(auth_pb2.LogoutResponse)
-    def Logout(self, request, context, caller: GrpcCaller):
+    def Logout(self, request, context, caller):
         """Logout and invalidate tokens."""
         try:
             # Note: JWT tokens are stateless, so logout is handled client-side
@@ -378,7 +397,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return auth_pb2.LogoutResponse()
 
     @_rpc(auth_pb2.GetCurrentIdentityResponse)
-    def GetCurrentIdentity(self, request, context, caller: GrpcCaller):
+    def GetCurrentIdentity(self, request, context, caller):
         """Return the identity of the verified caller.
 
         The identity always comes from the call's bearer token; the legacy
@@ -411,7 +430,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return auth_pb2.GetCurrentIdentityResponse()
 
     @_rpc(auth_pb2.ChangePasswordResponse)
-    def ChangePassword(self, request, context, caller: GrpcCaller):
+    def ChangePassword(self, request, context, caller):
         """Change password for current user."""
         try:
             db = self.db
@@ -436,7 +455,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return auth_pb2.ChangePasswordResponse()
 
     @_rpc(auth_pb2.RegisterIdentityResponse, USERS_WRITE)
-    def RegisterIdentity(self, request, context, caller: GrpcCaller):
+    def RegisterIdentity(self, request, context, caller):
         """Create an identity in the caller's tenant.
 
         Requires ``users:write``. The new identity is a non-superuser
@@ -511,7 +530,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return auth_pb2.RegisterIdentityResponse()
 
     @_rpc(auth_pb2.ValidateTokenResponse)
-    def ValidateToken(self, request, context, caller: GrpcCaller):
+    def ValidateToken(self, request, context, caller):
         """Validate an access token belonging to the caller's tenant.
 
         Tokens of other tenants (or of non-identity callers) report
@@ -562,7 +581,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return auth_pb2.ValidateTokenResponse()
 
     @_rpc(auth_pb2.ListIdentitiesResponse, USERS_READ)
-    def ListIdentities(self, request, context, caller: GrpcCaller):
+    def ListIdentities(self, request, context, caller):
         """List the caller tenant's identities with pagination and filters."""
         try:
             db = self.db
@@ -646,7 +665,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return auth_pb2.ListIdentitiesResponse()
 
     @_rpc(auth_pb2.GetIdentityResponse, USERS_READ)
-    def GetIdentity(self, request, context, caller: GrpcCaller):
+    def GetIdentity(self, request, context, caller):
         """Get an identity of the caller's tenant by ID."""
         try:
             db = self.db
@@ -667,7 +686,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return auth_pb2.GetIdentityResponse()
 
     @_rpc(auth_pb2.UpdateIdentityResponse, USERS_WRITE)
-    def UpdateIdentity(self, request, context, caller: GrpcCaller):
+    def UpdateIdentity(self, request, context, caller):
         """Update an identity of the caller's tenant.
 
         Granting or revoking superuser is reserved for superuser callers.
@@ -718,7 +737,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return auth_pb2.UpdateIdentityResponse()
 
     @_rpc(auth_pb2.DeleteIdentityResponse, USERS_WRITE)
-    def DeleteIdentity(self, request, context, caller: GrpcCaller):
+    def DeleteIdentity(self, request, context, caller):
         """Delete an identity of the caller's tenant."""
         try:
             db = self.db
@@ -754,7 +773,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
     # ========================================================================
 
     @_rpc(organization_pb2.ListOrganizationsResponse, ORG_READ)
-    def ListOrganizations(self, request, context, caller: GrpcCaller):
+    def ListOrganizations(self, request, context, caller):
         """List the caller tenant's organizations with pagination and filters."""
         try:
             db = self.db
@@ -798,7 +817,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return organization_pb2.ListOrganizationsResponse()
 
     @_rpc(organization_pb2.GetOrganizationResponse, ORG_READ)
-    def GetOrganization(self, request, context, caller: GrpcCaller):
+    def GetOrganization(self, request, context, caller):
         """Get an organization of the caller's tenant by ID."""
         try:
             db = self.db
@@ -819,7 +838,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return organization_pb2.GetOrganizationResponse()
 
     def _org_refs_error(
-        self, db, request, tenant_id: int, self_id: int = 0
+        self, db, request, tenant_id: int | None, self_id: int = 0
     ) -> str | None:
         """Validate the rows an organization write references.
 
@@ -842,7 +861,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         return None
 
     @_rpc(organization_pb2.CreateOrganizationResponse, ORG_WRITE)
-    def CreateOrganization(self, request, context, caller: GrpcCaller):
+    def CreateOrganization(self, request, context, caller):
         """Create an organization in the caller's tenant."""
         try:
             db = self.db
@@ -888,7 +907,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return organization_pb2.CreateOrganizationResponse()
 
     @_rpc(organization_pb2.UpdateOrganizationResponse, ORG_WRITE)
-    def UpdateOrganization(self, request, context, caller: GrpcCaller):
+    def UpdateOrganization(self, request, context, caller):
         """Update an organization of the caller's tenant."""
         try:
             db = self.db
@@ -935,7 +954,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return organization_pb2.UpdateOrganizationResponse()
 
     @_rpc(organization_pb2.DeleteOrganizationResponse, ORG_WRITE)
-    def DeleteOrganization(self, request, context, caller: GrpcCaller):
+    def DeleteOrganization(self, request, context, caller):
         """Delete an organization of the caller's tenant."""
         try:
             db = self.db
@@ -973,7 +992,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return organization_pb2.DeleteOrganizationResponse()
 
     @_rpc(organization_pb2.GetOrganizationChildrenResponse, ORG_READ)
-    def GetOrganizationChildren(self, request, context, caller: GrpcCaller):
+    def GetOrganizationChildren(self, request, context, caller):
         """Get the direct children of an organization of the caller's tenant."""
         try:
             db = self.db
@@ -1012,7 +1031,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return organization_pb2.GetOrganizationChildrenResponse()
 
     @_rpc(organization_pb2.GetOrganizationHierarchyResponse, ORG_READ)
-    def GetOrganizationHierarchy(self, request, context, caller: GrpcCaller):
+    def GetOrganizationHierarchy(self, request, context, caller):
         """Get the hierarchy around an organization of the caller's tenant.
 
         The walk never leaves the caller's tenant, is cycle-safe, and stops
@@ -1045,7 +1064,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             root_proto = organization_to_proto(root_dto)
 
             # Breadth-first descendants, one query per level, bounded.
-            flattened = []
+            flattened: list[Any] = []
             visited = {current.id}
             frontier = [current.id]
             while frontier and len(flattened) < GRAPH_MAX_NODES:
@@ -1078,7 +1097,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
     # ========================================================================
 
     @_rpc(entity_pb2.ListEntitiesResponse, ENTITY_READ)
-    def ListEntities(self, request, context, caller: GrpcCaller):
+    def ListEntities(self, request, context, caller):
         """List entities in the caller tenant's organizations."""
         try:
             db = self.db
@@ -1128,7 +1147,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return entity_pb2.ListEntitiesResponse()
 
     @_rpc(entity_pb2.GetEntityResponse, ENTITY_READ)
-    def GetEntity(self, request, context, caller: GrpcCaller):
+    def GetEntity(self, request, context, caller):
         """Get an entity of the caller's tenant by ID."""
         try:
             db = self.db
@@ -1160,7 +1179,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         }
 
     @_rpc(entity_pb2.CreateEntityResponse, ENTITY_WRITE)
-    def CreateEntity(self, request, context, caller: GrpcCaller):
+    def CreateEntity(self, request, context, caller):
         """Create an entity in an organization of the caller's tenant."""
         try:
             db = self.db
@@ -1186,7 +1205,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return entity_pb2.CreateEntityResponse()
 
     @_rpc(entity_pb2.UpdateEntityResponse, ENTITY_WRITE)
-    def UpdateEntity(self, request, context, caller: GrpcCaller):
+    def UpdateEntity(self, request, context, caller):
         """Update an entity of the caller's tenant.
 
         Moving the entity is only allowed into another organization of the
@@ -1231,7 +1250,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return entity_pb2.UpdateEntityResponse()
 
     @_rpc(entity_pb2.DeleteEntityResponse, ENTITY_WRITE)
-    def DeleteEntity(self, request, context, caller: GrpcCaller):
+    def DeleteEntity(self, request, context, caller):
         """Delete an entity of the caller's tenant."""
         try:
             db = self.db
@@ -1260,7 +1279,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             )
 
     @_rpc(entity_pb2.GetEntityDependenciesResponse, DEP_READ)
-    def GetEntityDependencies(self, request, context, caller: GrpcCaller):
+    def GetEntityDependencies(self, request, context, caller):
         """Get the caller tenant's dependencies touching one of its entities."""
         try:
             db = self.db
@@ -1305,7 +1324,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return entity_pb2.GetEntityDependenciesResponse()
 
     @_rpc(entity_pb2.BatchCreateEntitiesResponse, ENTITY_WRITE)
-    def BatchCreateEntities(self, request, context, caller: GrpcCaller):
+    def BatchCreateEntities(self, request, context, caller):
         """Batch create entities in organizations of the caller's tenant.
 
         At most ``MAX_LIMIT`` items are accepted per call.
@@ -1357,7 +1376,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
     # ========================================================================
 
     @_rpc(dependency_pb2.ListDependenciesResponse, DEP_READ)
-    def ListDependencies(self, request, context, caller: GrpcCaller):
+    def ListDependencies(self, request, context, caller):
         """List the caller tenant's dependencies with pagination and filters."""
         try:
             db = self.db
@@ -1398,7 +1417,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return dependency_pb2.ListDependenciesResponse()
 
     @_rpc(dependency_pb2.GetDependencyResponse, DEP_READ)
-    def GetDependency(self, request, context, caller: GrpcCaller):
+    def GetDependency(self, request, context, caller):
         """Get a dependency of the caller's tenant by ID."""
         try:
             db = self.db
@@ -1418,7 +1437,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "get_dependency")
             return dependency_pb2.GetDependencyResponse()
 
-    def _dependency_insert_data(self, db, dep_request, tenant_id: int) -> dict | str:
+    def _dependency_insert_data(
+        self, db, dep_request, tenant_id: int | None
+    ) -> dict | str:
         """Build a dependency row whose endpoints are both in-tenant.
 
         Returns the insert data, or an error message when either entity is
@@ -1444,7 +1465,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         }
 
     @_rpc(dependency_pb2.CreateDependencyResponse, DEP_WRITE)
-    def CreateDependency(self, request, context, caller: GrpcCaller):
+    def CreateDependency(self, request, context, caller):
         """Create a dependency between two entities of the caller's tenant."""
         try:
             db = self.db
@@ -1481,7 +1502,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return dependency_pb2.CreateDependencyResponse()
 
     @_rpc(dependency_pb2.UpdateDependencyResponse, DEP_WRITE)
-    def UpdateDependency(self, request, context, caller: GrpcCaller):
+    def UpdateDependency(self, request, context, caller):
         """Update a dependency of the caller's tenant."""
         try:
             db = self.db
@@ -1520,7 +1541,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return dependency_pb2.UpdateDependencyResponse()
 
     @_rpc(dependency_pb2.DeleteDependencyResponse, DEP_WRITE)
-    def DeleteDependency(self, request, context, caller: GrpcCaller):
+    def DeleteDependency(self, request, context, caller):
         """Delete a dependency of the caller's tenant."""
         try:
             db = self.db
@@ -1549,7 +1570,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return dependency_pb2.DeleteDependencyResponse()
 
     @_rpc(dependency_pb2.BulkCreateDependenciesResponse, DEP_WRITE)
-    def BulkCreateDependencies(self, request, context, caller: GrpcCaller):
+    def BulkCreateDependencies(self, request, context, caller):
         """Bulk create dependencies between entities of the caller's tenant.
 
         At most ``MAX_LIMIT`` items are accepted per call.
@@ -1603,7 +1624,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return dependency_pb2.BulkCreateDependenciesResponse()
 
     @_rpc(dependency_pb2.BulkDeleteDependenciesResponse, DEP_WRITE)
-    def BulkDeleteDependencies(self, request, context, caller: GrpcCaller):
+    def BulkDeleteDependencies(self, request, context, caller):
         """Bulk delete dependencies of the caller's tenant.
 
         At most ``MAX_LIMIT`` ids are accepted per call; foreign ids are
@@ -1673,7 +1694,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         )
 
     @_rpc(graph_pb2.GetDependencyGraphResponse, GRAPH_READ)
-    def GetDependencyGraph(self, request, context, caller: GrpcCaller):
+    def GetDependencyGraph(self, request, context, caller):
         """Get the dependency graph of an organization or around an entity.
 
         Scoped to the caller's tenant and bounded by the shared graph depth,
@@ -1729,7 +1750,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return graph_pb2.GetDependencyGraphResponse()
 
     @_rpc(graph_pb2.AnalyzeGraphResponse, GRAPH_READ)
-    def AnalyzeGraph(self, request, context, caller: GrpcCaller):
+    def AnalyzeGraph(self, request, context, caller):
         """Analyze the caller tenant's graph for cycles and orphans.
 
         A foreign organization id yields NOT_FOUND; cycle enumeration stops
@@ -1832,7 +1853,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return graph_pb2.AnalyzeGraphResponse()
 
     @_rpc(graph_pb2.FindPathResponse, GRAPH_READ)
-    def FindPath(self, request, context, caller: GrpcCaller):
+    def FindPath(self, request, context, caller):
         """Find a path between two entities of the caller's tenant.
 
         Only the tenant's own edges are traversed, and paths longer than the
@@ -1892,7 +1913,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return graph_pb2.FindPathResponse()
 
     @_rpc(graph_pb2.GetEntityImpactResponse, GRAPH_READ)
-    def GetEntityImpact(self, request, context, caller: GrpcCaller):
+    def GetEntityImpact(self, request, context, caller):
         """Get the downstream impact of an entity within the caller's tenant.
 
         Only the tenant's own edges are considered, and the downstream walk
