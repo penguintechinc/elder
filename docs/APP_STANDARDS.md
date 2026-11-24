@@ -42,7 +42,7 @@ Elder implements a **stateless, 6-image Kubernetes architecture** with strict ro
 
 **`svc-runworker`** (`apps/runworker/`, Python remote-capable CodeRuns Deployment)
 - Remote-capable Deployment polling `hub-api` over HTTP with **zero DB, Valkey, or S3 credentials**
-- Authenticates via `ELDER_INTERNAL_TOKEN` (`ewk_`) or in-cluster `JWT_SECRET_KEY` and sends periodic fleet heartbeats to `POST /api/v1/admin/workers/heartbeat`
+- Authenticates only via a provisioned `ELDER_INTERNAL_TOKEN` (`ewk_`) from a Secret — it never holds the platform signing key and refuses to start if one is present; tenant code runs in per-execution Kata Job pods by default (isolation model: `docs/deployment/runworker-isolation.md`) — and sends periodic fleet heartbeats to `POST /api/v1/admin/workers/heartbeat`
 - Enforces a 5-minute (`300s`) max CodeRun timeout and routes executions by `worker_cluster` into the operator-managed `execution_namespace` (`elder-runs`)
 - Provides a warm sandbox pool (`RUNS_RUNNER_BACKEND`), loopback Tool/Network Restriction Gateway (`127.0.0.1:0`, enforcing `granted_scopes` and `allowed_egress_domains` with ephemeral CodeRun JWTs), built-in zero-dependency `elder` helper SDKs (`elder.py`, `elder.mjs`, `elder.rb`), and live stdout log flushing every 30s default (`RUNS_LOG_FLUSH_INTERVAL_SECONDS`)
 
