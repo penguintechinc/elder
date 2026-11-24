@@ -1,4 +1,4 @@
-"""Work-management demo data: projects, on-call, docs, diagrams, AI, runs."""
+"""Work-management demo data: projects, on-call, docs, diagrams, AI, runs, webhooks, workers."""
 
 from __future__ import annotations
 
@@ -107,6 +107,156 @@ RUN_FUNCTIONS = (
     ),
     ("nightly-report", "python", "print('generating nightly capacity report')"),
     ("webhook-relay", "nodejs", "console.log('relaying webhook to example.com')"),
+)
+
+# (name, slug, description, auth_type, token_preview, basic_user, scopes, is_active, receive_count, minutes_ago, metadata)
+INBOUND_WEBHOOKS = (
+    (
+        "Alertmanager Production Alerts",
+        "acme-alertmanager-prod",
+        "Receives Prometheus Alertmanager firing and resolved notifications from dal2 production.",
+        "bearer",
+        "wh_demo...0001",
+        None,
+        ["events:log", "issues:create", "playbooks:trigger"],
+        True,
+        2,
+        18,
+        {"source": "alertmanager.acme.example.com", "env": "production"},
+    ),
+    (
+        "CI/CD Vulnerability Scanner",
+        "acme-ci-vuln-ingest",
+        "Ingests SBOM and CVE findings from CI builds on git.example.com.",
+        "bearer",
+        "wh_demo...0002",
+        None,
+        ["events:log", "vulnerabilities:create", "vulnerabilities:update"],
+        True,
+        1,
+        120,
+        {"source": "ci.acme.example.com", "env": "ci"},
+    ),
+    (
+        "Cloud Inventory Sync",
+        "acme-inventory-sync",
+        "Accepts infrastructure and service catalog updates from Terraform state hooks.",
+        "basic",
+        None,
+        "terraform-sync",
+        ["events:log", "entities:create", "entities:update", "services:update"],
+        True,
+        1,
+        300,
+        {"source": "infra.acme.example.com", "env": "production"},
+    ),
+    (
+        "Statuspage Incident Mirror",
+        "acme-statuspage-mirror",
+        "Logs external dependency status webhooks for post-incident correlation.",
+        "bearer",
+        "wh_demo...0004",
+        None,
+        ["events:log"],
+        False,
+        0,
+        None,
+        {"source": "status.example.org", "env": "staging"},
+    ),
+)
+
+# (webhook_slug, source_ip, action, status, minutes_ago, headers, payload, action_result)
+INBOUND_WEBHOOK_EVENTS = (
+    (
+        "acme-alertmanager-prod",
+        "198.51.100.10",
+        "issues:create",
+        "created",
+        18,
+        {"content-type": "application/json", "user-agent": "Alertmanager/0.27.0"},
+        {
+            "alertname": "HighErrorRate",
+            "service": "orders-api.acme.example.com",
+            "severity": "critical",
+        },
+        {"resource": "issues", "title": "HighErrorRate on orders-api.acme.example.com"},
+    ),
+    (
+        "acme-alertmanager-prod",
+        "198.51.100.11",
+        "playbooks:trigger",
+        "received",
+        65,
+        {"content-type": "application/json", "user-agent": "Alertmanager/0.27.0"},
+        {
+            "alertname": "CertExpiringSoon",
+            "host": "billing.acme.example.com",
+            "days_remaining": 12,
+        },
+        {"logged": True, "playbook": "cert-renewal-triage"},
+    ),
+    (
+        "acme-ci-vuln-ingest",
+        "203.0.113.42",
+        "vulnerabilities:create",
+        "created",
+        120,
+        {"content-type": "application/json", "user-agent": "Acme-CI-Scanner/2.4"},
+        {
+            "cve_id": "CVE-2022-24999",
+            "repository": "https://git.example.com/acme/storefront",
+            "severity": "high",
+        },
+        {"resource": "vulnerabilities", "cve_id": "CVE-2022-24999"},
+    ),
+    (
+        "acme-inventory-sync",
+        "192.0.2.15",
+        "entities:update",
+        "updated",
+        300,
+        {"content-type": "application/json", "user-agent": "Terraform-Hook/1.9"},
+        {
+            "entity": "acme-app-01.example.com",
+            "region": "dal2",
+            "state": "running",
+        },
+        {"resource": "entities", "updated": True},
+    ),
+)
+
+# (worker_id, worker_type, name, cluster, hostname, version, config_json, capabilities_json)
+REMOTE_WORKERS = (
+    (
+        "runworker-dal2-01",
+        "runworker",
+        "DAL2 Run Worker 01",
+        "dal2-prod",
+        "runworker-dal2-01.acme.example.com",
+        "4.0.0",
+        {"poll_interval_seconds": 30, "max_concurrency": 4},
+        {"runtimes": ["python", "nodejs", "bash"], "region": "us-central"},
+    ),
+    (
+        "scanner-dal2-01",
+        "scanner",
+        "DAL2 Security Scanner 01",
+        "dal2-prod",
+        "scanner-dal2-01.acme.example.com",
+        "4.0.0",
+        {"poll_interval_seconds": 60, "max_concurrency": 2},
+        {"scanners": ["sbom", "cve", "tls", "container"], "region": "us-central"},
+    ),
+    (
+        "runworker-eu-west-01",
+        "runworker",
+        "EU-West Run Worker 01",
+        "eu-west-prod",
+        "runworker-eu-west-01.acme.example.com",
+        "4.0.0",
+        {"poll_interval_seconds": 30, "max_concurrency": 4},
+        {"runtimes": ["python", "nodejs"], "region": "eu-west"},
+    ),
 )
 
 
@@ -312,4 +462,117 @@ def seed_run_functions(ctx: SeedContext) -> None:
                 "updated_at": now(),
             },
             feature="run functions",
+        )
+
+
+def seed_inbound_webhooks(ctx: SeedContext) -> None:
+    """Seed 4 inbound webhooks and 4 sample inbound webhook events."""
+    hook_ids: dict[str, int] = {}
+    for (
+        name,
+        slug,
+        description,
+        auth_type,
+        token_preview,
+        basic_user,
+        scopes,
+        is_active,
+        receive_count,
+        minutes_ago,
+        metadata,
+    ) in INBOUND_WEBHOOKS:
+        digest = hashlib.sha256(f"demo-seed:inbound:{slug}".encode()).hexdigest()
+        hook_ids[slug] = get_or_create(
+            ctx,
+            "inbound_webhooks",
+            {"tenant_id": ctx.tenant_id, "slug": slug},
+            {
+                "organization_id": ctx.org_id,
+                "name": name,
+                "description": description,
+                "auth_type": auth_type,
+                "bearer_token_hash": digest if auth_type == "bearer" else None,
+                "bearer_token_preview": token_preview,
+                "basic_username": basic_user,
+                "basic_password_hash": digest if auth_type == "basic" else None,
+                "is_active": is_active,
+                "stream_id": None,
+                "scopes": scopes,
+                "metadata": metadata,
+                "last_received_at": (
+                    now() - timedelta(minutes=minutes_ago)
+                    if minutes_ago is not None
+                    else None
+                ),
+                "receive_count": receive_count,
+                "created_at": now(),
+                "updated_at": now(),
+            },
+            feature="inbound webhooks",
+        )
+    for (
+        slug,
+        source_ip,
+        action,
+        status,
+        minutes_ago,
+        headers,
+        payload,
+        action_result,
+    ) in INBOUND_WEBHOOK_EVENTS:
+        get_or_create(
+            ctx,
+            "inbound_webhook_events",
+            {
+                "inbound_webhook_id": hook_ids[slug],
+                "source_ip": source_ip,
+                "action": action,
+            },
+            {
+                "tenant_id": ctx.tenant_id,
+                "headers": headers,
+                "payload": payload,
+                "action_result": action_result,
+                "status": status,
+                "received_at": now() - timedelta(minutes=minutes_ago),
+            },
+            feature="inbound webhook events",
+        )
+
+
+def seed_remote_workers(ctx: SeedContext) -> None:
+    """Seed 3 online remote workers with no raw tokens stored."""
+    for (
+        worker_id,
+        worker_type,
+        name,
+        cluster,
+        hostname,
+        version,
+        config_json,
+        capabilities_json,
+    ) in REMOTE_WORKERS:
+        get_or_create(
+            ctx,
+            "remote_workers",
+            {"worker_id": worker_id},
+            {
+                "tenant_id": ctx.tenant_id,
+                "worker_type": worker_type,
+                "name": name,
+                "cluster": cluster,
+                "token_hash": None,
+                "token_prefix": None,
+                "config_json": config_json,
+                "capabilities_json": capabilities_json,
+                "hostname": hostname,
+                "version": version,
+                "is_enabled": True,
+                "last_heartbeat_at": now() - timedelta(seconds=30),
+                "revoked_at": None,
+                "created_by_identity_id": ctx.admin_id,
+                "created_at": now(),
+                "updated_at": now(),
+            },
+            feature="remote workers",
         )
