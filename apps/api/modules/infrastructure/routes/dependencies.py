@@ -20,6 +20,7 @@ from apps.api.models.dataclasses import (
     from_pydal_rows,
 )
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.pagination import MAX_OFFSET, clamp_int, parse_limit
 from apps.api.utils.quart_validation import validated_request
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.village_id import mint_village_id
@@ -134,26 +135,25 @@ class BulkDeleteDependenciesRequest(RequestModel):
     )
 
 
-def get_resource(db, resource_type: str, resource_id: int, tenant_id: int | None):
-    """Get a dependency endpoint by type and ID, scoped to ``tenant_id``.
-
-    Entities carry tenancy through their organization; every other
-    endpoint table has its own ``tenant_id`` column. Returns None when the
-    type is unknown, the row is missing, or it belongs to another tenant --
-    callers map that to a 404 so foreign ids are indistinguishable from
-    missing ones.
-    """
+def _lookup_resource(db, resource_type: str, resource_id: int):
+    """Unscoped lookup by type and ID; callers must verify tenant ownership."""
     table_name = RESOURCE_TABLE_MAP.get(resource_type)
-    if not table_name or not tenant_id:
+    if not table_name:
         return None
     table = getattr(db, table_name, None)
     if not table:
         return None
-    if resource_type == "entity":
-        return get_tenant_scoped(
-            db, table, resource_id, tenant_id, org_fk="organization_id"
-        )
-    return get_tenant_scoped(db, table, resource_id, tenant_id)
+    return table[resource_id]  # tenant-scope-exempt: get_tenant_resource verifies
+
+
+def get_resource(db, resource_type: str, resource_id: int, tenant_id: int | None):
+    """Get a dependency endpoint by type and ID, scoped to ``tenant_id``.
+
+    Returns None when the type is unknown, the row is missing, or it belongs
+    to another tenant -- callers map that to a 404 so foreign ids are
+    indistinguishable from missing ones.
+    """
+    return get_tenant_resource(db, resource_type, resource_id, tenant_id)
 
 
 def _caller_tenant() -> int | None:
@@ -165,6 +165,45 @@ def _caller_tenant() -> int | None:
 def _tenant_required():
     """403 response for a token that carries no usable tenant claim."""
     return jsonify({"error": "Tenant context required"}), 403
+
+
+def _owned_by_tenant(db, row, tenant_id: int) -> bool | None:
+    """Report whether ``row`` belongs to ``tenant_id``.
+
+    Reads the row's own ``tenant_id`` when present, otherwise its
+    organization's. Returns ``None`` when the row carries neither, so the
+    caller can try a parent row or fail closed.
+    """
+    row_tenant = getattr(row, "tenant_id", None)
+    if row_tenant is not None:
+        return row_tenant == tenant_id
+    org_id = getattr(row, "organization_id", None)
+    if org_id:
+        return bool(get_tenant_scoped(db, db.organizations, org_id, tenant_id))
+    return None
+
+
+def get_tenant_resource(
+    db, resource_type: str, resource_id: int, tenant_id: int | None
+):
+    """Get a resource by type and ID only if it belongs to ``tenant_id``.
+
+    Ownership comes from the row itself or, failing that, its parent
+    project. A resource whose ownership cannot be established is treated as
+    not found (fail closed), the same answer as a missing row.
+    """
+    if not tenant_id:
+        return None
+    resource = _lookup_resource(db, resource_type, resource_id)
+    if not resource:
+        return None
+    owned = _owned_by_tenant(db, resource, tenant_id)
+    project_id = getattr(resource, "project_id", None)
+    if owned is None and project_id:
+        # Ownership of the parent is checked on the next line.
+        project = db.projects[project_id]  # tenant-scope-exempt: verified below
+        owned = _owned_by_tenant(db, project, tenant_id) if project else None
+    return resource if owned else None
 
 
 @bp.route("", methods=["GET"])
@@ -185,17 +224,18 @@ async def list_dependencies():
 
     Returns:
         200: List of dependencies with pagination metadata
+        403: Token carries no tenant claim
     """
     db = current_app.db
-    tenant_id = _caller_tenant()
-    if tenant_id is None:
-        return _tenant_required()
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Missing tenant claim in token"}), 403
 
     # Get pagination params
-    page = request.args.get("page", 1, type=int)
-    per_page = min(request.args.get("per_page", 50, type=int), 1000)
+    page = clamp_int(request.args.get("page"), 1, 1, MAX_OFFSET)
+    per_page = parse_limit(request.args, 50, 1000, key="per_page")
 
-    # Only the caller's tenant's dependencies.
+    # Every listing is restricted to the caller's tenant (gh-237).
     query = db.dependencies.tenant_id == tenant_id
 
     # Apply filters
@@ -651,11 +691,11 @@ async def delete_bulk_dependencies(body: BulkDeleteDependenciesRequest):
         400: Validation error
     """
     db = current_app.db
-    tenant_id = _caller_tenant()
-    if tenant_id is None:
-        return _tenant_required()
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Missing tenant claim in token"}), 403
 
-    # Delete only the caller's tenant's dependencies; foreign ids are ignored
+    # Delete dependencies owned by the caller's tenant only.
     def delete_all():
         deleted = db(
             db.dependencies.id.belongs(body.ids)
@@ -689,9 +729,6 @@ async def get_resource_dependencies(resource_type: str, resource_id: int):
         404: Resource not found
     """
     db = current_app.db
-    tenant_id = _caller_tenant()
-    if tenant_id is None:
-        return _tenant_required()
 
     if resource_type not in VALID_RESOURCE_TYPES:
         return (
@@ -703,9 +740,13 @@ async def get_resource_dependencies(resource_type: str, resource_id: int):
             400,
         )
 
-    # Check if resource exists
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Missing tenant claim in token"}), 403
+
+    # Check the resource exists in the caller's tenant (404 either way).
     resource = await run_in_threadpool(
-        lambda: get_resource(db, resource_type, resource_id, tenant_id)
+        lambda: get_tenant_resource(db, resource_type, resource_id, tenant_id)
     )
     if not resource:
         return jsonify({"error": f"{resource_type.title()} not found"}), 404
@@ -727,7 +768,7 @@ async def get_resource_dependencies(resource_type: str, resource_id: int):
                 (db.dependencies.source_type == resource_type)
                 & (db.dependencies.source_id == resource_id)
                 & (db.dependencies.tenant_id == tenant_id)
-            ).select()
+            ).select(limitby=(0, 1000))
             result["depends_on"] = [
                 {
                     "id": dep.id,
@@ -745,7 +786,7 @@ async def get_resource_dependencies(resource_type: str, resource_id: int):
                 (db.dependencies.target_type == resource_type)
                 & (db.dependencies.target_id == resource_id)
                 & (db.dependencies.tenant_id == tenant_id)
-            ).select()
+            ).select(limitby=(0, 1000))
             result["depended_by"] = [
                 {
                     "id": dep.id,

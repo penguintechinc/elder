@@ -14,6 +14,7 @@ from apps.api.services.secrets.base import (
     SecretNotFoundException,
     SecretProviderException,
 )
+from apps.api.utils.pagination import parse_limit
 
 logger = logging.getLogger(__name__)
 bp = Blueprint("secrets", __name__)
@@ -344,7 +345,7 @@ def get_secret_access_log(secret_id):
     """
     try:
         service = get_secrets_service()
-        limit = request.args.get("limit", 100, type=int)
+        limit = parse_limit(request.args, 100)
 
         access_log = service.get_secret_access_log(secret_id=secret_id, limit=limit)
 

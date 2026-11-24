@@ -9,6 +9,7 @@ from quart import Blueprint, current_app, jsonify, request
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.keys import KeysService
+from apps.api.utils.pagination import parse_limit, parse_offset
 
 logger = logging.getLogger(__name__)
 
@@ -443,8 +444,8 @@ def get_key_access_log(key_id):
         404: Key not found
     """
     try:
-        limit = request.args.get("limit", 100, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = parse_limit(request.args, 100)
+        offset = parse_offset(request.args)
 
         service = get_keys_service()
         logs = service.get_access_log(key_id, limit=limit, offset=offset)

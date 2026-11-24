@@ -13,6 +13,7 @@ from quart import Blueprint, jsonify, request
 from apps.api.api.v1.portal_auth import portal_token_required
 from apps.api.services.audit import AuditService
 from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.pagination import parse_limit, parse_offset
 
 bp = Blueprint("audit_enterprise", __name__)
 
@@ -80,8 +81,8 @@ def query_logs():
         start_date=start_date,
         end_date=end_date,
         success=success,
-        limit=request.args.get("limit", 100, type=int),
-        offset=request.args.get("offset", 0, type=int),
+        limit=parse_limit(request.args, 100),
+        offset=parse_offset(request.args),
     )
 
     return jsonify(result), 200

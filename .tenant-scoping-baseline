@@ -9,4 +9,4 @@
 # tenant/org predicate (routes + services); ratcheted separately.
 # Regenerate with: scripts/check_tenant_scoping.py --update
 count=0
-list_count=44
+list_count=43
