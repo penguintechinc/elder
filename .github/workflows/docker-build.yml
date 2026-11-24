@@ -24,7 +24,9 @@ env:
 jobs:
   build-platform:
     name: Build (${{ matrix.service.name }}, ${{ matrix.platform }})
-    runs-on: ${{ fromJSON((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request') && '"ubuntu-24.04"' || '{"group":"dal2alpha"}') }}
+    # Cluster path must land on the dal2-alpha (deploy-only) scale set: the buildkitd
+    # CiliumNetworkPolicy admits only that scale set; dal2-alpha-ci runners cannot reach it.
+    runs-on: ${{ fromJSON((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request') && '"ubuntu-24.04"' || '{"group":"dal2alpha","labels":["dal2-alpha"]}') }}
     strategy:
       max-parallel: 3
       matrix:
@@ -65,6 +67,14 @@ jobs:
     # Temporarily disabled while linux/arm64 builds are paused
     # - name: Set up QEMU (for arm64 emulation)
     #   uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4
+
+    - name: Verify buildkitd reachable (dal2alpha cluster path)
+      if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' && github.base_ref != 'main' && github.event_name != 'pull_request'
+      run: |
+        if ! timeout 10 bash -c 'exec 3<>/dev/tcp/buildkitd.buildkit.svc.cluster.local/1234'; then
+          echo "::error::buildkitd.buildkit.svc.cluster.local:1234 unreachable from runner ${RUNNER_NAME}. Image builds must run on the dal2-alpha deploy-only scale set (runs-on group dal2alpha + label dal2-alpha); dal2-alpha-ci runners have no BuildKit access by design."
+          exit 1
+        fi
 
     - name: Set up Docker Buildx (dal2alpha remote buildkit)
       if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' && github.base_ref != 'main' && github.event_name != 'pull_request'
@@ -130,7 +140,9 @@ jobs:
     name: Merge manifest (${{ matrix.service }})
     needs: build-platform
     if: github.event_name != 'pull_request'
-    runs-on: ${{ fromJSON((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main') && '"ubuntu-24.04"' || '{"group":"dal2alpha"}') }}
+    # Cluster path must land on the dal2-alpha (deploy-only) scale set: the buildkitd
+    # CiliumNetworkPolicy admits only that scale set; dal2-alpha-ci runners cannot reach it.
+    runs-on: ${{ fromJSON((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main') && '"ubuntu-24.04"' || '{"group":"dal2alpha","labels":["dal2-alpha"]}') }}
     strategy:
       max-parallel: 3
       matrix:
@@ -139,6 +151,14 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+    - name: Verify buildkitd reachable (dal2alpha cluster path)
+      if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' && github.base_ref != 'main' && github.event_name != 'pull_request'
+      run: |
+        if ! timeout 10 bash -c 'exec 3<>/dev/tcp/buildkitd.buildkit.svc.cluster.local/1234'; then
+          echo "::error::buildkitd.buildkit.svc.cluster.local:1234 unreachable from runner ${RUNNER_NAME}. Image builds must run on the dal2-alpha deploy-only scale set (runs-on group dal2alpha + label dal2-alpha); dal2-alpha-ci runners have no BuildKit access by design."
+          exit 1
+        fi
 
     - name: Set up Docker Buildx (dal2alpha remote buildkit)
       if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' && github.base_ref != 'main' && github.event_name != 'pull_request'

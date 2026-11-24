@@ -4,6 +4,12 @@ Completely decoupled from Elder's database and Redis so it can run either
 inside Elder's own Kubernetes cluster or in a remote Kubernetes cluster.
 Polls Elder's internal runs API for pending executions, launches hardened
 per-execution Kubernetes Jobs via ``K8sRunner``, and posts results back.
+
+Trust model: the worker authenticates to ``hub-api`` only with its own
+provisioned, revocable, runs-scoped worker token. It never holds the platform
+token-signing key and refuses to start if one is present in its environment.
+Tenant code runs in per-execution Job pods by default; in-pod execution is
+opt-in and gated on a VM-isolated pod runtime (see ``sandbox_runner``).
 """
 
 from __future__ import annotations
@@ -11,8 +17,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
-import hmac
-import json
 import logging
 import os
 import signal
@@ -29,12 +33,20 @@ from apps.runworker.k8s_runner import (
     DEFAULT_LOG_FLUSH_INTERVAL_SECONDS,
     DEFAULT_MEMORY_MB,
     DEFAULT_TIMEOUT_SECONDS,
+    GatewayPortPool,
     K8sRunner,
     RunExecutionResult,
     RunJobRequest,
     clamp_log_flush_interval,
 )
-from apps.runworker.sandbox_runner import SandboxRunner
+from apps.runworker.sandbox_runner import (
+    KATA_EXCEPTION_APPROVED,
+    SandboxIsolationError,
+    SandboxRunner,
+    evaluate_sandbox_isolation,
+    harden_worker_process,
+    is_sandboxed_runtime_class,
+)
 
 logger = logging.getLogger("apps.runworker")
 
@@ -43,46 +55,17 @@ def _default_health_file() -> str:
     return os.path.join(tempfile.gettempdir(), "runworker.healthy")
 
 
-def _b64url(data: bytes) -> str:
-    """Return unpadded base64url-encoded ASCII text."""
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+RUNNER_BACKENDS: tuple[str, ...] = ("k8s_job", "sandbox", "auto")
+DEFAULT_RUNNER_BACKEND = "k8s_job"
+
+# Platform signing material must never be reachable from a process that
+# schedules or runs tenant code; the worker refuses to start if it is present.
+FORBIDDEN_ENV_KEYS: tuple[str, ...] = ("JWT_SECRET_KEY", "SECRET_KEY")
+WORKER_TOKEN_ENV = "ELDER_INTERNAL_TOKEN"  # noqa: S105 - env var name, not a secret
 
 
-def _mint_service_worker_jwt(
-    secret: str,
-    *,
-    issuer: str = "elder-api",
-    audience: str = "elder-api",
-    ttl_seconds: int = 300,
-) -> str:
-    """Mint a short-lived HS256 ``service_worker`` JWT for ``svc-runworker``.
-
-    Uses only the Python standard library so ``svc-runworker`` needs no extra
-    JWT runtime dependency while producing tokens verified by
-    ``apps.api.auth.jwt_handler.verify_token``.
-    """
-    now = int(time.time())
-    header = {"alg": "HS256", "typ": "JWT"}
-    payload = {
-        "sub": "svc-runworker",
-        "type": "service_worker",
-        "tenant": "system",
-        "scope": "runs:read runs:write runs:invoke",
-        "iss": issuer,
-        "aud": audience,
-        "iat": now,
-        "exp": now + ttl_seconds,
-    }
-    signing_input = (
-        f"{_b64url(json.dumps(header, separators=(',', ':')).encode('utf-8'))}."
-        f"{_b64url(json.dumps(payload, separators=(',', ':')).encode('utf-8'))}"
-    )
-    signature = hmac.new(
-        secret.encode("utf-8"),
-        signing_input.encode("ascii"),
-        hashlib.sha256,
-    ).digest()
-    return f"{signing_input}.{_b64url(signature)}"
+class WorkerConfigError(RuntimeError):
+    """Raised when the worker environment is unsafe or incomplete to start."""
 
 
 @dataclass(frozen=True)
@@ -91,9 +74,6 @@ class RunWorkerConfig:
 
     elder_api_url: str = "http://hub-api:5000"
     elder_internal_token: str = field(default="", repr=False)
-    jwt_secret_key: str = field(default="", repr=False)
-    jwt_issuer: str = "elder-api"
-    jwt_audience: str = "elder-api"
     execution_namespace: str = "elder-runs"
     worker_cluster: str = ""
     runtime_class_name: str = ""
@@ -104,7 +84,14 @@ class RunWorkerConfig:
     http_timeout_seconds: float = 30.0
     s3_fetch_mode: str = "worker"  # "worker" (zero-egress pods) | "init_container"
     log_flush_interval_seconds: float = DEFAULT_LOG_FLUSH_INTERVAL_SECONDS
-    runner_backend: str = "auto"  # "auto" | "sandbox" | "k8s_job"
+    runner_backend: str = DEFAULT_RUNNER_BACKEND  # "k8s_job" | "sandbox" | "auto"
+    pod_runtime_class: str = ""  # runtime class of THIS worker pod (chart-set)
+    sandboxed_runtime_classes: tuple[str, ...] = ()
+    kata_exception_sandbox: str = ""  # "approved" permits in-pod runs without Kata
+    kata_exception_jobs: str = ""  # "approved" permits Job pods without Kata
+    execution_service_account: str = ""
+    gateway_bind_host: str = ""  # controller pod IP reachable by execution pods
+    gateway_port_base: int = 0  # 0 disables the Job-backend restriction gateway
     heartbeat_interval_seconds: float = 30.0
     worker_version: str = ""
 
@@ -112,10 +99,19 @@ class RunWorkerConfig:
     def from_env(cls) -> RunWorkerConfig:
         """Load worker configuration from process environment variables."""
         api_url = (os.getenv("ELDER_API_URL") or "http://hub-api:5000").rstrip("/")
-        token = os.getenv("ELDER_INTERNAL_TOKEN") or ""
-        jwt_secret = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY") or ""
-        jwt_issuer = os.getenv("JWT_ISSUER") or "elder-api"
-        jwt_audience = os.getenv("JWT_AUDIENCE") or "elder-api"
+        present = [key for key in FORBIDDEN_ENV_KEYS if os.getenv(key)]
+        if present:
+            raise WorkerConfigError(
+                "svc-runworker must not be given platform signing keys; remove "
+                f"{', '.join(present)} from its environment and authenticate "
+                f"with a provisioned worker token ({WORKER_TOKEN_ENV})"
+            )
+        token = (os.getenv(WORKER_TOKEN_ENV) or "").strip()
+        if not token:
+            raise WorkerConfigError(
+                f"{WORKER_TOKEN_ENV} is required: onboard this worker via "
+                "POST /api/v1/admin/workers and mount the issued token from a Secret"
+            )
         namespace = os.getenv("RUNS_EXECUTION_NAMESPACE") or "elder-runs"
         cluster = (os.getenv("RUNS_WORKER_CLUSTER") or "").strip()
         runtime_class = (os.getenv("RUNS_RUNTIME_CLASS_NAME") or "").strip()
@@ -138,10 +134,21 @@ class RunWorkerConfig:
         log_flush_interval = clamp_log_flush_interval(
             float(raw_flush_interval) if raw_flush_interval else None
         )
-        raw_backend = (os.getenv("RUNS_RUNNER_BACKEND") or "auto").strip().lower()
         runner_backend = (
-            raw_backend if raw_backend in ("auto", "sandbox", "k8s_job") else "auto"
+            (os.getenv("RUNS_RUNNER_BACKEND") or DEFAULT_RUNNER_BACKEND).strip().lower()
         )
+        if runner_backend not in RUNNER_BACKENDS:
+            raise WorkerConfigError(
+                f"Unsupported RUNS_RUNNER_BACKEND {runner_backend!r}; "
+                f"expected one of {', '.join(RUNNER_BACKENDS)}"
+            )
+        raw_port_base = (os.getenv("RUNS_GATEWAY_PORT_BASE") or "0").strip()
+        try:
+            gateway_port_base = int(raw_port_base)
+        except ValueError as exc:
+            raise WorkerConfigError(
+                f"RUNS_GATEWAY_PORT_BASE must be an integer, got {raw_port_base!r}"
+            ) from exc
         raw_hb_interval = (os.getenv("RUNS_HEARTBEAT_INTERVAL_SECONDS") or "30").strip()
         try:
             heartbeat_interval = max(5.0, float(raw_hb_interval))
@@ -153,9 +160,6 @@ class RunWorkerConfig:
         return cls(
             elder_api_url=api_url,
             elder_internal_token=token,
-            jwt_secret_key=jwt_secret,
-            jwt_issuer=jwt_issuer,
-            jwt_audience=jwt_audience,
             execution_namespace=namespace,
             worker_cluster=cluster,
             runtime_class_name=runtime_class,
@@ -167,6 +171,19 @@ class RunWorkerConfig:
             s3_fetch_mode=s3_fetch_mode,
             log_flush_interval_seconds=log_flush_interval,
             runner_backend=runner_backend,
+            pod_runtime_class=(os.getenv("RUNS_POD_RUNTIME_CLASS") or "").strip(),
+            sandboxed_runtime_classes=_parse_str_tuple(
+                os.getenv("RUNS_SANDBOXED_RUNTIME_CLASSES")
+            ),
+            kata_exception_sandbox=(
+                os.getenv("RUNS_KATA_EXCEPTION_SANDBOX") or ""
+            ).strip(),
+            kata_exception_jobs=(os.getenv("RUNS_KATA_EXCEPTION_JOBS") or "").strip(),
+            execution_service_account=(
+                os.getenv("RUNS_EXECUTION_SERVICE_ACCOUNT") or ""
+            ).strip(),
+            gateway_bind_host=(os.getenv("POD_IP") or "").strip(),
+            gateway_port_base=gateway_port_base,
             heartbeat_interval_seconds=heartbeat_interval,
             worker_version=worker_version,
         )
@@ -238,16 +255,37 @@ class RunWorkerService:
     ) -> None:
         self.config = config
         self._explicit_runner = runner
+        self.backend = (config.runner_backend or DEFAULT_RUNNER_BACKEND).strip().lower()
+        if self.backend not in RUNNER_BACKENDS:
+            raise WorkerConfigError(
+                f"Unsupported runner backend {self.backend!r}; "
+                f"expected one of {', '.join(RUNNER_BACKENDS)}"
+            )
+        self.sandbox_allowed, self.sandbox_reason = evaluate_sandbox_isolation(
+            pod_runtime_class=config.pod_runtime_class,
+            sandboxed_runtime_classes=config.sandboxed_runtime_classes,
+            kata_exception=config.kata_exception_sandbox,
+        )
+        if runner is None:
+            self._enforce_isolation_policy()
         self.sandbox_runner = sandbox_runner or SandboxRunner(
             elder_api_url=config.elder_api_url,
         )
         self.k8s_runner = k8s_runner or K8sRunner(
             namespace=config.execution_namespace,
             runtime_class_name=config.runtime_class_name or None,
+            service_account_name=config.execution_service_account or None,
+            elder_api_url=config.elder_api_url,
+            gateway_bind_host=config.gateway_bind_host or None,
+            gateway_port_pool=(
+                GatewayPortPool(config.gateway_port_base, config.max_concurrent)
+                if config.gateway_port_base and config.gateway_bind_host
+                else None
+            ),
         )
         if runner is not None:
             self.runner = runner
-        elif config.runner_backend == "sandbox":
+        elif self.backend == "sandbox":
             self.runner = self.sandbox_runner
         else:
             self.runner = self.k8s_runner
@@ -259,17 +297,83 @@ class RunWorkerService:
         self._stop_event = asyncio.Event()
         self._last_heartbeat_sent: float = 0.0
 
+    def _enforce_isolation_policy(self) -> None:
+        """Refuse to start in a configuration that lacks an isolation boundary.
+
+        In-pod execution needs a VM-isolated worker pod; Job execution needs a
+        VM-isolated runtime class for the execution pods. Either requirement
+        can only be waived by the documented, loudly logged Kata exception.
+        """
+        if self.backend == "sandbox" and not self.sandbox_allowed:
+            raise SandboxIsolationError(
+                "RUNS_RUNNER_BACKEND=sandbox refused: "
+                f"{self.sandbox_reason}. Use the k8s_job backend, run the "
+                "worker pod under a Kata runtime class, or record a Kata "
+                "exception (RUNS_KATA_EXCEPTION_SANDBOX)"
+            )
+        if self.backend in ("sandbox", "auto") and self.sandbox_allowed:
+            if "KATA EXCEPTION" in self.sandbox_reason:
+                logger.error(
+                    "runworker_kata_exception_active",
+                    extra={
+                        "scope": "in_pod_sandbox",
+                        "detail": "tenant code runs in the worker pod WITHOUT "
+                        "a VM isolation boundary (KATA EXCEPTION approved)",
+                    },
+                )
+        if self.backend in ("k8s_job", "auto"):
+            runtime_class = (self.config.runtime_class_name or "").strip()
+            if not is_sandboxed_runtime_class(
+                runtime_class, self.config.sandboxed_runtime_classes
+            ):
+                if (
+                    self.config.kata_exception_jobs.strip().lower()
+                    != KATA_EXCEPTION_APPROVED
+                ):
+                    logger.error(
+                        "runworker_execution_runtime_class_refused",
+                        extra={
+                            "runtime_class": runtime_class or "<unset>",
+                            "detail": "execution pod runtime class is not in "
+                            "the sandboxed runtime class list; refusing to "
+                            "run tenant code without a VM isolation boundary",
+                        },
+                    )
+                    raise SandboxIsolationError(
+                        "RUNS_RUNTIME_CLASS_NAME="
+                        f"{runtime_class or '<unset>'!r} is not a sandboxed "
+                        "runtime class (RUNS_SANDBOXED_RUNTIME_CLASSES): "
+                        "execution pods must run under a Kata runtime class, "
+                        "or record a Kata exception (RUNS_KATA_EXCEPTION_JOBS)"
+                    )
+                logger.error(
+                    "runworker_kata_exception_active",
+                    extra={
+                        "scope": "execution_pods",
+                        "runtime_class": runtime_class or "<unset>",
+                        "detail": "execution pods run WITHOUT a VM isolation "
+                        "boundary (KATA EXCEPTION approved)",
+                    },
+                )
+
     def select_runner(self, req: RunJobRequest) -> Any:
-        """Select the runner backend for ``req`` based on ``RUNS_RUNNER_BACKEND``."""
+        """Select the runner backend for ``req``.
+
+        ``auto`` only considers the in-pod sandbox when this worker pod has a
+        confirmed isolation boundary; otherwise every execution gets its own
+        Job pod.
+        """
         if self._explicit_runner is not None:
             return self._explicit_runner
-        backend = (self.config.runner_backend or "auto").strip().lower()
-        if backend == "sandbox":
+        if self.backend == "sandbox":
+            if not self.sandbox_allowed:
+                raise SandboxIsolationError(
+                    f"In-pod sandbox refused: {self.sandbox_reason}"
+                )
             return self.sandbox_runner
-        if backend == "k8s_job":
+        if self.backend == "k8s_job":
             return self.k8s_runner
-        # "auto": prefer warm SandboxRunner when runtime binary is installed locally.
-        if self.sandbox_runner.can_execute(
+        if self.sandbox_allowed and self.sandbox_runner.can_execute(
             req.runtime,
             code_url=req.code_url,
             code=req.code,
@@ -278,19 +382,18 @@ class RunWorkerService:
         return self.k8s_runner
 
     def _auth_headers(self) -> dict[str, str]:
-        """Build internal auth headers without ever logging token values."""
-        headers: dict[str, str] = {"Accept": "application/json"}
-        if self.config.elder_internal_token:
-            headers["Authorization"] = f"Bearer {self.config.elder_internal_token}"
-            headers["X-Elder-Internal-Token"] = self.config.elder_internal_token
-        elif self.config.jwt_secret_key:
-            token = _mint_service_worker_jwt(
-                self.config.jwt_secret_key,
-                issuer=self.config.jwt_issuer,
-                audience=self.config.jwt_audience,
+        """Build worker-token auth headers without ever logging token values."""
+        token = self.config.elder_internal_token
+        if not token:
+            raise WorkerConfigError(
+                f"{WORKER_TOKEN_ENV} is not configured; refusing to call the "
+                "Elder API unauthenticated"
             )
-            headers["Authorization"] = f"Bearer {token}"
-        return headers
+        return {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}",
+            "X-Elder-Internal-Token": token,
+        }
 
     def touch_heartbeat(self) -> None:
         """Write current epoch timestamp to the file-based liveness probe path."""
@@ -617,7 +720,16 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     config = RunWorkerConfig.from_env()
+    # The token now lives only in this process's memory: drop it from the
+    # environment so it is never inherited by anything this process spawns.
+    os.environ.pop(WORKER_TOKEN_ENV, None)
     service = RunWorkerService(config)
+    try:
+        harden_worker_process()
+    except SandboxIsolationError:
+        if service.backend != "k8s_job":
+            raise
+        logger.warning("runworker_process_hardening_unavailable")
     asyncio.run(service.run_forever())
 
 
