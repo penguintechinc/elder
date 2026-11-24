@@ -9,16 +9,31 @@ from quart import Blueprint, current_app, jsonify, request
 from apps.api.auth.decorators import admin_required, login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.iam import IAMService
+from apps.api.services.iam.service import (
+    IAMProviderNotFoundError,
+    IAMTenantRequiredError,
+)
 from apps.api.utils.pagination import parse_limit
+from apps.api.utils.tenant_scoping import get_current_tenant_id
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("iam", __name__)
 
 
-def get_iam_service():
-    """Get IAMService instance with current database."""
-    return IAMService(current_app.db)
+_MISSING_TENANT = "Missing tenant claim in token"
+
+
+def get_iam_service() -> tuple[IAMService, int]:
+    """Return an IAMService and the caller's tenant id from the verified JWT.
+
+    Raises IAMTenantRequiredError (mapped to 403) when the token carries no
+    tenant claim; tenant ids from the request body/query are never trusted.
+    """
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        raise IAMTenantRequiredError(_MISSING_TENANT)
+    return IAMService(current_app.db), tenant_id
 
 
 # Provider Management Endpoints
@@ -39,16 +54,20 @@ def list_providers():
         200: List of providers
     """
     try:
-        service = get_iam_service()
+        service, tenant_id = get_iam_service()
         enabled_only = request.args.get("enabled_only", "false").lower() == "true"
         organization_id = request.args.get("organization_id", type=int)
 
         providers = service.list_providers(
-            enabled_only=enabled_only, organization_id=organization_id
+            tenant_id, enabled_only=enabled_only, organization_id=organization_id
         )
 
         return jsonify({"providers": providers, "count": len(providers)}), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
@@ -65,10 +84,14 @@ def get_provider(provider_id):
         404: Provider not found
     """
     try:
-        service = get_iam_service()
-        provider = service.get_provider(provider_id)
+        service, tenant_id = get_iam_service()
+        provider = service.get_provider(tenant_id, provider_id)
         return jsonify(provider), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -113,8 +136,9 @@ async def create_provider():
                 400,
             )
 
-        service = get_iam_service()
+        service, tenant_id = get_iam_service()
         provider = service.create_provider(
+            tenant_id,
             name=data["name"],
             provider_type=data["provider_type"],
             config=data["config"],
@@ -124,6 +148,10 @@ async def create_provider():
 
         return jsonify(provider), 201
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         return log_error_and_respond(logger, e, "Failed to process request", 400)
 
@@ -153,8 +181,9 @@ async def update_provider(provider_id):
         if not data:
             return jsonify({"error": "Request body required"}), 400
 
-        service = get_iam_service()
+        service, tenant_id = get_iam_service()
         provider = service.update_provider(
+            tenant_id,
             provider_id=provider_id,
             name=data.get("name"),
             config=data.get("config"),
@@ -165,6 +194,10 @@ async def update_provider(provider_id):
 
         return jsonify(provider), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -184,10 +217,14 @@ def delete_provider(provider_id):
         409: Provider has resources
     """
     try:
-        service = get_iam_service()
-        result = service.delete_provider(provider_id)
+        service, tenant_id = get_iam_service()
+        result = service.delete_provider(tenant_id, provider_id)
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         error_msg = str(e).lower()
         if "not found" in error_msg:
@@ -209,10 +246,14 @@ def test_provider(provider_id):
         404: Provider not found
     """
     try:
-        service = get_iam_service()
-        result = service.test_provider(provider_id)
+        service, tenant_id = get_iam_service()
+        result = service.test_provider(tenant_id, provider_id)
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -231,10 +272,14 @@ def sync_provider(provider_id):
         404: Provider not found
     """
     try:
-        service = get_iam_service()
-        result = service.sync_provider(provider_id)
+        service, tenant_id = get_iam_service()
+        result = service.sync_provider(tenant_id, provider_id)
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -260,7 +305,7 @@ def list_users(provider_id):
         404: Provider not found
     """
     try:
-        service = get_iam_service()
+        service, tenant_id = get_iam_service()
 
         kwargs = {}
         if request.args.get("limit"):
@@ -268,9 +313,13 @@ def list_users(provider_id):
         if request.args.get("next_token"):
             kwargs["next_token"] = request.args.get("next_token")
 
-        users = service.list_users(provider_id, **kwargs)
+        users = service.list_users(tenant_id, provider_id, **kwargs)
         return jsonify(users), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -289,10 +338,14 @@ def get_user(provider_id, user_id):
         404: Provider or user not found
     """
     try:
-        service = get_iam_service()
-        user = service.get_user(provider_id, user_id)
+        service, tenant_id = get_iam_service()
+        user = service.get_user(tenant_id, provider_id, user_id)
         return jsonify(user), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -328,11 +381,15 @@ async def create_user(provider_id):
         if "username" not in data:
             return jsonify({"error": "Missing required field: username"}), 400
 
-        service = get_iam_service()
-        user = service.create_user(provider_id, **data)
+        service, tenant_id = get_iam_service()
+        user = service.create_user(tenant_id, provider_id, **data)
 
         return jsonify(user), 201
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -362,11 +419,15 @@ async def update_user(provider_id, user_id):
         if not data:
             return jsonify({"error": "Request body required"}), 400
 
-        service = get_iam_service()
-        user = service.update_user(provider_id, user_id, **data)
+        service, tenant_id = get_iam_service()
+        user = service.update_user(tenant_id, provider_id, user_id, **data)
 
         return jsonify(user), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -385,10 +446,14 @@ def delete_user(provider_id, user_id):
         404: Provider or user not found
     """
     try:
-        service = get_iam_service()
-        result = service.delete_user(provider_id, user_id)
+        service, tenant_id = get_iam_service()
+        result = service.delete_user(tenant_id, provider_id, user_id)
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -414,7 +479,7 @@ def list_roles(provider_id):
         404: Provider not found
     """
     try:
-        service = get_iam_service()
+        service, tenant_id = get_iam_service()
 
         kwargs = {}
         if request.args.get("limit"):
@@ -422,9 +487,13 @@ def list_roles(provider_id):
         if request.args.get("next_token"):
             kwargs["next_token"] = request.args.get("next_token")
 
-        roles = service.list_roles(provider_id, **kwargs)
+        roles = service.list_roles(tenant_id, provider_id, **kwargs)
         return jsonify(roles), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -443,10 +512,14 @@ def get_role(provider_id, role_id):
         404: Provider or role not found
     """
     try:
-        service = get_iam_service()
-        role = service.get_role(provider_id, role_id)
+        service, tenant_id = get_iam_service()
+        role = service.get_role(tenant_id, provider_id, role_id)
         return jsonify(role), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -483,11 +556,15 @@ async def create_role(provider_id):
         if "role_name" not in data:
             return jsonify({"error": "Missing required field: role_name"}), 400
 
-        service = get_iam_service()
-        role = service.create_role(provider_id, **data)
+        service, tenant_id = get_iam_service()
+        role = service.create_role(tenant_id, provider_id, **data)
 
         return jsonify(role), 201
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -517,11 +594,15 @@ async def update_role(provider_id, role_id):
         if not data:
             return jsonify({"error": "Request body required"}), 400
 
-        service = get_iam_service()
-        role = service.update_role(provider_id, role_id, **data)
+        service, tenant_id = get_iam_service()
+        role = service.update_role(tenant_id, provider_id, role_id, **data)
 
         return jsonify(role), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -540,10 +621,14 @@ def delete_role(provider_id, role_id):
         404: Provider or role not found
     """
     try:
-        service = get_iam_service()
-        result = service.delete_role(provider_id, role_id)
+        service, tenant_id = get_iam_service()
+        result = service.delete_role(tenant_id, provider_id, role_id)
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -569,7 +654,7 @@ def list_policies(provider_id):
         404: Provider not found
     """
     try:
-        service = get_iam_service()
+        service, tenant_id = get_iam_service()
 
         kwargs = {}
         if request.args.get("limit"):
@@ -577,9 +662,13 @@ def list_policies(provider_id):
         if request.args.get("next_token"):
             kwargs["next_token"] = request.args.get("next_token")
 
-        policies = service.list_policies(provider_id, **kwargs)
+        policies = service.list_policies(tenant_id, provider_id, **kwargs)
         return jsonify(policies), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -598,10 +687,14 @@ def get_policy(provider_id, policy_id):
         404: Provider or policy not found
     """
     try:
-        service = get_iam_service()
-        policy = service.get_policy(provider_id, policy_id)
+        service, tenant_id = get_iam_service()
+        policy = service.get_policy(tenant_id, provider_id, policy_id)
         return jsonify(policy), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -643,11 +736,15 @@ async def create_policy(provider_id):
                 400,
             )
 
-        service = get_iam_service()
-        policy = service.create_policy(provider_id, **data)
+        service, tenant_id = get_iam_service()
+        policy = service.create_policy(tenant_id, provider_id, **data)
 
         return jsonify(policy), 201
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -666,10 +763,14 @@ def delete_policy(provider_id, policy_id):
         404: Provider or policy not found
     """
     try:
-        service = get_iam_service()
-        result = service.delete_policy(provider_id, policy_id)
+        service, tenant_id = get_iam_service()
+        result = service.delete_policy(tenant_id, provider_id, policy_id)
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -694,10 +795,16 @@ def attach_policy_to_user(provider_id, user_id, policy_id):
         404: Provider, user, or policy not found
     """
     try:
-        service = get_iam_service()
-        result = service.attach_policy_to_user(provider_id, user_id, policy_id)
+        service, tenant_id = get_iam_service()
+        result = service.attach_policy_to_user(
+            tenant_id, provider_id, user_id, policy_id
+        )
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -719,10 +826,16 @@ def detach_policy_from_user(provider_id, user_id, policy_id):
         404: Provider, user, or policy not found
     """
     try:
-        service = get_iam_service()
-        result = service.detach_policy_from_user(provider_id, user_id, policy_id)
+        service, tenant_id = get_iam_service()
+        result = service.detach_policy_from_user(
+            tenant_id, provider_id, user_id, policy_id
+        )
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -744,10 +857,16 @@ def attach_policy_to_role(provider_id, role_id, policy_id):
         404: Provider, role, or policy not found
     """
     try:
-        service = get_iam_service()
-        result = service.attach_policy_to_role(provider_id, role_id, policy_id)
+        service, tenant_id = get_iam_service()
+        result = service.attach_policy_to_role(
+            tenant_id, provider_id, role_id, policy_id
+        )
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -769,10 +888,16 @@ def detach_policy_from_role(provider_id, role_id, policy_id):
         404: Provider, role, or policy not found
     """
     try:
-        service = get_iam_service()
-        result = service.detach_policy_from_role(provider_id, role_id, policy_id)
+        service, tenant_id = get_iam_service()
+        result = service.detach_policy_from_role(
+            tenant_id, provider_id, role_id, policy_id
+        )
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -791,10 +916,14 @@ def list_user_policies(provider_id, user_id):
         404: Provider or user not found
     """
     try:
-        service = get_iam_service()
-        policies = service.list_user_policies(provider_id, user_id)
+        service, tenant_id = get_iam_service()
+        policies = service.list_user_policies(tenant_id, provider_id, user_id)
         return jsonify(policies), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -813,10 +942,14 @@ def list_role_policies(provider_id, role_id):
         404: Provider or role not found
     """
     try:
-        service = get_iam_service()
-        policies = service.list_role_policies(provider_id, role_id)
+        service, tenant_id = get_iam_service()
+        policies = service.list_role_policies(tenant_id, provider_id, role_id)
         return jsonify(policies), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -839,10 +972,14 @@ def create_access_key(provider_id, user_id):
         404: Provider or user not found
     """
     try:
-        service = get_iam_service()
-        key = service.create_access_key(provider_id, user_id)
+        service, tenant_id = get_iam_service()
+        key = service.create_access_key(tenant_id, provider_id, user_id)
         return jsonify(key), 201
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -861,10 +998,14 @@ def list_access_keys(provider_id, user_id):
         404: Provider or user not found
     """
     try:
-        service = get_iam_service()
-        keys = service.list_access_keys(provider_id, user_id)
+        service, tenant_id = get_iam_service()
+        keys = service.list_access_keys(tenant_id, provider_id, user_id)
         return jsonify(keys), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -886,10 +1027,14 @@ def delete_access_key(provider_id, user_id, key_id):
         404: Provider, user, or key not found
     """
     try:
-        service = get_iam_service()
-        result = service.delete_access_key(provider_id, user_id, key_id)
+        service, tenant_id = get_iam_service()
+        result = service.delete_access_key(tenant_id, provider_id, user_id, key_id)
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -915,7 +1060,7 @@ def list_groups(provider_id):
         404: Provider not found
     """
     try:
-        service = get_iam_service()
+        service, tenant_id = get_iam_service()
 
         kwargs = {}
         if request.args.get("limit"):
@@ -923,9 +1068,13 @@ def list_groups(provider_id):
         if request.args.get("next_token"):
             kwargs["next_token"] = request.args.get("next_token")
 
-        groups = service.list_groups(provider_id, **kwargs)
+        groups = service.list_groups(tenant_id, provider_id, **kwargs)
         return jsonify(groups), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -960,11 +1109,15 @@ async def create_group(provider_id):
         if "group_name" not in data:
             return jsonify({"error": "Missing required field: group_name"}), 400
 
-        service = get_iam_service()
-        group = service.create_group(provider_id, **data)
+        service, tenant_id = get_iam_service()
+        group = service.create_group(tenant_id, provider_id, **data)
 
         return jsonify(group), 201
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -983,10 +1136,14 @@ def delete_group(provider_id, group_id):
         404: Provider or group not found
     """
     try:
-        service = get_iam_service()
-        result = service.delete_group(provider_id, group_id)
+        service, tenant_id = get_iam_service()
+        result = service.delete_group(tenant_id, provider_id, group_id)
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -1007,10 +1164,14 @@ def add_user_to_group(provider_id, group_id, user_id):
         404: Provider, group, or user not found
     """
     try:
-        service = get_iam_service()
-        result = service.add_user_to_group(provider_id, user_id, group_id)
+        service, tenant_id = get_iam_service()
+        result = service.add_user_to_group(tenant_id, provider_id, user_id, group_id)
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
@@ -1031,10 +1192,16 @@ def remove_user_from_group(provider_id, group_id, user_id):
         404: Provider, group, or user not found
     """
     try:
-        service = get_iam_service()
-        result = service.remove_user_from_group(provider_id, user_id, group_id)
+        service, tenant_id = get_iam_service()
+        result = service.remove_user_from_group(
+            tenant_id, provider_id, user_id, group_id
+        )
         return jsonify(result), 200
 
+    except IAMTenantRequiredError:
+        return jsonify({"error": _MISSING_TENANT}), 403
+    except IAMProviderNotFoundError as e:
+        return log_error_and_respond(logger, e, "Not found", 404)
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)

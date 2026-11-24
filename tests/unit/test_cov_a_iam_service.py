@@ -12,7 +12,9 @@ import pytest
 
 from apps.api.services.iam import service as svc_mod
 from apps.api.services.iam.service import (
+    IAMProviderNotFoundError,
     IAMService,
+    IAMTenantRequiredError,
     _is_blank_or_redacted_secret,
     _parse_json_dict,
 )
@@ -32,6 +34,19 @@ def _tenant_org(db, label="iam"):
     )
     db.commit()
     return tid, oid
+
+
+def _extra_org(db, tenant_id, label="iam-extra"):
+    """Create another organization inside an existing tenant and return its id."""
+    now = datetime.now(UTC)
+    oid = db.organizations.insert(
+        name=f"{label}-{uuid4().hex[:8]}",
+        tenant_id=tenant_id,
+        created_at=now,
+        updated_at=now,
+    )
+    db.commit()
+    return oid
 
 
 def _fake(*parts):
@@ -97,9 +112,10 @@ def test_is_blank_or_redacted_secret(value, expected):
 async def test_create_get_and_redact_provider(app, cleanup):
     """create_provider stores config, lower-cases type, and responses redact secrets."""
     async with app.app_context():
-        _, org = _tenant_org(app.db)
+        tid, org = _tenant_org(app.db)
         secret = _fake("tok")
         out = IAMService(app.db).create_provider(
+            tid,
             "P-" + uuid4().hex[:6],
             "KUBERNETES",
             {"namespace": "x", "token": secret},
@@ -123,30 +139,42 @@ async def test_create_provider_rejects_invalid_type(app):
     """An unknown provider type is rejected before touching the DB."""
     async with app.app_context():
         with pytest.raises(Exception, match="Invalid provider type: azure"):
-            IAMService(app.db).create_provider("p", "azure", {}, organization_id=1)
+            IAMService(app.db).create_provider(1, "p", "azure", {}, organization_id=1)
 
 
 def test_create_provider_requires_org_when_none_exists():
     """With no organization_id and no organizations, a ValueError is raised."""
     db = MagicMock()
-    db.organizations.id.__gt__.return_value = True
-    db.return_value.select.return_value.first.return_value = None
+    db.return_value.select.return_value = []
     with pytest.raises(ValueError, match="organization_id is required"):
-        IAMService(db).create_provider("p", "aws_iam", {})
+        IAMService(db).create_provider(1, "p", "aws_iam", {})
+
+
+@pytest.mark.parametrize("tenant_id", [None, 0])
+def test_service_requires_verified_tenant(tenant_id):
+    """Every entry point fails closed without a tenant id."""
+    svc = IAMService(MagicMock())
+    with pytest.raises(IAMTenantRequiredError):
+        svc.list_providers(tenant_id)
+    with pytest.raises(IAMTenantRequiredError):
+        svc.get_provider(tenant_id, 1)
+    with pytest.raises(IAMTenantRequiredError):
+        svc.create_provider(tenant_id, "p", "aws_iam", {}, organization_id=1)
+    with pytest.raises(IAMTenantRequiredError):
+        svc.list_users(tenant_id, 1)
 
 
 @pytest.mark.asyncio
 async def test_create_provider_defaults_to_first_organization(app, cleanup):
-    """Without organization_id the lowest-id organization is used."""
+    """Without organization_id the caller tenant's lowest-id organization is used."""
     async with app.app_context():
-        first = (
-            app.db(app.db.organizations.id > 0)
-            .select(orderby=app.db.organizations.id, limitby=(0, 1))
-            .first()
+        tid, first_org = _tenant_org(app.db)
+        _extra_org(app.db, tid)
+        out = IAMService(app.db).create_provider(
+            tid, "P-" + uuid4().hex[:6], "aws_iam", {}
         )
-        out = IAMService(app.db).create_provider("P-" + uuid4().hex[:6], "aws_iam", {})
         cleanup.append(out["id"])
-        assert out["organization_id"] == first.id
+        assert out["organization_id"] == first_org
         assert out["description"] is None
 
 
@@ -155,27 +183,39 @@ async def test_get_provider_not_found(app):
     """get_provider raises for an unknown id."""
     async with app.app_context():
         with pytest.raises(Exception, match="Provider not found: 987654321"):
-            IAMService(app.db).get_provider(987654321)
+            IAMService(app.db).get_provider(1, 987654321)
 
 
 @pytest.mark.asyncio
 async def test_list_providers_scoped_by_organization_across_tenants(app, cleanup):
-    """Listing by organization returns only that org's providers (tenant isolation)."""
+    """Each tenant lists only its own providers; foreign ids and orgs are not found."""
     async with app.app_context():
         svc = IAMService(app.db)
-        _, org_a = _tenant_org(app.db, "a")
-        _, org_b = _tenant_org(app.db, "b")
+        tid_a, org_a = _tenant_org(app.db, "a")
+        tid_b, org_b = _tenant_org(app.db, "b")
         a = svc.create_provider(
-            "A-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org_a
+            tid_a, "A-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org_a
         )
         b = svc.create_provider(
-            "B-" + uuid4().hex[:6], "gcp_iam", {}, organization_id=org_b
+            tid_b, "B-" + uuid4().hex[:6], "gcp_iam", {}, organization_id=org_b
         )
         cleanup.extend([a["id"], b["id"]])
-        ids_a = {p["id"] for p in svc.list_providers(organization_id=org_a)}
-        ids_b = {p["id"] for p in svc.list_providers(organization_id=org_b)}
+        ids_a = {p["id"] for p in svc.list_providers(tid_a, organization_id=org_a)}
+        ids_b = {p["id"] for p in svc.list_providers(tid_b, organization_id=org_b)}
         assert ids_a == {a["id"]}
         assert ids_b == {b["id"]}
+        assert svc.list_providers(tid_a, organization_id=org_b) == []
+        with pytest.raises(IAMProviderNotFoundError):
+            svc.get_provider(tid_a, b["id"])
+        with pytest.raises(IAMProviderNotFoundError):
+            svc.update_provider(tid_a, b["id"], name="hijack")
+        with pytest.raises(IAMProviderNotFoundError):
+            svc.delete_provider(tid_a, b["id"])
+        with pytest.raises(IAMProviderNotFoundError):
+            svc.update_provider(tid_a, a["id"], organization_id=org_b)
+        with pytest.raises(IAMProviderNotFoundError):
+            svc.create_provider(tid_a, "x", "aws_iam", {}, organization_id=org_b)
+        assert svc.get_provider(tid_b, b["id"])["name"].startswith("B-")
 
 
 @pytest.mark.asyncio
@@ -183,18 +223,18 @@ async def test_list_providers_enabled_only_filters_disabled(app, cleanup):
     """enabled_only hides disabled providers; results are ordered by name."""
     async with app.app_context():
         svc = IAMService(app.db)
-        _, org = _tenant_org(app.db)
+        tid, org = _tenant_org(app.db)
         p1 = svc.create_provider(
-            "b-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org
+            tid, "b-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org
         )
         p2 = svc.create_provider(
-            "a-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org
+            tid, "a-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org
         )
         cleanup.extend([p1["id"], p2["id"]])
-        svc.update_provider(p1["id"], enabled=False)
-        all_rows = svc.list_providers(organization_id=org)
+        svc.update_provider(tid, p1["id"], enabled=False)
+        all_rows = svc.list_providers(tid, organization_id=org)
         assert [r["id"] for r in all_rows] == [p2["id"], p1["id"]]
-        enabled = svc.list_providers(enabled_only=True, organization_id=org)
+        enabled = svc.list_providers(tid, enabled_only=True, organization_id=org)
         assert [r["id"] for r in enabled] == [p2["id"]]
 
 
@@ -203,7 +243,7 @@ async def test_update_provider_not_found(app):
     """update_provider raises for an unknown id."""
     async with app.app_context():
         with pytest.raises(Exception, match="Provider not found: 987654321"):
-            IAMService(app.db).update_provider(987654321, name="x")
+            IAMService(app.db).update_provider(1, 987654321, name="x")
 
 
 @pytest.mark.asyncio
@@ -211,15 +251,15 @@ async def test_update_provider_basic_fields(app, cleanup):
     """name, enabled and organization_id updates persist and bump updated_at."""
     async with app.app_context():
         svc = IAMService(app.db)
-        _, org1 = _tenant_org(app.db)
-        _, org2 = _tenant_org(app.db)
+        tid, org1 = _tenant_org(app.db)
+        org2 = _extra_org(app.db, tid)
         p = svc.create_provider(
-            "n-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org1
+            tid, "n-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org1
         )
         cleanup.append(p["id"])
         new_name = "renamed-" + uuid4().hex[:6]
         out = svc.update_provider(
-            p["id"], name=new_name, enabled=False, organization_id=org2
+            tid, p["id"], name=new_name, enabled=False, organization_id=org2
         )
         assert (out["name"], out["enabled"], out["organization_id"]) == (
             new_name,
@@ -234,12 +274,12 @@ async def test_update_provider_nothing_to_update_is_noop(app, cleanup):
     """With no fields the row is returned unchanged and updated_at is not touched."""
     async with app.app_context():
         svc = IAMService(app.db)
-        _, org = _tenant_org(app.db)
+        tid, org = _tenant_org(app.db)
         p = svc.create_provider(
-            "n-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org
+            tid, "n-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org
         )
         cleanup.append(p["id"])
-        out = svc.update_provider(p["id"])
+        out = svc.update_provider(tid, p["id"])
         assert out["updated_at"] == p["updated_at"]
         assert out["name"] == p["name"]
 
@@ -249,9 +289,10 @@ async def test_update_provider_keeps_stored_secret_when_blank_or_redacted(app, c
     """A blank/redacted secret in the new config keeps the stored value; a new value replaces it."""
     async with app.app_context():
         svc = IAMService(app.db)
-        _, org = _tenant_org(app.db)
+        tid, org = _tenant_org(app.db)
         secret = _fake("sec")
         p = svc.create_provider(
+            tid,
             "n-" + uuid4().hex[:6],
             "aws_iam",
             {"region": "us-east-1", "secret_access_key": secret, "token": _fake("t")},
@@ -266,6 +307,7 @@ async def test_update_provider_keeps_stored_secret_when_blank_or_redacted(app, c
             )
 
         svc.update_provider(
+            tid,
             p["id"],
             config={"region": "eu-west-1", "secret_access_key": REDACTED, "token": ""},
         )
@@ -276,7 +318,7 @@ async def test_update_provider_keeps_stored_secret_when_blank_or_redacted(app, c
         assert cfg["_description"] == "orig"
 
         new_secret = _fake("new")
-        svc.update_provider(p["id"], config={"secret_access_key": new_secret})
+        svc.update_provider(tid, p["id"], config={"secret_access_key": new_secret})
         assert stored()["secret_access_key"] == new_secret
 
 
@@ -287,15 +329,22 @@ async def test_update_provider_description_only_and_explicit_description_wins(
     """description alone rewrites _description on the stored config; explicit config key is overridden."""
     async with app.app_context():
         svc = IAMService(app.db)
-        _, org = _tenant_org(app.db)
+        tid, org = _tenant_org(app.db)
         p = svc.create_provider(
-            "n-" + uuid4().hex[:6], "aws_iam", {"region": "r1"}, organization_id=org
+            tid,
+            "n-" + uuid4().hex[:6],
+            "aws_iam",
+            {"region": "r1"},
+            organization_id=org,
         )
         cleanup.append(p["id"])
-        out = svc.update_provider(p["id"], description="only desc")
+        out = svc.update_provider(tid, p["id"], description="only desc")
         assert out["config_json"] == {"region": "r1", "_description": "only desc"}
         out = svc.update_provider(
-            p["id"], config={"region": "r2", "_description": "cfg"}, description="wins"
+            tid,
+            p["id"],
+            config={"region": "r2", "_description": "cfg"},
+            description="wins",
         )
         assert out["config_json"]["_description"] == "wins"
         assert out["config_json"]["region"] == "r2"
@@ -308,8 +357,9 @@ async def test_update_provider_config_with_own_description_not_overwritten(
     """A _description inside the new config is kept instead of the stored one."""
     async with app.app_context():
         svc = IAMService(app.db)
-        _, org = _tenant_org(app.db)
+        tid, org = _tenant_org(app.db)
         p = svc.create_provider(
+            tid,
             "n-" + uuid4().hex[:6],
             "aws_iam",
             {},
@@ -317,7 +367,7 @@ async def test_update_provider_config_with_own_description_not_overwritten(
             organization_id=org,
         )
         cleanup.append(p["id"])
-        out = svc.update_provider(p["id"], config={"_description": "new-in-cfg"})
+        out = svc.update_provider(tid, p["id"], config={"_description": "new-in-cfg"})
         assert out["config_json"]["_description"] == "new-in-cfg"
 
 
@@ -326,62 +376,24 @@ async def test_delete_provider_not_found(app):
     """delete_provider raises for an unknown id."""
     async with app.app_context():
         with pytest.raises(Exception, match="Provider not found: 987654321"):
-            IAMService(app.db).delete_provider(987654321)
+            IAMService(app.db).delete_provider(1, 987654321)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="bug: iam_users/iam_roles tables do not exist, delete_provider raises TableNotFoundError; service.py:201",
-)
 @pytest.mark.asyncio
 async def test_delete_provider_without_resources_succeeds(app, cleanup):
     """Deleting a provider that has no users/roles removes it and confirms."""
     async with app.app_context():
         svc = IAMService(app.db)
-        _, org = _tenant_org(app.db)
+        tid, org = _tenant_org(app.db)
         p = svc.create_provider(
-            "d-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org
+            tid, "d-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org
         )
         cleanup.append(p["id"])
-        assert svc.delete_provider(p["id"]) == {
+        assert svc.delete_provider(tid, p["id"]) == {
             "message": "Provider deleted successfully"
         }
         with pytest.raises(Exception, match="Provider not found"):
-            svc.get_provider(p["id"])
-
-
-def _mock_db_with_counts(users, roles):
-    """Build a fake db whose iam_users/iam_roles counts are fixed."""
-    db = MagicMock()
-    db.iam_providers.__getitem__.return_value = MagicMock()
-
-    def _call(query):
-        res = MagicMock()
-        res.count.return_value = users if query == "u" else roles
-        return res
-
-    db.iam_users.iam_provider_id.__eq__.return_value = "u"
-    db.iam_roles.iam_provider_id.__eq__.return_value = "r"
-    db.side_effect = _call
-    return db
-
-
-@pytest.mark.parametrize("users,roles", [(2, 0), (0, 3), (1, 1)])
-def test_delete_provider_refuses_when_resources_registered(users, roles):
-    """A provider with registered users or roles cannot be deleted."""
-    db = _mock_db_with_counts(users, roles)
-    with pytest.raises(
-        Exception, match=f"Cannot delete provider with {users} users and {roles} roles"
-    ):
-        IAMService(db).delete_provider(1)
-
-
-def test_delete_provider_deletes_when_no_resources():
-    """With zero users and roles the provider row delete is issued and committed."""
-    db = _mock_db_with_counts(0, 0)
-    out = IAMService(db).delete_provider(1)
-    assert out == {"message": "Provider deleted successfully"}
-    db.commit.assert_called_once()
+            svc.get_provider(tid, p["id"])
 
 
 @pytest.mark.asyncio
@@ -389,7 +401,7 @@ async def test_get_provider_client_not_found(app):
     """The client factory raises for an unknown provider id."""
     async with app.app_context():
         with pytest.raises(Exception, match="IAM provider not found: 987654321"):
-            IAMService(app.db)._get_provider_client(987654321)
+            IAMService(app.db)._get_provider_client(1, 987654321)
 
 
 @pytest.mark.parametrize(
@@ -407,13 +419,13 @@ async def test_get_provider_client_builds_matching_client(
     """The factory instantiates the right client class with merged config_json."""
     async with app.app_context():
         svc = IAMService(app.db)
-        _, org = _tenant_org(app.db)
+        tid, org = _tenant_org(app.db)
         p = svc.create_provider(
-            "c-" + uuid4().hex[:6], ptype, {"region": "r9"}, organization_id=org
+            tid, "c-" + uuid4().hex[:6], ptype, {"region": "r9"}, organization_id=org
         )
         cleanup.append(p["id"])
         with patch.object(svc_mod, cls_name) as cls:
-            result = svc._get_provider_client(p["id"])
+            result = svc._get_provider_client(tid, p["id"])
         assert result is cls.return_value
         cfg = cls.call_args.args[0]
         assert cfg["provider_type"] == ptype
@@ -426,7 +438,7 @@ async def test_get_provider_client_unsupported_type(app, cleanup):
     """A stored provider with an unsupported type is refused by the factory."""
     async with app.app_context():
         db = app.db
-        _, org = _tenant_org(db)
+        tid, org = _tenant_org(db)
         now = datetime.now(UTC)
         pid = db.iam_providers.insert(
             name="u-" + uuid4().hex[:6],
@@ -441,7 +453,7 @@ async def test_get_provider_client_unsupported_type(app, cleanup):
         db.commit()
         cleanup.append(pid)
         with pytest.raises(Exception, match="Unsupported provider type: weird"):
-            IAMService(db)._get_provider_client(pid)
+            IAMService(db)._get_provider_client(tid, pid)
 
 
 @pytest.mark.asyncio
@@ -449,7 +461,7 @@ async def test_provider_without_config_json_still_builds_client(app, cleanup):
     """A provider with empty config_json builds a client from the base columns only."""
     async with app.app_context():
         db = app.db
-        _, org = _tenant_org(db)
+        tid, org = _tenant_org(db)
         now = datetime.now(UTC)
         pid = db.iam_providers.insert(
             name="e-" + uuid4().hex[:6],
@@ -464,7 +476,7 @@ async def test_provider_without_config_json_still_builds_client(app, cleanup):
         db.commit()
         cleanup.append(pid)
         with patch.object(svc_mod, "AWSIAMClient") as cls:
-            IAMService(db)._get_provider_client(pid)
+            IAMService(db)._get_provider_client(tid, pid)
         assert cls.call_args.args[0]["provider_type"] == "aws_iam"
 
 
@@ -473,35 +485,48 @@ async def test_test_provider_success_failure_and_unknown(app, cleanup):
     """test_provider reports the client's result and converts any failure into success=False."""
     async with app.app_context():
         svc = IAMService(app.db)
-        with patch.object(svc, "_get_provider_client") as getc:
+        with (
+            patch.object(svc, "_get_scoped_provider"),
+            patch.object(svc, "_get_provider_client") as getc,
+        ):
             getc.return_value.test_connection.return_value = True
-            ok = svc.test_provider(7)
+            ok = svc.test_provider(1, 7)
             assert (
                 ok["success"] is True and ok["provider_id"] == 7 and "tested_at" in ok
             )
             getc.return_value.test_connection.return_value = False
-            assert svc.test_provider(7)["success"] is False
+            assert svc.test_provider(1, 7)["success"] is False
             getc.side_effect = Exception("no provider")
-            bad = svc.test_provider(7)
+            bad = svc.test_provider(1, 7)
             assert bad["success"] is False
             assert bad["error"] == "no provider"
 
 
 @pytest.mark.asyncio
-async def test_sync_provider_failure_is_reported_in_errors(app):
-    """If the provider client cannot be built, sync_provider returns zero counts plus the error."""
+async def test_sync_provider_unknown_provider_is_not_found(app):
+    """An unknown/foreign provider id raises not-found instead of reporting a sync."""
     async with app.app_context():
-        out = IAMService(app.db).sync_provider(987654321)
-        assert out == {
+        with pytest.raises(IAMProviderNotFoundError, match="Provider not found"):
+            IAMService(app.db).sync_provider(1, 987654321)
+
+
+def test_sync_provider_client_failure_is_reported_in_errors():
+    """If the provider client fails, sync_provider returns zero counts plus the error."""
+    svc = IAMService(MagicMock())
+    with (
+        patch.object(svc, "_get_scoped_provider"),
+        patch.object(svc, "_get_provider_client", side_effect=Exception("boom")),
+    ):
+        assert svc.sync_provider(1, 5) == {
             "users_synced": 0,
             "roles_synced": 0,
             "policies_synced": 0,
-            "errors": ["IAM provider not found: 987654321"],
+            "errors": ["boom"],
         }
 
 
 def test_sync_provider_logs_result_and_returns_it():
-    """On success the sync result is written to iam_sync_log, committed and returned."""
+    """On success last_sync_at is stamped on the provider, committed and the result returned."""
     db = MagicMock()
     svc = IAMService(db)
     result = {
@@ -510,29 +535,30 @@ def test_sync_provider_logs_result_and_returns_it():
         "policies_synced": 3,
         "errors": ["e"],
     }
-    with patch.object(svc, "_get_provider_client") as getc:
+    with (
+        patch.object(svc, "_get_scoped_provider") as scoped,
+        patch.object(svc, "_get_provider_client") as getc,
+    ):
+        scoped.return_value.id = 5
         getc.return_value.sync_from_provider.return_value = result
-        assert svc.sync_provider(5) == result
-    kwargs = db.iam_sync_log.insert.call_args.kwargs
-    assert kwargs["iam_provider_id"] == 5
-    assert (
-        kwargs["users_synced"],
-        kwargs["roles_synced"],
-        kwargs["policies_synced"],
-    ) == (2, 1, 3)
-    assert kwargs["errors_json"] == ["e"]
+        assert svc.sync_provider(3, 5) == result
+        getc.assert_called_once_with(3, 5)
+    kwargs = db.return_value.update.call_args.kwargs
+    assert kwargs["last_sync_at"] is not None
+    assert kwargs["updated_at"] == kwargs["last_sync_at"]
     db.commit.assert_called_once()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="bug: iam_sync_log table does not exist so a successful sync is reported as an error; service.py:245",
-)
 @pytest.mark.asyncio
-async def test_sync_provider_with_real_db_returns_client_result(app):
+async def test_sync_provider_with_real_db_returns_client_result(app, cleanup):
     """A successful provider sync should return the client's result even with the real database."""
     async with app.app_context():
         svc = IAMService(app.db)
+        tid, org = _tenant_org(app.db)
+        p = svc.create_provider(
+            tid, "s-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org
+        )
+        cleanup.append(p["id"])
         result = {
             "users_synced": 1,
             "roles_synced": 0,
@@ -541,7 +567,9 @@ async def test_sync_provider_with_real_db_returns_client_result(app):
         }
         with patch.object(svc, "_get_provider_client") as getc:
             getc.return_value.sync_from_provider.return_value = result
-            assert svc.sync_provider(1) == result
+            assert svc.sync_provider(tid, p["id"]) == result
+        stored = app.db(app.db.iam_providers.id == p["id"]).select().first()
+        assert stored.last_sync_at is not None
 
 
 # (service method, args, client method, expected client args)
@@ -656,8 +684,8 @@ def test_service_delegates_to_provider_client(
     with patch.object(svc, "_get_provider_client") as getc:
         sentinel = {"ok": method}
         getattr(getc.return_value, cmethod).return_value = sentinel
-        assert getattr(svc, method)(*args, **kwargs) is sentinel
-        getc.assert_called_once_with(1)
+        assert getattr(svc, method)(42, *args, **kwargs) is sentinel
+        getc.assert_called_once_with(42, 1)
         getattr(getc.return_value, cmethod).assert_called_once_with(*cargs, **ckwargs)
 
 
@@ -669,7 +697,7 @@ def test_service_delegation_propagates_missing_provider(method, args):
         svc, "_get_provider_client", side_effect=Exception("IAM provider not found: 1")
     ):
         with pytest.raises(Exception, match="IAM provider not found"):
-            getattr(svc, method)(*args)
+            getattr(svc, method)(42, *args)
 
 
 def test_sanitize_provider_without_config_leaves_fields():
@@ -718,17 +746,21 @@ def test_sanitize_provider_does_not_mutate_input():
 
 @pytest.mark.asyncio
 async def test_list_providers_without_filters_includes_all_orgs(app, cleanup):
-    """Without an organization filter providers from every org are listed (callers must scope)."""
+    """Without an organization filter a tenant sees all of its orgs but no other tenant's."""
     async with app.app_context():
         svc = IAMService(app.db)
-        _, org_a = _tenant_org(app.db, "la")
-        _, org_b = _tenant_org(app.db, "lb")
+        tid_a, org_a = _tenant_org(app.db, "la")
+        tid_b, org_b = _tenant_org(app.db, "lb")
+        org_a2 = _extra_org(app.db, tid_a)
         a = svc.create_provider(
-            "la-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org_a
+            tid_a, "la-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org_a
+        )
+        a2 = svc.create_provider(
+            tid_a, "la2-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org_a2
         )
         b = svc.create_provider(
-            "lb-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org_b
+            tid_b, "lb-" + uuid4().hex[:6], "aws_iam", {}, organization_id=org_b
         )
-        cleanup.extend([a["id"], b["id"]])
-        ids = {p["id"] for p in svc.list_providers()}
-        assert {a["id"], b["id"]} <= ids
+        cleanup.extend([a["id"], a2["id"], b["id"]])
+        ids = {p["id"] for p in svc.list_providers(tid_a)}
+        assert ids == {a["id"], a2["id"]}
