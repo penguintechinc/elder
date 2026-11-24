@@ -91,6 +91,10 @@ class SBOMScan(Base, IDMixin):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
     village_id = Column(String(32), unique=True, nullable=True)
+    # Scanner claim: SHA-256 of the claimant's token and its lease deadline.
+    # Both are NULL unless the scan is currently claimed (status "running").
+    claim_token_hash = Column(String(64), nullable=True)
+    claim_expires_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class SBOMComponent(Base, IDMixin, TimestampMixin):

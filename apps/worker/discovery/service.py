@@ -10,15 +10,26 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from opentelemetry import metrics as otel_metrics
 
+from shared.claim_tokens import (
+    claim_token_required,
+    hash_claim_token,
+    new_claim_token,
+    normalize_claim_token,
+)
+
 logger = logging.getLogger(__name__)
 
 # A claimed scanner job whose claimant has not completed it within the lease
 # is assumed dead and becomes claimable again. Must exceed the scanner's
 # per-job timeout (svc-scanner default 300s) or a slow-but-alive job is
-# duplicated. The lease deadline is stored in discovery_jobs.next_run_at.
+# duplicated. The lease lives in its own columns (claim_token_hash,
+# claim_expires_at) -- never in next_run_at/last_run_at, which other paths
+# (run-now queueing, in-process cloud discovery) write for scheduling.
 DEFAULT_DISCOVERY_CLAIM_LEASE_SECONDS = 900
 _MIN_DISCOVERY_CLAIM_LEASE_SECONDS = 60
 _STALE_CLAIM_MESSAGE = "Claim lease expired before completion; job re-queued"
+# Providers executed by the scanner fleet; only these are ever claimed.
+_SCANNER_PROVIDERS = ("network", "http_screenshot", "banner")
 
 _claim_counter = otel_metrics.get_meter("elder").create_counter(
     "elder.discovery.job.claims",
@@ -47,9 +58,17 @@ def _claim_lease_seconds() -> int:
 class DiscoveryJobNotClaimableError(Exception):
     """Raised when a scanner tries to start a job another claimant holds.
 
-    The message deliberately reads "not found in a claimable state" so the
-    existing route error mapping answers 404 and the losing scanner skips
-    the job instead of running a duplicate scan.
+    The route answers 409 so the losing scanner skips the job instead of
+    running a duplicate scan.
+    """
+
+
+class DiscoveryClaimTokenError(Exception):
+    """Raised when a completion does not prove it comes from the claimant.
+
+    Covers a missing token (while enforcement is on) and a token that does
+    not match the job's current claim -- e.g. a claimant whose lease expired
+    and whose job has since been re-claimed by another scanner.
     """
 
 
@@ -2160,18 +2179,30 @@ class DiscoveryService:
 
             sanitized["config_json"] = config
 
+        # Claim internals are never part of a job's public representation.
+        sanitized.pop("claim_token_hash", None)
+        sanitized.pop("claim_expires_at", None)
+
         return sanitized
 
     # Scanner service methods
 
-    def requeue_stale_claims(self, job_id: int | None = None) -> int:
-        """Re-queue one-time jobs whose claim lease expired (dead claimant).
+    def _unclaimed(self, now: datetime) -> Any:
+        """Query fragment: no scanner holds the job, or its lease has expired."""
+        jobs = self.db.discovery_jobs
+        return (jobs.claim_token_hash == None) | (  # noqa: E711
+            jobs.claim_expires_at <= now
+        )
 
-        A claimed one-time job has ``last_run_at`` set and its lease deadline
-        in ``next_run_at``; once that passes with no completion the job is
-        reset to never-run and its orphaned ``running`` history rows are
-        failed. Scheduled jobs need no reset: their lease deadline *is*
-        ``next_run_at``, so they simply become due again.
+    def requeue_stale_claims(self, job_id: int | None = None) -> int:
+        """Release claims whose lease expired (dead claimant) and re-queue.
+
+        Only jobs that are *currently claimed* qualify: ``claim_token_hash``
+        is set by ``mark_job_running`` and cleared by ``complete_job``, so a
+        completed or failed job -- whatever its ``last_run_at``/``next_run_at``
+        -- can never match and is never re-run. A stale one-time job is reset
+        to never-run; a stale scheduled job keeps its (already due)
+        ``next_run_at``. Orphaned ``running`` history rows are failed.
 
         Returns:
             Number of jobs re-queued.
@@ -2179,20 +2210,24 @@ class DiscoveryService:
         jobs = self.db.discovery_jobs
         now = datetime.now(UTC)
         stale = (
-            (jobs.schedule_interval == 0)
-            & (jobs.last_run_at != None)  # noqa: E711
-            & (jobs.next_run_at != None)  # noqa: E711
-            & (jobs.next_run_at <= now)
+            (jobs.claim_token_hash != None)  # noqa: E711
+            & (jobs.claim_expires_at <= now)
+            & (jobs.provider.belongs(_SCANNER_PROVIDERS))
         )
         if job_id is not None:
             stale &= jobs.id == job_id
 
         requeued = 0
-        for row in self.db(stale).select(jobs.id):
-            # Conditional UPDATE: only one concurrent sweeper resets the row.
-            if self.db(stale & (jobs.id == row.id)).update(
-                last_run_at=None, next_run_at=None
-            ):
+        for row in self.db(stale).select(jobs.id, jobs.schedule_interval):
+            release: dict[str, Any] = {
+                "claim_token_hash": None,
+                "claim_expires_at": None,
+            }
+            if not row.schedule_interval:
+                release["last_run_at"] = None
+            # Conditional UPDATE: only one concurrent sweeper releases the row,
+            # and not if the claimant completed in the meantime.
+            if self.db(stale & (jobs.id == row.id)).update(**release):
                 self._fail_running_history(row.id, now)
                 requeued += 1
         if requeued:
@@ -2220,38 +2255,34 @@ class DiscoveryService:
         - It's enabled
         - It's a local scan type (network, http_screenshot, banner)
         - Either: schedule_interval=0 (one-time) and never run, or scheduled and due
+        - No scanner currently holds a live claim on it
 
         The list is advisory: a job is only owned once ``mark_job_running``
-        succeeds (atomic claim). Claimed jobs drop out of this list because
-        the claim sets ``last_run_at`` and pushes ``next_run_at`` to the
-        lease deadline; expired claims are re-queued before listing.
+        succeeds (atomic claim). Expired claims are re-queued before listing.
 
         Returns:
             List of pending job dictionaries
         """
         self.requeue_stale_claims()
 
-        # Get local scan providers
-        local_providers = ["network", "http_screenshot", "banner"]
+        jobs = self.db.discovery_jobs
+        now = datetime.now(UTC)
+        claimable = (
+            (jobs.enabled == True)  # noqa: E712
+            & (jobs.provider.belongs(_SCANNER_PROVIDERS))
+            & self._unclaimed(now)
+        )
 
         # Find pending one-time jobs (never run)
         pending_jobs = self.db(
-            (self.db.discovery_jobs.enabled == True)  # noqa: E712
-            & (self.db.discovery_jobs.provider.belongs(local_providers))
-            & (self.db.discovery_jobs.schedule_interval == 0)
-            & (self.db.discovery_jobs.last_run_at == None)  # noqa: E711
+            claimable & (jobs.schedule_interval == 0) & (jobs.last_run_at == None)  # noqa: E711
         ).select()
 
         # Also get scheduled jobs that are due
-        now = datetime.now(UTC)
         scheduled_jobs = self.db(
-            (self.db.discovery_jobs.enabled == True)  # noqa: E712
-            & (self.db.discovery_jobs.provider.belongs(local_providers))
-            & (self.db.discovery_jobs.schedule_interval > 0)
-            & (
-                (self.db.discovery_jobs.next_run_at == None)  # noqa: E711
-                | (self.db.discovery_jobs.next_run_at <= now)
-            )
+            claimable
+            & (jobs.schedule_interval > 0)
+            & ((jobs.next_run_at == None) | (jobs.next_run_at <= now))  # noqa: E711
         ).select()
 
         all_jobs = list(pending_jobs) + list(scheduled_jobs)
@@ -2262,17 +2293,18 @@ class DiscoveryService:
         """
         Atomically claim a job for one scanner and mark it running.
 
-        The claim is a single conditional UPDATE on the job row (never-run
-        one-time job, or scheduled job that is due), so with any number of
-        scanner replicas racing exactly one wins; the row lock makes the
-        others re-evaluate the predicate and update nothing. The winner's
-        lease deadline is written to ``next_run_at``.
+        The claim is a single conditional UPDATE on the job row (unclaimed,
+        and either a never-run one-time job or a scheduled job that is due),
+        so with any number of scanner replicas racing exactly one wins; the
+        row lock makes the others re-evaluate the predicate and update
+        nothing. The winner gets a random claim token (only its hash is
+        stored) that ``complete_job`` requires.
 
         Args:
             job_id: Job ID
 
         Returns:
-            Updated job info
+            Updated job info including ``claim_token``
 
         Raises:
             Exception: If job not found
@@ -2286,27 +2318,32 @@ class DiscoveryService:
         self.requeue_stale_claims(job_id)
 
         now = datetime.now(UTC)
-        claimable = (jobs.id == job_id) & (
-            ((jobs.schedule_interval == 0) & (jobs.last_run_at == None))  # noqa: E711
-            | (
-                (jobs.schedule_interval > 0)
-                & ((jobs.next_run_at == None) | (jobs.next_run_at <= now))  # noqa: E711
+        token, token_hash = new_claim_token()
+        claimable = (
+            (jobs.id == job_id)
+            & self._unclaimed(now)
+            & (
+                ((jobs.schedule_interval == 0) & (jobs.last_run_at == None))  # noqa: E711
+                | (
+                    (jobs.schedule_interval > 0)
+                    & ((jobs.next_run_at == None) | (jobs.next_run_at <= now))  # noqa: E711
+                )
             )
         )
         claimed = self.db(claimable).update(
             last_run_at=now,
-            next_run_at=now + timedelta(seconds=_claim_lease_seconds()),
+            claim_token_hash=token_hash,
+            claim_expires_at=now + timedelta(seconds=_claim_lease_seconds()),
         )
         if not claimed:
             self.db.commit()
             _claim_counter.add(1, {"outcome": "lost"})
             raise DiscoveryJobNotClaimableError(
-                f"Job not found in a claimable state: {job_id} "
-                "(already claimed or not due)"
+                f"Job {job_id} is not claimable (already claimed or not due)"
             )
 
         # Any history row still "running" belongs to a claimant whose lease
-        # expired (a scheduled job that became due again): close it.
+        # expired: close it.
         self._fail_running_history(job_id, now)
 
         # Create history entry
@@ -2322,7 +2359,12 @@ class DiscoveryService:
         self.db.commit()
         _claim_counter.add(1, {"outcome": "claimed"})
 
-        return {"success": True, "message": "Job marked as running", "job_id": job_id}
+        return {
+            "success": True,
+            "message": "Job marked as running",
+            "job_id": job_id,
+            "claim_token": token,
+        }
 
     def complete_job(
         self,
@@ -2330,70 +2372,85 @@ class DiscoveryService:
         success: bool,
         results: dict[str, Any],
         error_message: str | None = None,
+        claim_token: str | None = None,
     ) -> dict[str, Any]:
         """
-        Complete a job and record results (idempotent).
+        Complete a job and record results (claimant-bound, idempotent).
 
-        Completion closes the job's ``running`` history row with a
-        conditional UPDATE. A repeated completion, or one from a claimant
-        whose lease already expired and was re-queued, finds no running row
-        and is acknowledged without changing results or the schedule.
+        Completion first releases the claim with a conditional UPDATE that
+        matches only the presented ``claim_token``; whoever wins that closes
+        the ``running`` history row. A repeat from the same claimant after
+        the job is no longer claimed is acknowledged without changing
+        anything; a token that does not match a live claim (another caller,
+        or a claimant whose job was re-claimed) is rejected.
 
         Args:
             job_id: Job ID
             success: Whether the scan succeeded
             results: Scan results
             error_message: Error message if failed
+            claim_token: Token returned by ``mark_job_running``
 
         Returns:
             Completion status (``duplicate`` is True when nothing changed)
 
         Raises:
             Exception: If job not found
+            DiscoveryClaimTokenError: Token missing (while required) or not
+                matching the job's current claim
         """
-        job = self.db.discovery_jobs[job_id]
+        jobs = self.db.discovery_jobs
+        job = jobs[job_id]
         if not job:
             raise Exception(f"Job not found: {job_id}")
 
-        history = self.db.discovery_history
+        token = normalize_claim_token(claim_token)
+        if token is None and claim_token_required():
+            _claim_counter.add(1, {"outcome": "completion_rejected"})
+            raise DiscoveryClaimTokenError(
+                f"Claim token required to complete job {job_id}"
+            )
+
         status = "completed" if success else "failed"
         now = datetime.now(UTC)
 
-        # Find the running history entry
-        history_entry = (
-            self.db((history.job_id == job_id) & (history.status == "running"))
-            .select(orderby=~history.started_at)
-            .first()
-        )
+        # Gate: release the claim. With a token it must match the stored
+        # hash; in transition mode (enforcement explicitly disabled, no
+        # token) any live claim may be completed, as before claim tokens.
+        gate = (jobs.id == job_id) & (jobs.claim_token_hash != None)  # noqa: E711
+        if token is not None:
+            gate &= jobs.claim_token_hash == hash_claim_token(token)
+        release: dict[str, Any] = {"claim_token_hash": None, "claim_expires_at": None}
+        if job.schedule_interval and job.schedule_interval > 0:
+            release["next_run_at"] = now + timedelta(seconds=job.schedule_interval)
 
-        won = bool(history_entry) and bool(
-            self.db(
-                (history.id == history_entry.id) & (history.status == "running")
-            ).update(
-                completed_at=now,
-                status=status,
-                error_message=error_message,
-                results_json=results,
-            )
-        )
-        if not won:
+        if not self.db(gate).update(**release):
             self.db.commit()
+            current = jobs[job_id]
+            if current and current.claim_token_hash is not None:
+                # Claimed by someone else: this caller is not the claimant.
+                _claim_counter.add(1, {"outcome": "completion_rejected"})
+                raise DiscoveryClaimTokenError(
+                    f"Claim token does not match the current claim on job {job_id}"
+                )
             _claim_counter.add(1, {"outcome": "duplicate_completion"})
-            logger.info("Ignored duplicate completion for discovery job %s", job_id)
+            logger.info("Ignored completion for unclaimed discovery job %s", job_id)
             return {
                 "success": True,
-                "message": "Job already completed",
+                "message": "Job is not running; completion ignored",
                 "job_id": job_id,
-                "status": status,
+                "status": "ignored",
                 "duplicate": True,
             }
 
-        # Release the claim lease: scheduled jobs get their real next run,
-        # one-time jobs drop the lease deadline (they never run again).
-        next_run = None
-        if job.schedule_interval and job.schedule_interval > 0:
-            next_run = now + timedelta(seconds=job.schedule_interval)
-        self.db(self.db.discovery_jobs.id == job_id).update(next_run_at=next_run)
+        # We held the claim: close its running history entry.
+        history = self.db.discovery_history
+        self.db((history.job_id == job_id) & (history.status == "running")).update(
+            completed_at=now,
+            status=status,
+            error_message=error_message,
+            results_json=results,
+        )
 
         self.db.commit()
         _claim_counter.add(1, {"outcome": "completed"})

@@ -35,6 +35,13 @@ from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import ValidationErrorResponse, validate_body
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
+from shared.claim_tokens import (
+    CLAIM_TOKEN_HEADER,
+    claim_token_required,
+    hash_claim_token,
+    new_claim_token,
+    normalize_claim_token,
+)
 
 bp = Blueprint("sbom_scans", __name__)
 logger = structlog.get_logger()
@@ -73,15 +80,28 @@ def _claim_lease_seconds() -> int:
 def _requeue_stale_scans(db, tenant_id: int | None) -> int:
     """Re-queue running scans whose claim lease expired (dead claimant).
 
+    Only ``running`` scans are candidates -- completed/failed scans are
+    never touched. The lease deadline is ``claim_expires_at``; running rows
+    claimed before that column existed fall back to ``started_at`` + lease.
     One conditional UPDATE, so two callers cannot both re-queue the same
     row. ``tenant_id=None`` (system worker) sweeps every tenant; otherwise
     only the caller's tenant is touched.
     """
-    cutoff = datetime.now(UTC) - timedelta(seconds=_claim_lease_seconds())
-    query = (db.sbom_scans.status == "running") & (db.sbom_scans.started_at < cutoff)
+    scans = db.sbom_scans
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(seconds=_claim_lease_seconds())
+    query = (scans.status == "running") & (
+        (scans.claim_expires_at <= now)
+        | ((scans.claim_expires_at == None) & (scans.started_at < cutoff))  # noqa: E711
+    )
     if tenant_id is not None:
-        query &= db.sbom_scans.tenant_id == tenant_id
-    requeued = db(query).update(status="pending", started_at=None)
+        query &= scans.tenant_id == tenant_id
+    requeued = db(query).update(
+        status="pending",
+        started_at=None,
+        claim_token_hash=None,
+        claim_expires_at=None,
+    )
     if requeued:
         db.commit()
         _claim_counter.add(requeued, {"outcome": "requeued_stale"})
@@ -89,21 +109,32 @@ def _requeue_stale_scans(db, tenant_id: int | None) -> int:
     return requeued
 
 
-def _claim_scan(db, scan_id: int, tenant_id: int) -> bool:
+def _claim_scan(db, scan_id: int, tenant_id: int) -> str | None:
     """Atomically move one scan from pending to running (the claim).
 
     A single ``UPDATE ... WHERE id AND tenant_id AND status='pending'``:
     concurrent claimers serialise on the row lock and all but the first
     re-evaluate the predicate against ``running`` and update zero rows.
+
+    Returns:
+        The winner's claim token (only its hash is stored), or None when
+        another claimant already holds the scan.
     """
+    token, token_hash = new_claim_token()
+    now = datetime.now(UTC)
     claimed = db(
         (db.sbom_scans.id == scan_id)
         & (db.sbom_scans.tenant_id == tenant_id)
         & (db.sbom_scans.status == "pending")
-    ).update(status="running", started_at=datetime.now(UTC))
+    ).update(
+        status="running",
+        started_at=now,
+        claim_token_hash=token_hash,
+        claim_expires_at=now + timedelta(seconds=_claim_lease_seconds()),
+    )
     db.commit()
     _claim_counter.add(1, {"outcome": "claimed" if claimed else "lost"})
-    return bool(claimed)
+    return token if claimed else None
 
 
 def _match_license_pattern(license_id: str, pattern: str) -> bool:
@@ -566,7 +597,8 @@ async def start_scan(id: int):
     This endpoint is called by the scanner worker when it begins processing
     a scan job. It is the atomic claim: with any number of scanner replicas
     racing on the same scan exactly one receives 200, the rest 400 and must
-    skip the scan.
+    skip the scan. The winner's response carries ``claim_token``, which must
+    be presented to ``POST /<id>/results``; it is returned exactly once.
 
     Path Parameters:
         - id: Scan ID
@@ -603,16 +635,17 @@ async def start_scan(id: int):
     def mark_running():
         # A scan abandoned by a dead claimant becomes claimable again first.
         _requeue_stale_scans(db, scan.tenant_id)
-        claimed = _claim_scan(db, id, scan.tenant_id)
-        return claimed, db.sbom_scans[id]  # tenant-scope-exempt: verified above
+        token = _claim_scan(db, id, scan.tenant_id)
+        return token, db.sbom_scans[id]  # tenant-scope-exempt: verified above
 
-    claimed, updated_scan = await run_in_threadpool(mark_running)
-    if not claimed:
+    claim_token, updated_scan = await run_in_threadpool(mark_running)
+    if not claim_token:
         current = updated_scan.status if updated_scan else scan.status
         return ApiResponse.error(f"Scan is not pending (status: {current})", 400)
 
-    scan_dto = from_pydal_row(updated_scan, SBOMScanDTO)
-    return ApiResponse.success(asdict(scan_dto))
+    scan_dict = asdict(from_pydal_row(updated_scan, SBOMScanDTO))
+    scan_dict["claim_token"] = claim_token
+    return ApiResponse.success(scan_dict)
 
 
 @bp.route("/<int:id>/results", methods=["POST"])
@@ -623,9 +656,13 @@ async def submit_results(id: int):
     Submit SBOM scan results (for scanner worker).
 
     This endpoint is called by the scanner worker to submit the results
-    of a completed scan job. Completion is idempotent: the first submission
-    wins the scan's transition to a terminal status; any later or concurrent
-    submission is acknowledged with the stored scan and changes nothing.
+    of a completed scan job. The caller must present the claim token it got
+    from ``POST /<id>/start`` (body ``claim_token`` or ``X-Claim-Token``
+    header); results are applied only while the scan is running under that
+    exact claim, so another caller -- or a claimant whose lease expired and
+    whose scan was re-claimed -- gets 409. Completion is idempotent: once a
+    scan is terminal, later submissions are acknowledged with the stored
+    scan and change nothing.
 
     Path Parameters:
         - id: Scan ID
@@ -642,6 +679,7 @@ async def submit_results(id: int):
         200: Results processed
         400: Invalid request
         404: Scan not found
+        409: Missing, wrong or superseded claim token
 
     Example:
         POST /api/v1/sbom/scans/1/results
@@ -685,6 +723,14 @@ async def submit_results(id: int):
         logger.info("sbom_duplicate_completion_ignored", scan_id=id, status=scan.status)
         return ApiResponse.success(asdict(from_pydal_row(scan, SBOMScanDTO)))
 
+    claim_token = normalize_claim_token(body.claim_token) or normalize_claim_token(
+        request.headers.get(CLAIM_TOKEN_HEADER)
+    )
+    if claim_token is None and claim_token_required():
+        _claim_counter.add(1, {"outcome": "completion_rejected"})
+        logger.warning("sbom_completion_missing_claim_token", scan_id=id)
+        return ApiResponse.error("Claim token required to submit scan results", 409)
+
     scan_tenant_id = scan.tenant_id
     success = body.success
     components = body.components or []
@@ -697,13 +743,25 @@ async def submit_results(id: int):
 
     def process_results():
         # Completion gate: one conditional UPDATE moves the scan to its
-        # terminal status. Only the submission that wins it writes
-        # components, so duplicate/concurrent completions are no-ops.
-        won = db(
-            scan_filter & ~db.sbom_scans.status.belongs(_TERMINAL_SCAN_STATUSES)
-        ).update(
+        # terminal status and releases the claim. It matches only while the
+        # scan is running under the presented claim token, so only that
+        # claimant's first submission writes components; duplicates,
+        # strangers and superseded claimants update zero rows.
+        if claim_token is not None:
+            gate = (
+                scan_filter
+                & (db.sbom_scans.status == "running")
+                & (db.sbom_scans.claim_token_hash == hash_claim_token(claim_token))
+            )
+        else:
+            # Transition mode (enforcement explicitly disabled): legacy
+            # scanners send no token; first non-terminal submission wins.
+            gate = scan_filter & ~db.sbom_scans.status.belongs(_TERMINAL_SCAN_STATUSES)
+        won = db(gate).update(
             status="completed" if success else "failed",
             completed_at=datetime.now(UTC),
+            claim_token_hash=None,
+            claim_expires_at=None,
         )
         db.commit()
         if not won:
@@ -846,11 +904,19 @@ async def submit_results(id: int):
 
     updated_scan, component_ids = await run_in_threadpool(process_results)
     if updated_scan is None:
-        _claim_counter.add(1, {"outcome": "duplicate_completion"})
-        logger.info("sbom_duplicate_completion_ignored", scan_id=id)
         current = await run_in_threadpool(resolve_scan)
         if not current:
             return ApiResponse.not_found("SBOM Scan", id)
+        if current.status not in _TERMINAL_SCAN_STATUSES:
+            # Still pending/running under a different claim: the caller is
+            # not (or no longer) the claimant.
+            _claim_counter.add(1, {"outcome": "completion_rejected"})
+            logger.warning("sbom_completion_claim_mismatch", scan_id=id)
+            return ApiResponse.error(
+                "Claim token does not match the scan's current claim", 409
+            )
+        _claim_counter.add(1, {"outcome": "duplicate_completion"})
+        logger.info("sbom_duplicate_completion_ignored", scan_id=id)
         return ApiResponse.success(asdict(from_pydal_row(current, SBOMScanDTO)))
 
     # Trigger vulnerability matching for all components (async, non-blocking)
