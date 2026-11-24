@@ -148,6 +148,14 @@ class Config:
     LDAP_BIND_DN = config("LDAP_BIND_DN", default=None)
     LDAP_BIND_PASSWORD = config("LDAP_BIND_PASSWORD", default=None)
 
+    # Platform (operator) tenant: the only tenant whose superusers are
+    # super-admins (e.g. may mint platform-wide workers). The bootstrap
+    # "default" tenant is used instead ONLY when explicitly allowed below.
+    PLATFORM_TENANT_SLUG = config("ELDER_PLATFORM_TENANT_SLUG", default="system")
+    PLATFORM_TENANT_ALLOW_DEFAULT_FALLBACK = config(
+        "ELDER_PLATFORM_TENANT_ALLOW_DEFAULT_FALLBACK", default=False, cast=bool
+    )
+
     # gRPC
     GRPC_ENABLED = config("GRPC_ENABLED", default=True, cast=bool)
     GRPC_PORT = config("GRPC_PORT", default=50051, cast=int)

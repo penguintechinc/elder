@@ -189,6 +189,67 @@ def is_system_service_worker() -> bool:
     )
 
 
+def authenticated_service_worker_scope(sub: str) -> tuple[bool, int | None]:
+    """Return ``(ok, tenant_id)`` for a verified ``service_worker`` caller named ``sub``.
+
+    ``tenant_id`` is None for a platform-wide (system tenant) worker and the
+    worker's tenant for a tenant-scoped one. Only endpoints that enforce the
+    tenant themselves may accept tenant-scoped workers; everything else keeps
+    using :func:`is_system_service_worker`.
+    """
+    claims = getattr(g, "claims", {}) or {}
+    user = getattr(g, "current_user", None)
+    if (
+        claims.get("type") != "service_worker"
+        or claims.get("sub") != sub
+        or user is None
+        or getattr(user, "token_type", None) != "service_worker"
+        or getattr(user, "username", None) != sub
+        or sub not in SERVICE_WORKER_ALLOWED_SCOPES
+    ):
+        return False, None
+    if is_system_service_worker():
+        return True, None
+    tenant_raw = claims.get("tenant")
+    user_tid = getattr(user, "tenant_id", None)
+    if (
+        isinstance(tenant_raw, str)
+        and tenant_raw.isascii()
+        and tenant_raw.isdigit()
+        and int(tenant_raw) > 0
+        and isinstance(user_tid, int)
+        and not isinstance(user_tid, bool)
+        and user_tid == int(tenant_raw)
+    ):
+        return True, user_tid
+    return False, None
+
+
+_legacy_platform_worker_warned: set[str] = set()
+_LEGACY_PLATFORM_WORKER_WARN_MAX = 10_000
+
+
+def warn_platform_wide_worker_once(worker_id: str | None, source: str) -> None:
+    """Log ``platform_wide_worker_legacy`` once per provisioned platform-wide worker.
+
+    A NULL-tenant ``ewk_`` worker serves every tenant's queue; operators should
+    review whether it ought to be tenant-scoped instead. The set is bounded so
+    a churning fleet cannot grow memory without limit.
+    """
+    if not worker_id or worker_id in _legacy_platform_worker_warned:
+        return
+    if len(_legacy_platform_worker_warned) >= _LEGACY_PLATFORM_WORKER_WARN_MAX:
+        _legacy_platform_worker_warned.clear()
+    _legacy_platform_worker_warned.add(worker_id)
+    logger.warning(
+        "platform_wide_worker_legacy: provisioned worker %s (seen at %s) has no "
+        "tenant and can serve every tenant; re-provision it tenant-scoped unless "
+        "platform-wide is intended",
+        worker_id,
+        source,
+    )
+
+
 def _validate_service_worker_claims(
     payload: dict[str, Any], expected_issuer: str, expected_audience: str
 ) -> dict[str, Any] | None:
