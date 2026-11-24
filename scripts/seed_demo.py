@@ -112,6 +112,8 @@ def _seed_all(app: Any, cloud: Any, tenant_id: int) -> dict[str, Any]:
     work.seed_diagrams(ctx)
     work.seed_ai_resources(ctx)
     work.seed_run_functions(ctx)
+    work.seed_inbound_webhooks(ctx)
+    work.seed_remote_workers(ctx)
     reviews.seed_access_reviews(ctx, teams)
 
     # Layered seeders: cloud topology, K8s/geo, support/CRM (issues, webhooks, streams)
