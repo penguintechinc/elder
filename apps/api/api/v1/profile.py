@@ -5,6 +5,10 @@
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required
+from apps.api.services.portal_auth import (
+    compute_user_mfa_status,
+    user_has_mfa_enrolled,
+)
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
@@ -54,6 +58,13 @@ async def get_profile():
             if org:
                 org_name = org.name
 
+        mfa_status = compute_user_mfa_status(
+            tenant_id,
+            mfa_enabled=user_has_mfa_enrolled(user, db=db),
+            user_created_at=getattr(user, "created_at", None),
+            db=db,
+        )
+
         # Build response
         profile_data = {
             "id": user.id,
@@ -69,6 +80,7 @@ async def get_profile():
             "identity_type": user.identity_type,
             "auth_provider": user.auth_provider,
             "mfa_enabled": user.mfa_enabled,
+            **mfa_status,
             "last_login_at": (
                 user.last_login_at.isoformat() if user.last_login_at else None
             ),
@@ -171,6 +183,13 @@ async def update_profile():
                 if org:
                     org_name = org.name
 
+            mfa_status = compute_user_mfa_status(
+                tenant_id,
+                mfa_enabled=bool(user.mfa_enabled),
+                user_created_at=getattr(user, "created_at", None),
+                db=db,
+            )
+
             profile_data = {
                 "id": user.id,
                 "username": user.username,
@@ -185,6 +204,7 @@ async def update_profile():
                 "identity_type": user.identity_type,
                 "auth_provider": user.auth_provider,
                 "mfa_enabled": user.mfa_enabled,
+                **mfa_status,
                 "last_login_at": (
                     user.last_login_at.isoformat() if user.last_login_at else None
                 ),
@@ -209,6 +229,13 @@ async def update_profile():
             if org:
                 org_name = org.name
 
+        mfa_status = compute_user_mfa_status(
+            tenant_id,
+            mfa_enabled=user_has_mfa_enrolled(updated_user, db=db),
+            user_created_at=getattr(updated_user, "created_at", None),
+            db=db,
+        )
+
         # Build response
         profile_data = {
             "id": updated_user.id,
@@ -226,6 +253,7 @@ async def update_profile():
             "identity_type": updated_user.identity_type,
             "auth_provider": updated_user.auth_provider,
             "mfa_enabled": updated_user.mfa_enabled,
+            **mfa_status,
             "last_login_at": (
                 updated_user.last_login_at.isoformat()
                 if updated_user.last_login_at

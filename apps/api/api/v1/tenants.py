@@ -7,7 +7,7 @@ and usage statistics for the Super Admin Console.
 # flake8: noqa: E501
 
 from datetime import UTC, datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 import redis
 from penguin_libs.pydantic import Name255, RequestModel, SlugStr
@@ -16,6 +16,14 @@ from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.api.v1.portal_auth import portal_token_required
 from apps.api.common.licensing.enforce import check_limit
+from apps.api.common.licensing.tier_gate import get_tier
+from apps.api.services.portal_auth import (
+    DEFAULT_MFA_GRACE_PERIOD_DAYS,
+    DEFAULT_MFA_PROVIDER,
+    get_tenant_mfa_policy,
+    parse_tenant_settings,
+    user_has_mfa_enrolled,
+)
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.village_id import mint_village_id
@@ -51,6 +59,27 @@ class UpdateTenantRequest(RequestModel):
     data_retention_days: int | None = Field(default=None, ge=1, le=36500)
     storage_quota_gb: int | None = Field(default=None, ge=1, le=1000000)
     is_active: bool | None = None
+
+
+class UpdateMfaPolicyRequest(RequestModel):
+    """Validation model for updating tenant MFA enforcement policy."""
+
+    enforced: bool
+    provider: Literal["google_authenticator"] = DEFAULT_MFA_PROVIDER
+    grace_period_days: int | None = Field(default=None, ge=0, le=90)
+
+
+def _is_mfa_policy_admin(portal_user: dict) -> bool:
+    """Return True if the authenticated portal user can administer tenant MFA policy."""
+    global_role = portal_user.get("global_role")
+    tenant_role = portal_user.get("tenant_role")
+    scopes = str(portal_user.get("scope", "")).split()
+    return (
+        global_role in ("admin", "super_admin", "superadmin")
+        or tenant_role == "admin"
+        or "*:admin" in scopes
+        or "settings:write" in scopes
+    )
 
 
 def global_admin_required(f):
@@ -566,3 +595,147 @@ def get_tenant_stats(tenant_id):
     }
 
     return jsonify(stats), 200
+
+
+@bp.route("/current/mfa-policy", methods=["GET"])
+@portal_token_required
+def get_current_tenant_mfa_policy():
+    """Get the MFA enforcement policy for the authenticated user's current tenant.
+
+    Returns:
+        Tenant MFA policy, user enrollment state, license tier, and manageability.
+    """
+    tenant_id = request.portal_user.get("tenant_id")
+    user_id = int(request.portal_user["sub"])
+    db = current_app.db
+
+    tenant = db(db.tenants.id == tenant_id).select().first()
+    if not tenant:
+        return ApiResponse.error("Tenant not found", 404)
+
+    user = db(db.portal_users.id == user_id).select().first()
+    mfa_enrolled = user_has_mfa_enrolled(user, db=db)
+
+    policy = get_tenant_mfa_policy(tenant_id, db=db)
+    license_tier = get_tier()
+    can_manage = _is_mfa_policy_admin(request.portal_user) and (
+        license_tier == "enterprise"
+    )
+
+    return (
+        jsonify(
+            {
+                "enforced": policy["enforced"],
+                "provider": policy["provider"],
+                "grace_period_days": policy["grace_period_days"],
+                "enforced_at": policy["enforced_at"],
+                "mfa_enrolled": mfa_enrolled,
+                "license_tier": license_tier,
+                "can_manage": can_manage,
+            }
+        ),
+        200,
+    )
+
+
+@bp.route("/current/mfa-policy", methods=["PUT"])
+@portal_token_required
+async def update_current_tenant_mfa_policy():
+    """Update the MFA enforcement policy for the authenticated user's current tenant.
+
+    Requires an admin role (tenant admin, global admin, or admin scope) and an
+    Enterprise license (or PenguinTech bypass domain).
+
+    Request body:
+        enforced: bool - Whether Google Authenticator MFA is enforced
+        provider: str (optional) - MFA provider (``google_authenticator``)
+        grace_period_days: int (optional) - Grace period in days (0..90, default 7)
+
+    Returns:
+        Updated tenant MFA policy
+    """
+    if not _is_mfa_policy_admin(request.portal_user):
+        return ApiResponse.forbidden("Admin permission required to manage MFA policy")
+
+    license_tier = get_tier()
+    if license_tier != "enterprise":
+        return ApiResponse.error(
+            "Enterprise license required to manage MFA enforcement policy",
+            403,
+            required_tier="enterprise",
+            tier=license_tier,
+            upgrade=True,
+        )
+
+    payload = await request.get_json(silent=True)
+    if payload is None:
+        return ApiResponse.bad_request("Request body must be JSON")
+
+    try:
+        body = UpdateMfaPolicyRequest.model_validate(payload)
+    except ValidationError as e:
+        errors = [
+            {"field": ".".join(str(x) for x in err["loc"]), "message": err["msg"]}
+            for err in e.errors()
+        ]
+        return jsonify({"error": "Validation failed", "details": errors}), 400
+
+    tenant_id = request.portal_user.get("tenant_id")
+    user_id = int(request.portal_user["sub"])
+    db = current_app.db
+
+    tenant = db(db.tenants.id == tenant_id).select().first()
+    if not tenant:
+        return ApiResponse.error("Tenant not found", 404)
+
+    settings = parse_tenant_settings(tenant.settings)
+    was_enforced = bool(settings.get("mfa_enforced", False))
+    existing_enforced_at = settings.get("mfa_enforced_at")
+
+    if body.enforced:
+        enforced_at = (
+            existing_enforced_at
+            if (was_enforced and existing_enforced_at)
+            else datetime.now(UTC).isoformat()
+        )
+    else:
+        enforced_at = None
+
+    if body.grace_period_days is not None:
+        grace_period_days = body.grace_period_days
+    else:
+        try:
+            grace_period_days = int(
+                settings.get("mfa_grace_period_days", DEFAULT_MFA_GRACE_PERIOD_DAYS)
+            )
+        except (TypeError, ValueError):
+            grace_period_days = DEFAULT_MFA_GRACE_PERIOD_DAYS
+
+    settings["mfa_enforced"] = body.enforced
+    settings["mfa_enforced_at"] = enforced_at
+    settings["mfa_grace_period_days"] = grace_period_days
+    settings["mfa_provider"] = body.provider
+
+    db(db.tenants.id == tenant.id).update(
+        settings=settings,
+        updated_at=datetime.now(UTC),
+    )
+    db.commit()
+
+    user = db(db.portal_users.id == user_id).select().first()
+    mfa_enrolled = user_has_mfa_enrolled(user, db=db)
+
+    return (
+        jsonify(
+            {
+                "enforced": body.enforced,
+                "provider": body.provider,
+                "grace_period_days": grace_period_days,
+                "enforced_at": enforced_at,
+                "mfa_enrolled": mfa_enrolled,
+                "license_tier": license_tier,
+                "can_manage": True,
+            }
+        ),
+        200,
+    )

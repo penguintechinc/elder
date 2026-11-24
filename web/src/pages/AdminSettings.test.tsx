@@ -1,18 +1,47 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import AdminSettings from "./AdminSettings";
-import api, { type LicenseStatus } from "@/lib/api";
+import api, { type LicenseStatus, type MfaPolicy } from "@/lib/api";
+
+vi.mock("react-hot-toast", () => ({
+  default: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
 
 vi.mock("@/lib/api", () => ({
   default: {
     health: vi.fn(),
     getPortalProfile: vi.fn(),
     getLicenseStatus: vi.fn(),
+    getMfaPolicy: vi.fn(),
+    updateMfaPolicy: vi.fn(),
     getLogs: vi.fn(),
     searchLogs: vi.fn(),
   },
 }));
+
+const DEFAULT_ENTERPRISE_MFA_POLICY: MfaPolicy = {
+  enforced: false,
+  provider: "google_authenticator",
+  grace_period_days: 7,
+  enforced_at: null,
+  mfa_enrolled: true,
+  license_tier: "enterprise",
+  can_manage: true,
+};
+
+const DEFAULT_FREE_MFA_POLICY: MfaPolicy = {
+  enforced: false,
+  provider: "google_authenticator",
+  grace_period_days: 7,
+  enforced_at: null,
+  mfa_enrolled: false,
+  license_tier: "free",
+  can_manage: false,
+};
 
 const ENTERPRISE_BYPASS_STATUS: LicenseStatus = {
   tier: "enterprise",
@@ -104,6 +133,14 @@ describe("AdminSettings", () => {
       tenant_role: "admin",
       mfa_enabled: true,
     });
+    vi.mocked(api.getMfaPolicy).mockResolvedValue(
+      DEFAULT_ENTERPRISE_MFA_POLICY,
+    );
+    vi.mocked(api.updateMfaPolicy).mockResolvedValue({
+      ...DEFAULT_ENTERPRISE_MFA_POLICY,
+      enforced: true,
+      enforced_at: "2026-11-24T00:00:00Z",
+    });
   });
 
   it("renders Enterprise badge, Domain Bypass badge, and all enabled CheckCircles when bypass is active", async () => {
@@ -181,5 +218,59 @@ describe("AdminSettings", () => {
     expect(
       screen.getByText("Add a license key to enable enterprise features."),
     ).toBeDefined();
+  });
+
+  it("allows Enterprise admins to toggle MFA enforcement and save grace period days", async () => {
+    vi.mocked(api.getLicenseStatus).mockResolvedValue(ENTERPRISE_BYPASS_STATUS);
+    vi.mocked(api.getMfaPolicy).mockResolvedValue(
+      DEFAULT_ENTERPRISE_MFA_POLICY,
+    );
+
+    renderPage();
+
+    const toggle = await screen.findByTestId("mfa-policy-toggle");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByTestId("mfa-policy-status").textContent).toBe(
+      "Optional",
+    );
+
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(api.updateMfaPolicy).toHaveBeenCalledWith({
+        enforced: true,
+        provider: "google_authenticator",
+        grace_period_days: 7,
+      });
+    });
+
+    const graceInput = screen.getByTestId(
+      "mfa-grace-period-input",
+    ) as HTMLInputElement;
+    fireEvent.change(graceInput, { target: { value: "14" } });
+    fireEvent.click(screen.getByTestId("mfa-grace-period-save"));
+
+    await waitFor(() => {
+      expect(api.updateMfaPolicy).toHaveBeenCalledWith({
+        enforced: false,
+        provider: "google_authenticator",
+        grace_period_days: 14,
+      });
+    });
+  });
+
+  it("disables MFA enforcement controls and shows upgrade notice on Free tier", async () => {
+    vi.mocked(api.getLicenseStatus).mockResolvedValue(FREE_STATUS);
+    vi.mocked(api.getMfaPolicy).mockResolvedValue(DEFAULT_FREE_MFA_POLICY);
+
+    renderPage();
+
+    const toggle = (await screen.findByTestId(
+      "mfa-policy-toggle",
+    )) as HTMLButtonElement;
+    await waitFor(() => {
+      expect(toggle.disabled).toBe(true);
+    });
+    expect(screen.getByTestId("mfa-enterprise-upgrade-notice")).toBeDefined();
   });
 });

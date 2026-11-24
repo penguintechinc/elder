@@ -2424,6 +2424,38 @@ class ApiClient {
     return response.data;
   }
 
+  // Enterprise MFA Enforcement & Google Authenticator (TOTP)
+  async getMfaPolicy(): Promise<MfaPolicy> {
+    const response = await this.client.get("/tenants/current/mfa-policy");
+    return response.data;
+  }
+
+  async updateMfaPolicy(data: {
+    enforced: boolean;
+    provider?: string;
+    grace_period_days?: number;
+  }): Promise<MfaPolicy> {
+    const response = await this.client.put("/tenants/current/mfa-policy", data);
+    return response.data;
+  }
+
+  async enableMfa(): Promise<MfaSetupResponse> {
+    const response = await this.client.post("/portal-auth/mfa/enable");
+    return response.data;
+  }
+
+  async confirmMfa(totpCode: string): Promise<{ verified: boolean }> {
+    const response = await this.client.post("/portal-auth/mfa/confirm", {
+      totp_code: totpCode,
+    });
+    return response.data;
+  }
+
+  async disableMfa(): Promise<{ success: boolean }> {
+    const response = await this.client.post("/portal-auth/mfa/disable");
+    return response.data;
+  }
+
   // v2.2.0 Enterprise Edition - Tenant Management
   async getTenants(params?: {
     is_active?: boolean;
@@ -4844,6 +4876,22 @@ export interface LicenseStatus {
   bypass_domain: string | null;
   limits: LicenseLimits;
   features: LicenseFeatures;
+}
+
+export interface MfaPolicy {
+  enforced: boolean;
+  provider: string;
+  grace_period_days: number;
+  enforced_at: string | null;
+  mfa_enrolled: boolean;
+  license_tier: string;
+  can_manage: boolean;
+}
+
+export interface MfaSetupResponse {
+  secret: string;
+  provisioning_uri: string;
+  backup_codes: string[];
 }
 
 export interface AIResearcherConfig {

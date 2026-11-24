@@ -5941,6 +5941,17 @@
   },
   {
     "service": "portal-auth",
+    "operation": "confirm_mfa",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/mfa/confirm",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Confirm MFA enrollment by verifying a 6-digit TOTP code.",
+    "has_body": true,
+    "destructive": false
+  },
+  {
+    "service": "portal-auth",
     "operation": "disable_mfa",
     "method": "POST",
     "path": "/api/v1/portal-auth/mfa/disable",
@@ -7870,6 +7881,17 @@
   },
   {
     "service": "tenants",
+    "operation": "get_current_tenant_mfa_policy",
+    "method": "GET",
+    "path": "/api/v1/tenants/current/mfa-policy",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Get the MFA enforcement policy for the authenticated user's current tenant.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "tenants",
     "operation": "get_tenant",
     "method": "GET",
     "path": "/api/v1/tenants/{tenant_id}",
@@ -7941,6 +7963,17 @@
     ],
     "wildcard_path_params": [],
     "summary": "Set module enablement state for a tenant.",
+    "has_body": true,
+    "destructive": true
+  },
+  {
+    "service": "tenants",
+    "operation": "update_current_tenant_mfa_policy",
+    "method": "PUT",
+    "path": "/api/v1/tenants/current/mfa-policy",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Update the MFA enforcement policy for the authenticated user's current tenant.",
     "has_body": true,
     "destructive": true
   },
