@@ -356,17 +356,51 @@ class TestResourceRoleRequired:
     @pytest.mark.asyncio
     async def test_service_worker_bypass_requires_matching_claim(self, app):
         """A service_worker identity bypasses only when claims also say service_worker."""
-        sw = _user(token_type="service_worker")
+        sw = _user(
+            token_type="service_worker", username="svc-runworker", tenant_id=None
+        )
         async with app.test_request_context("/entities/1"):
-            g.claims = {"type": "service_worker"}
+            g.claims = {"type": "service_worker", "tenant": "system"}
+            g.current_user = sw
             with patch(GCU, return_value=sw):
                 out = await dec.resource_role_required("viewer")(_ok)(id=1)
         assert out == "async-ok"
+        # A tenant-scoped worker never gets the platform bypass.
+        tenant_sw = _user(
+            token_type="service_worker", username="svc-runworker", tenant_id=5
+        )
+        async with app.test_request_context("/entities/1"):
+            g.claims = {"type": "service_worker", "tenant": "acme"}
+            g.current_user = tenant_sw
+            with patch(GCU, return_value=tenant_sw):
+                _, code = await dec.resource_role_required("viewer")(_ok)(id=1)
+        assert code == 403
         async with app.test_request_context("/entities/1"):
             g.claims = {"type": "access"}
             with patch(GCU, return_value=sw):
                 _, code = await dec.resource_role_required("viewer")(_ok)(id=1)
         assert code == 403
+
+    @pytest.mark.asyncio
+    async def test_service_worker_scope_bypass_refused_for_tenant_worker(self, app):
+        """Scope bypass is limited to platform (system-tenant) workers."""
+        sw = _user(
+            token_type="service_worker",
+            portal_role="service_worker",
+            username="svc-runworker",
+            tenant_id=5,
+        )
+        deco = dec.role_required("admin", allow_service_worker_scopes=("runs:read",))
+        async with app.test_request_context("/x"):
+            g.claims = {
+                "type": "service_worker",
+                "scope": ["runs:read"],
+                "tenant": "acme",
+            }
+            g.current_user = sw
+            with patch(GCU, return_value=sw):
+                out = await deco(_ok)()
+        assert out[1] == 403
 
     @pytest.mark.asyncio
     async def test_route_param_unknown_path_is_400(self, app):
@@ -548,12 +582,18 @@ class TestRoleRequired:
     @pytest.mark.parametrize("fn", [_ok, _sync_ok])
     async def test_service_worker_scope_pass(self, app, claims_type, scopes, ok, fn):
         """service_worker bypass needs matching claim type AND all listed scopes."""
-        sw = _user(token_type="service_worker", portal_role="service_worker")
+        sw = _user(
+            token_type="service_worker",
+            portal_role="service_worker",
+            username="svc-runworker",
+            tenant_id=None,
+        )
         deco = dec.role_required(
             "admin", allow_service_worker_scopes=("runs:read", "runs:write")
         )
         async with app.test_request_context("/x"):
-            g.claims = {"type": claims_type, "scope": scopes}
+            g.claims = {"type": claims_type, "scope": scopes, "tenant": "system"}
+            g.current_user = sw
             with patch(GCU, return_value=sw):
                 out = await deco(fn)()
         if ok:
