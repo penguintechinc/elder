@@ -39,7 +39,7 @@ defusedxml>=0.7.1
 lxml>=6.1.0
 
 # Authentication - OAuth2
-Authlib==1.7.1
+Authlib==1.9.1  # CVE-2026-96760 (CRITICAL) + 3 High; 1.9.6+ are <14d old
 # Flask-OAuthlib removed due to conflict with kubernetes (Authlib is the modern replacement)
 
 # Security & Cryptography
@@ -59,18 +59,22 @@ pyotp==2.9.0
 # HTTP & API Clients
 requests==2.33.0
 httpx==0.28.1
-# aiohttp 3.14.3: fixes 14 GHSA advisories (cookie/TLS/CRLF/smuggling/DoS class)
-aiohttp==3.14.3
+# aiohttp 3.14.5: fixes 14 GHSA advisories (cookie/TLS/CRLF/smuggling/DoS class) plus
+# the 17 CVEs fixed in 3.14.4 (CVE-2026-111064 et al.)
+aiohttp==3.14.5
 idna>=3.15
 urllib3>=2.7.0
 # Transitive floors — no direct .in entry otherwise, pinned here to clear advisories
 anyio>=4.14.2          # via httpx/watchfiles — GHSA-5p39, GHSA-82r6
 h2>=4.4.1               # via hypercorn — GHSA-6hr6 request smuggling
 httplib2>=0.32.0        # via google-api-python-client — GHSA-j5g9 decompression bomb
-joserfc>=1.6.8          # via authlib — GHSA-gg9x, GHSA-wphv
-msgpack>=1.2.1          # via cachecontrol — GHSA-6v7p OOB read
-pyasn1>=0.6.4           # via pyasn1-modules/python-ldap/rsa — GHSA-8ppf/hm4w/m4p7
+joserfc>=1.7.6          # via authlib — GHSA-gg9x, GHSA-wphv, CVE-2026-119284
+msgpack>=1.2.3          # via cachecontrol — GHSA-6v7p OOB read, CVE-2026-114613
+pyasn1>=0.6.5           # via pyasn1-modules/python-ldap/rsa — GHSA-8ppf/hm4w/m4p7, CVE-2026-119194/119195
 pygments>=2.20.0        # via rich — GHSA-5239 ReDoS
+certifi==2026.10.18     # via requests/httpx — GHSA-6q48-6c7w-9gw2 (CRITICAL); 2026.11.20 is <14d old
+dnspython>=2.9.2        # via email-validator — CVE-2026-114605, CVE-2026-128089
+filelock>=4.2.1         # via cachecontrol — CVE-2026-112940 et al.
 
 # Configuration Management
 python-decouple==3.8
@@ -78,20 +82,20 @@ python-decouple==3.8
 click==8.3.3
 python-dotenv==1.2.2
 mako>=1.4.2  # CVE-2026-102991
-# mistune 3.3.3: fixes 10 GHSA advisories (XSS, path traversal, ReDoS class) plus
+# mistune 3.3.4 (CVE-2026-97698, CVE-2026-97699); 3.3.3 fixes 10 GHSA advisories (XSS, path traversal, ReDoS class) plus
 # GHSA-6m44 (RecursionError DoS via excessive emphasis markers, disclosed after 3.3.0)
-mistune==3.3.3
+mistune==3.3.4
 
 # OpenTelemetry (Phase 0.5) — OTLP HTTP export to SigNoz, ungated/free
-# Pinned to 1.43.0/0.64b0 for protobuf 5.29.6 compatibility (drop grpc exporter, use http only)
-opentelemetry-api==1.43.0
-opentelemetry-sdk==1.43.0
-opentelemetry-exporter-otlp-proto-http==1.43.0
-opentelemetry-instrumentation==0.64b0
-opentelemetry-instrumentation-asgi==0.64b0
-opentelemetry-instrumentation-httpx==0.64b0
-opentelemetry-instrumentation-psycopg2==0.64b0
-opentelemetry-instrumentation-redis==0.64b0
+# Pinned to 1.45.2/0.66b2 (CVE-2026-114603, CVE-2026-126360) for protobuf 5.29.6 compatibility (drop grpc exporter, use http only)
+opentelemetry-api==1.45.2
+opentelemetry-sdk==1.45.2
+opentelemetry-exporter-otlp-proto-http==1.45.2
+opentelemetry-instrumentation==0.66b2
+opentelemetry-instrumentation-asgi==0.66b2
+opentelemetry-instrumentation-httpx==0.66b2
+opentelemetry-instrumentation-psycopg2==0.66b2
+opentelemetry-instrumentation-redis==0.66b2
 
 # Structured Logging
 structlog==25.4.0
@@ -175,7 +179,7 @@ google-api-python-client==2.161.0
 google-auth==2.37.0
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.1
-oauthlib>=4.0.0  # CVE-2026-49264 / CVE-2026-49265, transitive via google-auth-oauthlib/requests-oauthlib
+oauthlib>=4.0.1  # CVE-2026-49264 / CVE-2026-49265 / CVE-2026-49272, transitive via google-auth-oauthlib/requests-oauthlib
 
 # Cloud Logging (optional)
 # google-cloud-logging==3.11.4

@@ -612,12 +612,11 @@ class TestPluggableRunnerAndManifestWiring:
     @pytest.mark.parametrize(
         ("env_val", "expected"),
         [
-            (None, "auto"),
+            (None, "k8s_job"),
             ("auto", "auto"),
             ("sandbox", "sandbox"),
             ("k8s_job", "k8s_job"),
             ("SANDBOX", "sandbox"),
-            ("invalid_backend", "auto"),
         ],
     )
     def test_config_from_env_parses_runner_backend(
@@ -630,8 +629,21 @@ class TestPluggableRunnerAndManifestWiring:
             monkeypatch.delenv("RUNS_RUNNER_BACKEND", raising=False)
         else:
             monkeypatch.setenv("RUNS_RUNNER_BACKEND", env_val)
+        monkeypatch.setenv("ELDER_INTERNAL_TOKEN", "ewk_unit_test_token")
+        monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+        monkeypatch.delenv("SECRET_KEY", raising=False)
         cfg = RunWorkerConfig.from_env()
         assert cfg.runner_backend == expected
+
+    def test_config_from_env_rejects_unknown_runner_backend(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("RUNS_RUNNER_BACKEND", "invalid_backend")
+        monkeypatch.setenv("ELDER_INTERNAL_TOKEN", "ewk_unit_test_token")
+        monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        with pytest.raises(RuntimeError, match="Unsupported RUNS_RUNNER_BACKEND"):
+            RunWorkerConfig.from_env()
 
     def test_auto_backend_routes_local_python_to_sandbox_and_missing_to_k8s(
         self,
@@ -640,7 +652,11 @@ class TestPluggableRunnerAndManifestWiring:
         k8s = K8sRunner(batch_api=MagicMock(), core_api=MagicMock())
 
         service_auto = RunWorkerService(
-            RunWorkerConfig(runner_backend="auto"),
+            RunWorkerConfig(
+                runner_backend="auto",
+                pod_runtime_class="kata",
+                runtime_class_name="kata",
+            ),
             sandbox_runner=sandbox,
             k8s_runner=k8s,
         )
@@ -652,20 +668,20 @@ class TestPluggableRunnerAndManifestWiring:
             assert service_auto.select_runner(rust_req) is k8s
 
         service_sandbox = RunWorkerService(
-            RunWorkerConfig(runner_backend="sandbox"),
+            RunWorkerConfig(runner_backend="sandbox", pod_runtime_class="kata"),
             sandbox_runner=sandbox,
             k8s_runner=k8s,
         )
         assert service_sandbox.select_runner(rust_req) is sandbox
 
         service_k8s = RunWorkerService(
-            RunWorkerConfig(runner_backend="k8s_job"),
+            RunWorkerConfig(runner_backend="k8s_job", runtime_class_name="kata"),
             sandbox_runner=sandbox,
             k8s_runner=k8s,
         )
         assert service_k8s.select_runner(py_req) is k8s
 
-    def test_k8s_manifests_mount_sdk_and_label_elder_api_access(self) -> None:
+    def test_k8s_manifests_mount_sdk_and_label_gateway_access(self) -> None:
         req_privileged = RunJobRequest(
             execution_id="exec-priv",
             runtime="python",
@@ -678,17 +694,17 @@ class TestPluggableRunnerAndManifestWiring:
 
         job_priv = build_job_manifest(req_privileged)
         assert (
-            job_priv["metadata"]["labels"]["elder.penguintech.io/elder-api-access"]
+            job_priv["metadata"]["labels"]["elder.penguintech.io/gateway-access"]
             == "true"
         )
         assert (
             job_priv["spec"]["template"]["metadata"]["labels"][
-                "elder.penguintech.io/elder-api-access"
+                "elder.penguintech.io/gateway-access"
             ]
             == "true"
         )
 
-        # Unprivileged job has no elder-api-access label
+        # Unprivileged job has no gateway-access label
         req_unpriv = RunJobRequest(
             execution_id="exec-unpriv",
             runtime="nodejs",
@@ -698,7 +714,7 @@ class TestPluggableRunnerAndManifestWiring:
         assert "elder.mjs" in cm_node["data"]
         job_unpriv = build_job_manifest(req_unpriv)
         assert (
-            "elder.penguintech.io/elder-api-access"
+            "elder.penguintech.io/gateway-access"
             not in job_unpriv["metadata"]["labels"]
         )
 

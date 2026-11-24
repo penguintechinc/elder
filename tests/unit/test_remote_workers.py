@@ -34,12 +34,9 @@ from apps.api.models.base import Base
 from apps.api.models.identity import Identity  # noqa: F401
 from apps.api.models.remote_workers import RemoteWorker  # noqa: F401
 from apps.api.models.tenant import Tenant  # noqa: F401
+from apps.runworker import main as runworker_main
 from apps.runworker.k8s_runner import K8sRunner
-from apps.runworker.main import (
-    RunWorkerConfig,
-    RunWorkerService,
-    _mint_service_worker_jwt,
-)
+from apps.runworker.main import RunWorkerConfig, RunWorkerService
 
 JWT_SECRET = "test-remote-workers-jwt-secret-key-32b"
 
@@ -682,7 +679,7 @@ class TestRunWorkerHeartbeatSender:
 
         cfg = RunWorkerConfig(
             elder_api_url="https://elder.example.test",
-            jwt_secret_key=JWT_SECRET,
+            elder_internal_token="ewk_test_token_value",
             worker_id="rw-err",
             health_file=str(tmp_path / "rw.healthy"),
         )
@@ -779,5 +776,7 @@ def test_helper_exports_smoke() -> None:
     assert len(hash_worker_token("ewk_abc")) == 64
     ident = ServiceWorkerIdentity("svc-runworker", None, ["runs:invoke"])
     assert ident.username == "svc-runworker"
-    tok = _mint_service_worker_jwt(JWT_SECRET)
-    assert tok.count(".") == 2
+    # The worker can no longer mint platform tokens: it only presents its own
+    # provisioned worker token.
+    assert not hasattr(runworker_main, "_mint_service_worker_jwt")
+    assert "jwt_secret_key" not in RunWorkerConfig.__dataclass_fields__

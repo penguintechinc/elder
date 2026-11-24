@@ -145,3 +145,60 @@ e.g. servicesOncall -> SERVICES_ONCALL, aiSearch -> AI_SEARCH
 {{- end }}
 {{- $result }}
 {{- end }}
+
+
+{{/*
+svc-runworker isolation policy. Validates the runner backend against the
+isolation boundary and returns the effective backend name. Rendering fails
+when tenant code would run without a VM isolation boundary and no
+"KATA EXCEPTION (approved)" flag is recorded in values.
+*/}}
+{{- define "elder.runworker.backend" -}}
+{{- $cfg := index .Values "svc-runworker" -}}
+{{- $backend := $cfg.runnerBackend | default "k8s_job" -}}
+{{- if not (has $backend (list "k8s_job" "sandbox" "auto")) -}}
+{{- fail (printf "svc-runworker.runnerBackend %q is not supported (k8s_job | sandbox | auto)" $backend) -}}
+{{- end -}}
+{{- $exc := $cfg.kataException | default dict -}}
+{{- $classes := $cfg.sandboxedRuntimeClasses | default (list "kata" "kata-qemu" "kata-clh" "kata-fc") -}}
+{{- $podSandboxed := has ($cfg.podRuntimeClassName | default "") $classes -}}
+{{- if and (eq $backend "sandbox") (not $podSandboxed) (not $exc.inPodSandbox) -}}
+{{- fail "svc-runworker.runnerBackend=sandbox runs tenant code inside the worker pod: set svc-runworker.podRuntimeClassName to a Kata runtime class, or record svc-runworker.kataException.inPodSandbox=true (KATA EXCEPTION approved)" -}}
+{{- end -}}
+{{- if and (eq $backend "auto") (not $exc.inPodSandbox) -}}
+{{- fail "svc-runworker.runnerBackend=auto runs tenant code in a pod that also holds a Kubernetes API token: use k8s_job, or record svc-runworker.kataException.inPodSandbox=true (KATA EXCEPTION approved)" -}}
+{{- end -}}
+{{- /* Membership, not mere presence: "runc" or a misspelt class is not a VM boundary. */ -}}
+{{- $execSandboxed := has ($cfg.runtimeClassName | default "") $classes -}}
+{{- if and (ne $backend "sandbox") (not $execSandboxed) (not $exc.executionPods) -}}
+{{- fail (printf "svc-runworker.runtimeClassName %q is not one of svc-runworker.sandboxedRuntimeClasses: execution pods must run under a Kata runtime class, or record svc-runworker.kataException.executionPods=true (KATA EXCEPTION approved)" ($cfg.runtimeClassName | default "")) -}}
+{{- end -}}
+{{- /* Execution pods rely on the "restricted" Pod Security labels of their namespace. */ -}}
+{{- $execNs := $cfg.executionNamespace | default "elder-runs" -}}
+{{- if ne $backend "sandbox" -}}
+{{- if eq $execNs .Values.namespace -}}
+{{- fail (printf "svc-runworker.executionNamespace %q must differ from the release namespace: tenant execution pods may not share a namespace with platform workloads" $execNs) -}}
+{{- end -}}
+{{- if and (not $cfg.createExecutionNamespace) (not $cfg.executionNamespacePodSecurityVerified) -}}
+{{- fail (printf "svc-runworker.createExecutionNamespace=false: the chart cannot guarantee the pod-security.kubernetes.io/enforce=restricted label on namespace %q. Label it yourself and record svc-runworker.executionNamespacePodSecurityVerified=true, or let the chart create it" $execNs) -}}
+{{- end -}}
+{{- end -}}
+{{- $backend -}}
+{{- end }}
+
+{{/*
+Restriction gateway ports opened between execution pods and the controller:
+one per concurrent execution, starting at svc-runworker.gateway.portBase.
+*/}}
+{{- define "elder.runworker.gatewayPorts" -}}
+{{- $cfg := index .Values "svc-runworker" -}}
+{{- $base := int (($cfg.gateway).portBase | default 18080) -}}
+{{- $count := int (($cfg.env).RUNS_MAX_CONCURRENT | default "5") -}}
+{{- if or (lt $count 1) (gt $count 40) -}}
+{{- fail "svc-runworker.env.RUNS_MAX_CONCURRENT must be between 1 and 40 (one NetworkPolicy gateway port per concurrent execution)" -}}
+{{- end -}}
+{{- range $i := until $count }}
+- port: {{ add $base $i | quote }}
+  protocol: TCP
+{{- end }}
+{{- end }}
