@@ -4,13 +4,27 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
+
+from scripts.demo_seed import common
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "capture-screenshots.cjs"
 APP_TSX = REPO_ROOT / "web" / "src" / "App.tsx"
 MODULES_DIR = REPO_ROOT / "web" / "src" / "modules"
+
+
+@pytest.fixture(autouse=True)
+def _require_node() -> None:
+    """Fail loudly (never skip) when the Node runtime these tests drive is missing."""
+    assert shutil.which("node"), (
+        "node is not on PATH: these tests execute scripts/capture-screenshots.cjs. "
+        "Use the repo test image (tests/Dockerfile ships node) or install Node."
+    )
 
 
 def _run_node(expr: str) -> object:
@@ -33,6 +47,8 @@ def _load_tool_metadata() -> dict:
             pages: tool.PAGES,
             defaultOutputDir: tool.DEFAULT_OUTPUT_DIR,
             artifactDir: tool.ARTIFACT_DIR,
+            defaultEmail: tool.DEFAULT_TEST_EMAIL,
+            defaultPassword: tool.DEFAULT_TEST_PASSWORD,
         }}));
         """
     )
@@ -55,6 +71,14 @@ def test_screenshot_tool_paths_and_artifact_dir() -> None:
         Path(meta["defaultOutputDir"]).resolve()
         == (REPO_ROOT / "docs" / "screenshots").resolve()
     )
+
+
+def test_screenshot_tool_default_login_is_the_seeded_demo_login() -> None:
+    """The capture tool's default login matches the account `make seed-demo` creates."""
+    meta = _load_tool_metadata()
+    assert meta["defaultEmail"] == common.DEFAULT_DEMO_ADMIN_EMAIL
+    assert meta["defaultPassword"] == common.DEFAULT_DEMO_ADMIN_PASSWORD
+    assert common.is_reserved_email(meta["defaultEmail"])
 
 
 def test_screenshot_tool_covers_all_v4_routes_and_excludes_stale_ones() -> None:
