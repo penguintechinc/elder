@@ -71,6 +71,7 @@ CANONICAL_EDGE_TYPES: frozenset[str] = frozenset(
 from apps.worker.discovery.aws_discovery import AWSDiscoveryClient
 from apps.worker.discovery.azure_discovery import AzureDiscoveryClient
 from apps.worker.discovery.base import BaseDiscoveryProvider
+from apps.worker.discovery.digitalocean_discovery import DigitalOceanDiscoveryClient
 from apps.worker.discovery.fleetdm_discovery import FleetDMDiscoveryClient
 from apps.worker.discovery.gcp_discovery import GCPDiscoveryClient
 from apps.worker.discovery.k8s_discovery import KubernetesDiscoveryClient
@@ -89,6 +90,32 @@ class DiscoveryService:
             db: PyDAL database instance
         """
         self.db = db
+
+    @staticmethod
+    def get_provider(
+        provider_type: str, config: dict[str, Any]
+    ) -> BaseDiscoveryProvider:
+        """Instantiate a discovery provider client for the given provider type."""
+        normalized = provider_type.lower()
+        provider_config = dict(config)
+        provider_config.setdefault("provider_type", normalized)
+
+        if normalized == "aws":
+            return AWSDiscoveryClient(provider_config)
+        elif normalized == "gcp":
+            return GCPDiscoveryClient(provider_config)
+        elif normalized == "azure":
+            return AzureDiscoveryClient(provider_config)
+        elif normalized == "kubernetes":
+            return KubernetesDiscoveryClient(provider_config)
+        elif normalized == "vultr":
+            return VultrDiscoveryClient(provider_config)
+        elif normalized == "digitalocean":
+            return DigitalOceanDiscoveryClient(provider_config)
+        elif normalized == "fleetdm":
+            return FleetDMDiscoveryClient(provider_config)
+        else:
+            raise Exception(f"Unsupported provider type: {normalized}")
 
     def _get_discovery_client(self, job_id: int) -> BaseDiscoveryProvider:
         """
@@ -115,23 +142,7 @@ class DiscoveryService:
         if job.config_json:
             config.update(job.config_json)
 
-        # Create appropriate client based on provider
-        provider_type = job.provider.lower()
-
-        if provider_type == "aws":
-            return AWSDiscoveryClient(config)
-        elif provider_type == "gcp":
-            return GCPDiscoveryClient(config)
-        elif provider_type == "azure":
-            return AzureDiscoveryClient(config)
-        elif provider_type == "kubernetes":
-            return KubernetesDiscoveryClient(config)
-        elif provider_type == "vultr":
-            return VultrDiscoveryClient(config)
-        elif provider_type == "fleetdm":
-            return FleetDMDiscoveryClient(config)
-        else:
-            raise Exception(f"Unsupported provider type: {provider_type}")
+        return self.get_provider(job.provider, config)
 
     # Discovery Job Management
 
@@ -200,6 +211,7 @@ class DiscoveryService:
             "azure",
             "kubernetes",
             "vultr",
+            "digitalocean",
             "fleetdm",
             "network",
             "http_screenshot",
@@ -321,13 +333,27 @@ class DiscoveryService:
         """Test discovery job connectivity."""
         try:
             client = self._get_discovery_client(job_id)
-            success = client.test_connection()
+            raw_test = client.test_connection()
+            if isinstance(raw_test, dict):
+                success = bool(
+                    raw_test.get("connected", raw_test.get("success", False))
+                )
+            else:
+                success = bool(raw_test)
 
-            result = {
+            result: dict[str, Any] = {
                 "job_id": job_id,
                 "success": success,
                 "tested_at": datetime.now(UTC).isoformat(),
             }
+
+            if isinstance(raw_test, dict):
+                if not success and raw_test.get("error"):
+                    result["error"] = raw_test["error"]
+                if success:
+                    for key in ("status", "email", "droplet_limit"):
+                        if key in raw_test and raw_test[key] is not None:
+                            result[key] = raw_test[key]
 
             # Add auth method if available (AWS client)
             if hasattr(client, "get_auth_method"):
@@ -482,24 +508,41 @@ class DiscoveryService:
 
     def _detect_provider_type(self, discovery_results: dict[str, Any]) -> str:
         """Detect cloud provider from discovery results."""
-        for category in ["compute", "storage", "network", "iam", "security"]:
+        for category in [
+            "compute",
+            "storage",
+            "network",
+            "database",
+            "serverless",
+            "iam",
+            "security",
+        ]:
             resources = discovery_results.get(category, [])
-            if not resources:
+            if not resources or not isinstance(resources, list):
                 continue
-            rt = resources[0].get("resource_type", "")
+            rt = resources[0].get("resource_type", "") or resources[0].get("type", "")
             if rt.startswith("k8s_"):
                 return "kubernetes"
             if rt.startswith("gce_") or rt.startswith("gcs_"):
                 return "gcp"
             if rt.startswith("fleetdm_"):
                 return "fleetdm"
+            if rt.startswith("do_"):
+                return "digitalocean"
             prov = resources[0].get("provider", "")
-            if prov == "aws":
-                return "aws"
-            if prov == "gcp":
-                return "gcp"
-            if prov == "fleetdm":
-                return "fleetdm"
+            if prov in (
+                "aws",
+                "gcp",
+                "azure",
+                "vultr",
+                "digitalocean",
+                "fleetdm",
+                "kubernetes",
+            ):
+                return prov
+        top_provider = discovery_results.get("provider")
+        if isinstance(top_provider, str) and top_provider:
+            return top_provider
         return "unknown"
 
     # Provider root entity
@@ -512,6 +555,7 @@ class DiscoveryService:
             "kubernetes": "kubernetes_cluster",
             "aws": "aws_account",
             "gcp": "gcp_project",
+            "digitalocean": "digitalocean_account",
             "fleetdm": "fleetdm_server",
         }
         sub_type = sub_type_map.get(provider)
@@ -1598,9 +1642,14 @@ class DiscoveryService:
         }
 
         for category, resources in discovery_results.items():
-            if category in ["resources_count", "discovery_time", "duration_seconds"]:
+            if category in [
+                "resources_count",
+                "discovery_time",
+                "duration_seconds",
+                "provider",
+            ]:
                 continue
-            if not resources:
+            if not resources or not isinstance(resources, list):
                 continue
 
             for resource in resources:

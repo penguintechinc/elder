@@ -59,6 +59,7 @@ const INTEGRATION_QUERY_LABELS: Record<string, string> = {
   azure: "Azure Discovery Query",
   kubernetes: "Kubernetes Discovery Query",
   vultr: "Vultr Discovery Query",
+  digitalocean: "DigitalOcean Discovery Query",
   fleetdm: "FleetDM Endpoint Query",
 };
 

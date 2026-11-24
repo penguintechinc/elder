@@ -193,7 +193,8 @@ export type CloudDiscoveryProvider =
   | "gcp"
   | "azure"
   | "kubernetes"
-  | "vultr";
+  | "vultr"
+  | "digitalocean";
 
 export type DiscoveryProviderType =
   | CloudDiscoveryProvider
