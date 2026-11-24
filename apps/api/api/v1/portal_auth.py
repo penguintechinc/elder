@@ -701,15 +701,52 @@ def get_current_user():
     last_login_at = getattr(user, "last_login_at", None)
     created_at = getattr(user, "created_at", None)
 
+    org_id = getattr(user, "organization_id", None)
+    org_name = None
+    db_tables = getattr(current_app.db, "tables", None)
+    if org_id is None and (
+        db_tables is None or "portal_user_org_assignments" in db_tables
+    ):
+        try:
+            assignment = (
+                current_app.db(
+                    current_app.db.portal_user_org_assignments.portal_user_id == user.id
+                )
+                .select(limitby=(0, 1))
+                .first()
+            )
+            if assignment is not None:
+                org_id = assignment.organization_id
+        except Exception:
+            org_id = None
+    if org_id is not None and (db_tables is None or "organizations" in db_tables):
+        try:
+            org = (
+                current_app.db(
+                    (current_app.db.organizations.id == org_id)
+                    & (current_app.db.organizations.tenant_id == user.tenant_id)
+                )
+                .select(limitby=(0, 1))
+                .first()
+            )
+            if org is not None:
+                org_name = org.name
+        except Exception:
+            org_name = None
+
     return (
         jsonify(
             {
                 "id": user.id,
+                "username": getattr(user, "username", None) or user.email,
                 "email": user.email,
                 "full_name": user.full_name,
                 "tenant_id": user.tenant_id,
                 "tenant_role": user.tenant_role,
                 "global_role": user.global_role,
+                "organization_id": org_id,
+                "organization_name": org_name,
+                "identity_type": getattr(user, "identity_type", None) or "human",
                 "is_active": bool(getattr(user, "is_active", True)),
                 "auth_provider": getattr(user, "auth_provider", None) or "local",
                 "mfa_enabled": mfa_enabled,
