@@ -9,8 +9,15 @@ const API_URL = (process.env.API_URL || '').replace(/\/+$/, '');
 const DEFAULT_OUTPUT_DIR = path.resolve(__dirname, '..', 'docs', 'screenshots');
 const OUTPUT_DIR = process.env.OUTPUT_DIR || DEFAULT_OUTPUT_DIR;
 const ARTIFACT_DIR = process.env.PLAYWRIGHT_ARTIFACT_DIR || '/tmp/playwright-elder';
-const TEST_EMAIL = process.env.ELDER_TEST_EMAIL || 'admin@localhost.local';
-const TEST_PASSWORD = process.env.ELDER_TEST_PASSWORD || 'admin123';
+// Default to the demo login that `make seed-demo` creates (scripts/demo_seed/common.py,
+// docs/demo-data.md) so `make seed-demo && make screenshots` works without extra env.
+// A unit test keeps these dev defaults in sync with the seeder.
+const DEFAULT_TEST_EMAIL = 'demo-admin@example.com';
+const DEFAULT_TEST_PASSWORD = 'demo-local-only-1';
+const TEST_EMAIL =
+  process.env.ELDER_TEST_EMAIL || process.env.DEMO_ADMIN_EMAIL || DEFAULT_TEST_EMAIL;
+const TEST_PASSWORD =
+  process.env.ELDER_TEST_PASSWORD || process.env.DEMO_ADMIN_PASSWORD || DEFAULT_TEST_PASSWORD;
 const PRUNE_STALE = process.argv.includes('--prune') || process.env.PRUNE_STALE === '1';
 
 // Comprehensive list of Elder v4.0.x pages to capture (unauthenticated + authenticated).
@@ -435,6 +442,8 @@ module.exports = {
   PAGES,
   DEFAULT_OUTPUT_DIR,
   ARTIFACT_DIR,
+  DEFAULT_TEST_EMAIL,
+  DEFAULT_TEST_PASSWORD,
   detectPageErrors,
   pruneStaleScreenshots,
   cleanupArtifactDir,

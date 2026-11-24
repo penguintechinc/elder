@@ -11,7 +11,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 elder-svc-common = { path = "../elder-svc-common" }
 hex = "0.4"
 hmac = "0.12"
-jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 roxmltree = "0.21"
 serde = { version = "1", features = ["derive"] }

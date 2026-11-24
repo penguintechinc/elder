@@ -10,6 +10,18 @@ Async-first job queue using Redis Streams with support for:
 Design: enqueue/consume via injected async Redis client. No app context coupling.
 """
 
-from .core import JobBus, JobEnvelope, ReclamedMessage
+from .core import (
+    JobBus,
+    JobBusBackpressureError,
+    JobEnvelope,
+    ReclamedMessage,
+    StreamStats,
+)
 
-__all__ = ["JobBus", "JobEnvelope", "ReclamedMessage"]
+__all__ = [
+    "JobBus",
+    "JobBusBackpressureError",
+    "JobEnvelope",
+    "ReclamedMessage",
+    "StreamStats",
+]

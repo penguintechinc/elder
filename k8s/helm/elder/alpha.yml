@@ -7,6 +7,21 @@
 
 namespace: elder
 
+# Local dev cluster: the chart renders a dev-only Secret from secrets.devValues
+# (refused in any non-dev environment). Env vars reference it via secretKeyRef.
+environment: alpha
+secrets:
+  existingSecret: elder-secrets
+  create: true
+  devValues:
+    SECRET_KEY: "alpha-dev-secret-key"
+    JWT_SECRET_KEY: "alpha-dev-secret-key"
+    POSTGRES_PASSWORD: "elder_dev_password"
+    DB_PASSWORD: "elder_dev_password"
+    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
+    REDIS_URL: "redis://elder-redis:6379/0"
+    ADMIN_PASSWORD: "admin123"
+
 # Alpha enables the absorbed IceCharts/Ruffled modules (off by default in
 # values.yaml) so the demo surfaces the full merged product — diagrams &
 # workflow engine (IceCharts) and helpdesk + knowledge base (Ruffled).
@@ -147,7 +162,6 @@ hub-api:
     nodePort: 30091
   env:
     FLASK_ENV: development
-    SECRET_KEY: "alpha-dev-secret-key"
     # Must match web's NodePort (30090) — this becomes the primary allowed
     # CORS origin (see apps/api/config.py _build_cors_origins).
     SITE_URL: "http://localhost:30090"
@@ -161,10 +175,7 @@ hub-api:
     # (pre-existing doc/code mismatch, flagged not fixed here). DB_HOST/
     # DB_PASSWORD below are kept for other consumers but are not sufficient
     # on their own for api's startup DB check.
-    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
     DB_HOST: elder-postgres
-    DB_PASSWORD: elder_dev_password
-    REDIS_URL: "redis://elder-redis:6379/0"
     OLLAMA_URL: "http://ollama.waddleai.svc.cluster.local:11434"
     AI_RESEARCHER_MODEL: "gemma4:e4b"
     AI_RESEARCHER_MAX_STEPS: "6"
@@ -284,10 +295,9 @@ svc-worker:
     LOG_LEVEL: DEBUG
     LOG_FORMAT: json
     SYNC_ON_STARTUP: "false"
-    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
-    DATABASE_READ_URL: ""
-    DB_POOL_SIZE: "5"
-    REDIS_URL: "redis://elder-redis:6379/0"
+  database:
+    poolSize: 5
+    maxOverflow: 0
   resources:
     requests:
       memory: "128Mi"
@@ -310,11 +320,10 @@ svc-flows-invoker:
     pullPolicy: IfNotPresent
   env:
     LOG_LEVEL: DEBUG
-    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
-    DATABASE_READ_URL: ""
-    DB_POOL_SIZE: "2"
-    REDIS_URL: "redis://elder-redis:6379/0"
     FLOWS_WORKSPACE_ROOT: "/workspace"
+  database:
+    poolSize: 2
+    maxOverflow: 0
   resources:
     requests:
       memory: "128Mi"

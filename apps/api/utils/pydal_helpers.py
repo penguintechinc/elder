@@ -12,6 +12,7 @@ from typing import Any, List, Optional
 from quart import request
 
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.pagination import MAX_OFFSET, clamp_int, parse_limit
 
 
 async def get_by_id(table: Any, resource_id: int) -> Any | None:
@@ -263,9 +264,9 @@ class PaginationParams:
                 limitby=(pagination.offset, pagination.offset + pagination.per_page)
             )
         """
-        page = request.args.get("page", 1, type=int)
-        per_page = min(
-            request.args.get("per_page", default_per_page, type=int), max_per_page
+        page = clamp_int(request.args.get("page"), 1, 1, MAX_OFFSET)
+        per_page = parse_limit(
+            request.args, default_per_page, max_per_page, key="per_page"
         )
         offset = (page - 1) * per_page
 

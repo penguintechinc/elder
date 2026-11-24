@@ -62,6 +62,8 @@ struct SubmitSbomResults<'a> {
     scan_duration_ms: i64,
     endpoints: &'a [DiscoveredEndpoint],
     endpoints_found: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    claim_token: Option<&'a str>,
 }
 
 #[derive(Debug, Serialize)]
@@ -335,6 +337,8 @@ pub struct SbomScanOutcome<'a> {
     pub error_message: Option<String>,
     pub scan_duration_ms: i64,
     pub endpoints: &'a [DiscoveredEndpoint],
+    /// Claim token `hub-api` returned from `/start`; proves this scanner holds the scan.
+    pub claim_token: Option<String>,
 }
 
 /// Submit completed or failed SBOM scan results back to `hub-api`.
@@ -352,6 +356,7 @@ pub async fn report_sbom_result(
         scan_duration_ms: outcome.scan_duration_ms,
         endpoints: outcome.endpoints,
         endpoints_found: outcome.endpoints.len(),
+        claim_token: outcome.claim_token.as_deref(),
     };
     let _: Value = client
         .post_json(&format!("/api/v1/sbom/scans/{scan_id}/results"), &payload)

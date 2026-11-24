@@ -1406,698 +1406,6 @@ components:
       - updated_at
       title: OrganizationDTO
       type: object
-    RemoteWorker:
-      additionalProperties: false
-      description: Registered remote or in-cluster worker (runworker or scanner) with liveness state.
-      properties:
-        capabilities:
-          anyOf:
-          - additionalProperties: true
-            type: object
-          - items: {}
-            type: array
-          - type: 'null'
-          default: null
-          title: Capabilities
-        cluster:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Cluster
-        config:
-          anyOf:
-          - additionalProperties: true
-            type: object
-          - type: 'null'
-          default: null
-          title: Config
-        created_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          default: null
-          title: Created At
-        created_by_identity_id:
-          anyOf:
-          - type: integer
-          - type: 'null'
-          default: null
-          title: Created By Identity Id
-        hostname:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Hostname
-        id:
-          title: Id
-          type: integer
-        is_enabled:
-          title: Is Enabled
-          type: boolean
-        last_heartbeat_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          default: null
-          title: Last Heartbeat At
-        name:
-          title: Name
-          type: string
-        revoked_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          default: null
-          title: Revoked At
-        status:
-          enum:
-          - online
-          - stale
-          - offline
-          - revoked
-          title: Status
-          type: string
-        tenant_id:
-          anyOf:
-          - type: integer
-          - type: 'null'
-          default: null
-          title: Tenant Id
-        token_prefix:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Token Prefix
-        updated_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          default: null
-          title: Updated At
-        version:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Version
-        worker_id:
-          title: Worker Id
-          type: string
-        worker_type:
-          enum:
-          - runworker
-          - scanner
-          title: Worker Type
-          type: string
-      required:
-      - id
-      - worker_id
-      - worker_type
-      - name
-      - is_enabled
-      - status
-      title: RemoteWorker
-      type: object
-    RunExecution:
-      additionalProperties: false
-      description: Single invocation record of an Elder Runs serverless function.
-      properties:
-        completed_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          default: null
-          title: Completed At
-        created_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          default: null
-          title: Created At
-        duration_ms:
-          anyOf:
-          - type: integer
-          - type: 'null'
-          default: null
-          title: Duration Ms
-        error_message:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Error Message
-        execution_id:
-          title: Execution Id
-          type: string
-        exit_code:
-          anyOf:
-          - type: integer
-          - type: 'null'
-          default: null
-          title: Exit Code
-        function_id:
-          title: Function Id
-          type: integer
-        id:
-          title: Id
-          type: integer
-        input_data:
-          default: null
-          title: Input Data
-        output_data:
-          default: null
-          title: Output Data
-        started_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          default: null
-          title: Started At
-        status:
-          enum:
-          - pending
-          - running
-          - completed
-          - failed
-          - timed_out
-          title: Status
-          type: string
-        stderr_log:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Stderr Log
-        stdout_log:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Stdout Log
-        tenant_id:
-          title: Tenant Id
-          type: integer
-        trigger_type:
-          enum:
-          - manual
-          - schedule
-          - stream
-          title: Trigger Type
-          type: string
-        triggered_by_identity_id:
-          anyOf:
-          - type: integer
-          - type: 'null'
-          default: null
-          title: Triggered By Identity Id
-        worker_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Worker Id
-      required:
-      - id
-      - tenant_id
-      - execution_id
-      - function_id
-      - status
-      - trigger_type
-      title: RunExecution
-      type: object
-    RunExecutionListResponse:
-      additionalProperties: false
-      description: Paginated list of Elder Runs executions.
-      properties:
-        items:
-          items:
-            $ref: '#/components/schemas/RunExecution'
-          title: Items
-          type: array
-        page:
-          title: Page
-          type: integer
-        pages:
-          title: Pages
-          type: integer
-        per_page:
-          title: Per Page
-          type: integer
-        total:
-          title: Total
-          type: integer
-      required:
-      - items
-      - total
-      - page
-      - per_page
-      - pages
-      title: RunExecutionListResponse
-      type: object
-    RunFunction:
-      additionalProperties: false
-      description: Elder Runs serverless function definition with artifact storage metadata.
-      properties:
-        allowed_egress_domains:
-          default: []
-          description: Public DNS hostnames this function is allowed to contact at runtime.
-          items:
-            type: string
-          title: Allowed Egress Domains
-          type: array
-        code:
-          title: Code
-          type: string
-        code_sha256:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          description: SHA-256 hex digest of the stored function source artifact.
-          title: Code Sha256
-        created_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          default: null
-          title: Created At
-        created_by_identity_id:
-          anyOf:
-          - type: integer
-          - type: 'null'
-          default: null
-          title: Created By Identity Id
-        description:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Description
-        entrypoint:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Entrypoint
-        env_vars:
-          additionalProperties: true
-          default: {}
-          title: Env Vars
-          type: object
-        execution_namespace:
-          default: elder-runs
-          title: Execution Namespace
-          type: string
-        granted_scopes:
-          default: []
-          description: Scoped Elder API permissions granted to ephemeral per-execution tokens.
-          items:
-            type: string
-          title: Granted Scopes
-          type: array
-        id:
-          title: Id
-          type: integer
-        is_enabled:
-          default: true
-          title: Is Enabled
-          type: boolean
-        latest_version:
-          anyOf:
-          - type: integer
-          - type: 'null'
-          default: null
-          title: Latest Version
-        memory_mb:
-          default: 256
-          maximum: 16384
-          minimum: 32
-          title: Memory Mb
-          type: integer
-        name:
-          title: Name
-          type: string
-        recent_executions:
-          anyOf:
-          - items:
-              $ref: '#/components/schemas/RunExecution'
-            type: array
-          - type: 'null'
-          default: null
-          title: Recent Executions
-        runtime:
-          enum:
-          - golang
-          - nodejs
-          - python
-          - ruby
-          - rust
-          title: Runtime
-          type: string
-        schedule_cron:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Schedule Cron
-        storage_backend:
-          default: database
-          description: Artifact storage backend holding the function code bundle.
-          enum:
-          - database
-          - s3
-          title: Storage Backend
-          type: string
-        storage_key:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          description: S3-compatible object key when storage_backend is s3.
-          title: Storage Key
-        tenant_id:
-          title: Tenant Id
-          type: integer
-        timeout_seconds:
-          default: 60
-          maximum: 300
-          minimum: 1
-          title: Timeout Seconds
-          type: integer
-        updated_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          default: null
-          title: Updated At
-        village_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Village Id
-        worker_cluster:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Worker Cluster
-      required:
-      - id
-      - tenant_id
-      - name
-      - runtime
-      - code
-      - timeout_seconds
-      - memory_mb
-      - env_vars
-      - execution_namespace
-      - is_enabled
-      - storage_backend
-      - storage_key
-      - code_sha256
-      title: RunFunction
-      type: object
-    RunFunctionCreateRequest:
-      additionalProperties: false
-      description: Request payload for creating a serverless function.
-      properties:
-        allowed_egress_domains:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          default: null
-          description: Public DNS hostnames this function is allowed to contact at runtime.
-          title: Allowed Egress Domains
-        code:
-          title: Code
-          type: string
-        description:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Description
-        entrypoint:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Entrypoint
-        env_vars:
-          anyOf:
-          - additionalProperties: true
-            type: object
-          - type: 'null'
-          default: null
-          title: Env Vars
-        execution_namespace:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: elder-runs
-          title: Execution Namespace
-        granted_scopes:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          default: null
-          description: Scoped Elder API permissions granted to ephemeral per-execution tokens.
-          title: Granted Scopes
-        is_enabled:
-          default: true
-          title: Is Enabled
-          type: boolean
-        memory_mb:
-          default: 256
-          maximum: 16384
-          minimum: 32
-          title: Memory Mb
-          type: integer
-        name:
-          title: Name
-          type: string
-        runtime:
-          enum:
-          - golang
-          - nodejs
-          - python
-          - ruby
-          - rust
-          title: Runtime
-          type: string
-        schedule_cron:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Schedule Cron
-        timeout_seconds:
-          default: 60
-          maximum: 300
-          minimum: 1
-          title: Timeout Seconds
-          type: integer
-        worker_cluster:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Worker Cluster
-      required:
-      - name
-      - runtime
-      - code
-      title: RunFunctionCreateRequest
-      type: object
-    RunFunctionListResponse:
-      additionalProperties: false
-      description: Paginated list of Elder Runs serverless functions.
-      properties:
-        items:
-          items:
-            $ref: '#/components/schemas/RunFunction'
-          title: Items
-          type: array
-        page:
-          title: Page
-          type: integer
-        pages:
-          title: Pages
-          type: integer
-        per_page:
-          title: Per Page
-          type: integer
-        total:
-          title: Total
-          type: integer
-      required:
-      - items
-      - total
-      - page
-      - per_page
-      - pages
-      title: RunFunctionListResponse
-      type: object
-    RunFunctionUpdateRequest:
-      additionalProperties: false
-      description: Request payload for updating a serverless function.
-      properties:
-        allowed_egress_domains:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          default: null
-          description: Public DNS hostnames this function is allowed to contact at runtime.
-          title: Allowed Egress Domains
-        code:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Code
-        description:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Description
-        entrypoint:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Entrypoint
-        env_vars:
-          anyOf:
-          - additionalProperties: true
-            type: object
-          - type: 'null'
-          default: null
-          title: Env Vars
-        execution_namespace:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Execution Namespace
-        granted_scopes:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          default: null
-          description: Scoped Elder API permissions granted to ephemeral per-execution tokens.
-          title: Granted Scopes
-        is_enabled:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          default: null
-          title: Is Enabled
-        memory_mb:
-          anyOf:
-          - maximum: 16384
-            minimum: 32
-            type: integer
-          - type: 'null'
-          default: null
-          title: Memory Mb
-        name:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Name
-        runtime:
-          anyOf:
-          - enum:
-            - golang
-            - nodejs
-            - python
-            - ruby
-            - rust
-            type: string
-          - type: 'null'
-          default: null
-          title: Runtime
-        schedule_cron:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Schedule Cron
-        timeout_seconds:
-          anyOf:
-          - maximum: 300
-            minimum: 1
-            type: integer
-          - type: 'null'
-          default: null
-          title: Timeout Seconds
-        worker_cluster:
-          anyOf:
-          - type: string
-          - type: 'null'
-          default: null
-          title: Worker Cluster
-      title: RunFunctionUpdateRequest
-      type: object
-    RunInvokeRequest:
-      additionalProperties: false
-      description: Request payload for invoking a serverless function.
-      properties:
-        input_data:
-          default: null
-          description: Arbitrary JSON input passed to the function invocation.
-          title: Input Data
-        payload:
-          default: null
-          description: Alias for input_data.
-          title: Payload
-        trigger_type:
-          default: manual
-          enum:
-          - manual
-          - schedule
-          - stream
-          title: Trigger Type
-          type: string
-      title: RunInvokeRequest
-      type: object
-    RunInvokeResponse:
-      additionalProperties: false
-      description: Response returned when an Elder Runs invocation is queued (HTTP 202).
-      properties:
-        execution:
-          $ref: '#/components/schemas/RunExecution'
-        execution_id:
-          title: Execution Id
-          type: string
-      required:
-      - execution_id
-      - execution
-      title: RunInvokeResponse
-      type: object
     SecretMetadataResponse:
       additionalProperties: false
       description: "Metadata about a built-in secret \u2014 never includes the secret value."
@@ -2567,182 +1875,30 @@ paths:
       summary: Get all members to review in a review.
   /api/v1/admin/workers:
     get:
-      description: List registered remote and in-cluster workers with filtering, pagination, and status counts.
+      description: ''
       operationId: get_list_workers
-      parameters:
-      - in: query
-        name: worker_type
-        required: false
-        schema:
-          enum:
-          - runworker
-          - scanner
-          type: string
-      - in: query
-        name: cluster
-        required: false
-        schema:
-          type: string
-      - in: query
-        name: status
-        required: false
-        schema:
-          enum:
-          - online
-          - stale
-          - offline
-          - revoked
-          type: string
-      - in: query
-        name: page
-        required: false
-        schema:
-          default: 1
-          type: integer
-      - in: query
-        name: per_page
-        required: false
-        schema:
-          default: 25
-          type: integer
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                properties:
-                  counts_by_status:
-                    additionalProperties:
-                      type: integer
-                    type: object
-                  items:
-                    items:
-                      $ref: '#/components/schemas/RemoteWorker'
-                    type: array
-                  page:
-                    type: integer
-                  pages:
-                    type: integer
-                  per_page:
-                    type: integer
-                  total:
-                    type: integer
-                type: object
-          description: Paginated list of remote workers.
+      parameters: []
+      responses: {}
       summary: List registered remote and in-cluster workers with filtering and status counts.
     post:
-      description: Onboard a new remote worker and return its one-time Bearer token and onboarding snippets.
+      description: ''
       operationId: post_create_worker
       parameters: []
-      requestBody:
-        content:
-          application/json:
-            schema:
-              properties:
-                capabilities:
-                  anyOf:
-                  - additionalProperties: true
-                    type: object
-                  - items: {}
-                    type: array
-                cluster:
-                  type: string
-                config:
-                  additionalProperties: true
-                  type: object
-                name:
-                  type: string
-                tenant_id:
-                  type: integer
-                worker_id:
-                  type: string
-                worker_type:
-                  enum:
-                  - runworker
-                  - scanner
-                  type: string
-              required:
-              - name
-              - worker_type
-              type: object
-        required: true
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                properties:
-                  onboarding:
-                    properties:
-                      docker_env:
-                        additionalProperties:
-                          type: string
-                        type: object
-                      helm_set:
-                        items:
-                          type: string
-                        type: array
-                    type: object
-                  token:
-                    type: string
-                  worker:
-                    $ref: '#/components/schemas/RemoteWorker'
-                type: object
-          description: Created remote worker and one-time token.
+      responses: {}
       summary: Onboard a new remote worker and return its one-time Bearer token.
   /api/v1/admin/workers/heartbeat:
     post:
-      description: Record a worker heartbeat using a provisioned ewk_ Bearer token or an in-cluster service_worker JWT.
+      description: "\nAuthenticates via either:\n- A provisioned ``ewk_...`` Bearer token (matched by\
+        \ SHA-256 ``token_hash``;\n  revoked or disabled workers are rejected with 403), OR\n- An in-cluster\
+        \ ``service_worker`` JWT (``svc-runworker`` / ``svc-scanner``),\n  which auto-upserts an in-cluster\
+        \ worker record by ``worker_id``."
       operationId: post_worker_heartbeat
       parameters: []
-      requestBody:
-        content:
-          application/json:
-            schema:
-              properties:
-                capabilities:
-                  anyOf:
-                  - additionalProperties: true
-                    type: object
-                  - items: {}
-                    type: array
-                cluster:
-                  type: string
-                hostname:
-                  type: string
-                name:
-                  type: string
-                version:
-                  type: string
-                worker_id:
-                  type: string
-                worker_type:
-                  enum:
-                  - runworker
-                  - scanner
-                  type: string
-              type: object
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                properties:
-                  config:
-                    additionalProperties: true
-                    type: object
-                  ok:
-                    type: boolean
-                  status:
-                    type: string
-                  worker_id:
-                    type: string
-                type: object
-          description: Heartbeat acknowledged with live worker config.
+      responses: {}
       summary: Record a worker heartbeat and return its current live configuration.
   /api/v1/admin/workers/{id}:
     delete:
-      description: Offboard and revoke a remote worker, clearing its stored token hash.
+      description: ''
       operationId: delete_revoke_worker
       parameters:
       - in: path
@@ -2750,21 +1906,10 @@ paths:
         required: true
         schema:
           type: integer
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                properties:
-                  revoked:
-                    type: boolean
-                  worker:
-                    $ref: '#/components/schemas/RemoteWorker'
-                type: object
-          description: Worker revoked.
+      responses: {}
       summary: Offboard and revoke a remote worker, clearing its stored token hash.
     get:
-      description: Retrieve a single remote worker by numeric ID.
+      description: ''
       operationId: get_get_worker
       parameters:
       - in: path
@@ -2772,19 +1917,10 @@ paths:
         required: true
         schema:
           type: integer
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                properties:
-                  worker:
-                    $ref: '#/components/schemas/RemoteWorker'
-                type: object
-          description: Remote worker details.
+      responses: {}
       summary: Retrieve a single remote worker by numeric ID.
     put:
-      description: Update a worker's metadata, live config, capabilities, or enabled state.
+      description: ''
       operationId: put_update_worker
       parameters:
       - in: path
@@ -2792,41 +1928,11 @@ paths:
         required: true
         schema:
           type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              properties:
-                capabilities:
-                  anyOf:
-                  - additionalProperties: true
-                    type: object
-                  - items: {}
-                    type: array
-                cluster:
-                  type: string
-                config:
-                  additionalProperties: true
-                  type: object
-                is_enabled:
-                  type: boolean
-                name:
-                  type: string
-              type: object
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                properties:
-                  worker:
-                    $ref: '#/components/schemas/RemoteWorker'
-                type: object
-          description: Updated remote worker.
+      responses: {}
       summary: Update a worker's metadata, live config, capabilities, or enabled state.
   /api/v1/admin/workers/{id}/rotate-token:
     post:
-      description: Rotate a worker's Bearer token hash and return the new one-time token.
+      description: ''
       operationId: post_rotate_worker_token
       parameters:
       - in: path
@@ -2834,18 +1940,7 @@ paths:
         required: true
         schema:
           type: integer
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                properties:
-                  token:
-                    type: string
-                  worker:
-                    $ref: '#/components/schemas/RemoteWorker'
-                type: object
-          description: Rotated worker token.
+      responses: {}
       summary: Rotate a worker's Bearer token hash and return the new one-time token.
   /api/v1/ai/resources:
     get:
@@ -6382,7 +5477,7 @@ paths:
         \ page (default: 50, max: 1000)\n    - source_type: Filter by source type (entity, identity, project,\
         \ etc.)\n    - source_id: Filter by source ID\n    - target_type: Filter by target type\n    -\
         \ target_id: Filter by target ID\n    - dependency_type: Filter by dependency type\n\nReturns:\n\
-        \    200: List of dependencies with pagination metadata"
+        \    200: List of dependencies with pagination metadata\n    403: Token carries no tenant claim"
       operationId: get_list_dependencies
       parameters: []
       responses: {}
@@ -7200,10 +6295,13 @@ paths:
       description: "\nCalled by the scanner service when a job finishes.\n\nregression: gh-237 -- this\
         \ route previously had no auth at all, letting\nany caller submit arbitrary results for any tenant's\
         \ job (arbitrary\nwrite). Now requires discovery:write and verifies job_id belongs to the\ncaller's\
-        \ tenant via organization_id before mutating it.\n\nRequest body:\n    {\n        \"success\"\
-        : true,\n        \"results\": {...},\n        \"error_message\": null\n    }\n\nReturns:\n   \
-        \ 200: Results recorded\n    400: Request body required\n    401: Authentication required\n  \
-        \  404: Job not found (including jobs belonging to another tenant)"
+        \ tenant via organization_id before mutating it.\n\nRequest body (``claim_token`` is the value\
+        \ returned by ``/start``; it\nmay instead be sent as the ``X-Claim-Token`` header):\n    {\n \
+        \       \"success\": true,\n        \"results\": {...},\n        \"error_message\": null,\n  \
+        \      \"claim_token\": \"...\"\n    }\n\nReturns:\n    200: Results recorded (or ignored: job\
+        \ no longer running)\n    400: Request body required\n    401: Authentication required\n    404:\
+        \ Job not found (including jobs belonging to another tenant)\n    409: Missing claim token, or\
+        \ it does not match the current claim"
       operationId: post_complete_job
       parameters:
       - in: path
@@ -7247,8 +6345,9 @@ paths:
       description: "\nCalled by the scanner service when it picks up a job.\n\nregression: gh-237 -- this\
         \ route previously had no auth at all, letting\nany caller mark any tenant's job as running (arbitrary\
         \ write). Now\nrequires discovery:write and verifies job_id belongs to the caller's\ntenant via\
-        \ organization_id before mutating it.\n\nReturns:\n    200: Job marked as running\n    401: Authentication\
-        \ required\n    404: Job not found (including jobs belonging to another tenant)"
+        \ organization_id before mutating it.\n\nReturns:\n    200: Job marked as running; body carries\
+        \ the one-time ``claim_token``\n    401: Authentication required\n    404: Job not found (including\
+        \ jobs belonging to another tenant)\n    409: Job already claimed by another scanner, or not due"
       operationId: post_start_job
       parameters:
       - in: path
@@ -8493,10 +7592,12 @@ paths:
     get:
       description: "\nQuery Parameters:\n    - organization_id: Filter by organization\n    - entity_type:\
         \ Filter by entity type\n    - entity_id: Center graph on specific entity\n    - depth: Maximum\
-        \ depth from entity_id (default: 2, -1 for all)\n    - include_metadata: Include entity metadata\
-        \ (default: false)\n\nReturns:\n    200: Graph data in vis.js compatible format\n    {\n     \
-        \   \"nodes\": [{\"id\": 1, \"label\": \"Entity Name\", \"type\": \"compute\", ...}],\n      \
-        \  \"edges\": [{\"from\": 1, \"to\": 2, \"type\": \"depends_on\", ...}]\n    }"
+        \ depth from entity_id (default: 2; -1 means the\n      enforced maximum, ELDER_GRAPH_MAX_DEPTH)\n\
+        \    - include_metadata: Include entity metadata (default: false)\n\nReturns:\n    200: Graph\
+        \ data in vis.js compatible format\n    {\n        \"nodes\": [{\"id\": 1, \"label\": \"Entity\
+        \ Name\", \"type\": \"compute\", ...}],\n        \"edges\": [{\"from\": 1, \"to\": 2, \"type\"\
+        : \"depends_on\", ...}],\n        \"stats\": {\"entity_count\": 1, \"dependency_count\": 1, \"\
+        truncated\": false}\n    }\n    403: Token carries no tenant claim"
       operationId: get_get_graph
       parameters: []
       responses: {}
@@ -8504,7 +7605,7 @@ paths:
   /api/v1/graph/analyze:
     get:
       description: "\nQuery Parameters:\n    - organization_id: Filter by organization\n\nReturns:\n \
-        \   200: Graph analysis metrics"
+        \   200: Graph analysis metrics\n    403: Token carries no tenant claim"
       operationId: get_analyze_graph
       parameters: []
       responses: {}
@@ -8525,7 +7626,8 @@ paths:
   /api/v1/graph/path:
     get:
       description: "\nQuery Parameters:\n    - from: Source entity ID\n    - to: Target entity ID\n\n\
-        Returns:\n    200: Path information\n    404: No path found"
+        Returns:\n    200: Path information\n    403: Token carries no tenant claim\n    404: Entity not\
+        \ found"
       operationId: get_find_path
       parameters: []
       responses: {}
@@ -10525,6 +9627,25 @@ paths:
                 type: object
           description: Immutable Identity data transfer object.
       summary: Update identity.
+  /api/v1/import/jobs:
+    get:
+      description: ''
+      operationId: get_list_csv_import_jobs
+      parameters: []
+      responses: {}
+      summary: List tenant-scoped CSV import jobs with pagination and optional filters.
+  /api/v1/import/jobs/{job_id}:
+    get:
+      description: ''
+      operationId: get_get_csv_import_job
+      parameters:
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          type: string
+      responses: {}
+      summary: Fetch a single tenant-scoped CSV import job by its public ``job_id``.
   /api/v1/import/templates:
     get:
       description: ''
@@ -10555,7 +9676,7 @@ paths:
         schema:
           type: string
       responses: {}
-      summary: Validate an exact CSV against the resource template (max 1000 rows) and import.
+      summary: Validate CSV headers & scope, then queue via S3 (202) or sync fallback.
   /api/v1/integrations/internal/discovery/{job_id}/complete:
     post:
       description: ''
@@ -13666,22 +12787,23 @@ paths:
       summary: Update current authenticated portal user info.
   /api/v1/portal-auth/mfa/backup-codes/regenerate:
     post:
-      description: "\nInvalidates all previously generated backup codes and returns 10 new single-use codes."
+      description: "\nInvalidates all previously generated backup codes and returns 10 new codes.\n\n\
+        Returns:\n    JSON with ``backup_codes`` list and ``remaining`` count"
       operationId: post_regenerate_mfa_backup_codes
       parameters: []
       responses: {}
       summary: Regenerate single-use MFA backup/bypass codes for the authenticated user.
   /api/v1/portal-auth/mfa/confirm:
     post:
-      description: "\nRequest body:\n    totp_code: str - 6-digit TOTP code from Google\
-        \ Authenticator\n\nReturns:\n    Verification status"
+      description: "\nRequest body:\n    totp_code: str - 6-digit TOTP code from Google Authenticator\n\
+        \nReturns:\n    ``{\"verified\": True}`` on success, or 400/401 on invalid code"
       operationId: post_confirm_mfa
       parameters: []
       responses: {}
       summary: Confirm MFA enrollment by verifying a 6-digit TOTP code.
   /api/v1/portal-auth/mfa/disable:
     post:
-      description: "\nReturns:\n    Success status"
+      description: "\nReturns:\n    Success status, or 403 if MFA is enforced by tenant policy"
       operationId: post_disable_mfa
       parameters: []
       responses: {}
@@ -13989,132 +13111,27 @@ paths:
       summary: Revoke a resource role.
   /api/v1/runs:
     get:
-      description: List Elder Runs serverless functions for the current tenant with optional filtering and pagination.
+      description: ''
       operationId: get_list_run_functions
-      parameters:
-      - in: query
-        name: page
-        required: false
-        schema:
-          default: 1
-          minimum: 1
-          type: integer
-      - in: query
-        name: per_page
-        required: false
-        schema:
-          default: 50
-          maximum: 200
-          minimum: 1
-          type: integer
-      - in: query
-        name: runtime
-        required: false
-        schema:
-          enum:
-          - golang
-          - nodejs
-          - python
-          - ruby
-          - rust
-          type: string
-      - in: query
-        name: search
-        required: false
-        schema:
-          type: string
-      - in: query
-        name: worker_cluster
-        required: false
-        schema:
-          type: string
-      - in: query
-        name: is_enabled
-        required: false
-        schema:
-          type: boolean
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RunFunctionListResponse'
-          description: Paginated list of serverless functions.
+      parameters: []
+      responses: {}
       summary: List serverless functions for the current tenant with optional filters.
     post:
-      description: Create a new Elder Runs serverless function and record initial version 1.
+      description: ''
       operationId: post_create_run_function
       parameters: []
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RunFunctionCreateRequest'
-        required: true
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RunFunction'
-          description: Created serverless function with artifact storage metadata.
+      responses: {}
       summary: Create a new serverless function and record initial version 1.
   /api/v1/runs/executions:
     get:
-      description: List function executions for the current tenant with optional filters.
+      description: ''
       operationId: get_list_run_executions
-      parameters:
-      - in: query
-        name: page
-        required: false
-        schema:
-          default: 1
-          minimum: 1
-          type: integer
-      - in: query
-        name: per_page
-        required: false
-        schema:
-          default: 50
-          maximum: 200
-          minimum: 1
-          type: integer
-      - in: query
-        name: function_id
-        required: false
-        schema:
-          type: integer
-      - in: query
-        name: status
-        required: false
-        schema:
-          enum:
-          - pending
-          - running
-          - completed
-          - failed
-          - timed_out
-          type: string
-      - in: query
-        name: trigger_type
-        required: false
-        schema:
-          enum:
-          - manual
-          - schedule
-          - stream
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RunExecutionListResponse'
-          description: Paginated list of function executions.
+      parameters: []
+      responses: {}
       summary: List function executions for the current tenant with optional filters.
   /api/v1/runs/executions/{execution_id}:
     get:
-      description: Get a single execution record including stdout/stderr logs and output.
+      description: ''
       operationId: get_get_run_execution
       parameters:
       - in: path
@@ -14122,17 +13139,35 @@ paths:
         required: true
         schema:
           type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RunExecution'
-          description: Execution record details.
-      summary: Get a single execution record including stdout/stderr logs and output.
+      responses: {}
+      summary: Get a single execution record enriched with parent function metadata.
+  /api/v1/runs/executions/{execution_id}/cancel:
+    post:
+      description: ''
+      operationId: post_cancel_run_execution
+      parameters:
+      - in: path
+        name: execution_id
+        required: true
+        schema:
+          type: string
+      responses: {}
+      summary: Cancel a pending or running execution for the current tenant.
+  /api/v1/runs/internal/executions/{execution_id}/logs:
+    post:
+      description: ''
+      operationId: post_flush_execution_logs
+      parameters:
+      - in: path
+        name: execution_id
+        required: true
+        schema:
+          type: string
+      responses: {}
+      summary: Update in-progress ``stdout_log`` for a running execution from ``svc-runworker``.
   /api/v1/runs/internal/executions/{execution_id}/result:
     post:
-      description: Record terminal execution output and logs from svc-runworker.
+      description: ''
       operationId: post_report_execution_result
       parameters:
       - in: path
@@ -14140,100 +13175,25 @@ paths:
         required: true
         schema:
           type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RunExecution'
-          description: Updated execution record.
-      summary: Record terminal execution output and logs from svc-runworker.
+      responses: {}
+      summary: Record terminal execution output and logs from ``svc-runworker``.
   /api/v1/runs/internal/pending:
     get:
-      description: Atomically claim pending executions for svc-runworker.
+      description: ''
       operationId: get_claim_pending_executions
-      parameters:
-      - in: query
-        name: limit
-        required: false
-        schema:
-          default: 5
-          maximum: 50
-          minimum: 1
-          type: integer
-      - in: query
-        name: worker_cluster
-        required: false
-        schema:
-          type: string
-      - in: query
-        name: worker_id
-        required: false
-        schema:
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                properties:
-                  count:
-                    type: integer
-                  items:
-                    items:
-                      type: object
-                    type: array
-                required:
-                - items
-                - count
-                type: object
-          description: Claimed pending executions.
-      summary: Atomically claim pending executions for svc-runworker.
+      parameters: []
+      responses: {}
+      summary: Atomically claim pending executions for ``svc-runworker``.
   /api/v1/runs/permissions/catalog:
     get:
-      description: Return the grouped canonical grantable CodeRun scope catalog and which scopes the authenticated caller is eligible to grant.
-      operationId: get_permissions_catalog
+      description: ''
+      operationId: get_get_permissions_catalog
       parameters: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                properties:
-                  catalog:
-                    additionalProperties:
-                      items:
-                        type: string
-                      type: array
-                    type: object
-                  eligible_scopes:
-                    items:
-                      type: string
-                    type: array
-                  groups:
-                    additionalProperties:
-                      items:
-                        properties:
-                          eligible:
-                            type: boolean
-                          scope:
-                            type: string
-                        required:
-                        - scope
-                        - eligible
-                        type: object
-                      type: array
-                    type: object
-                required:
-                - catalog
-                - groups
-                - eligible_scopes
-                type: object
-          description: Grouped grantable CodeRun scope catalog and caller eligibility.
+      responses: {}
       summary: Return the grouped grantable CodeRun scope catalog and caller eligibility.
   /api/v1/runs/{func_id}:
     delete:
-      description: Delete a serverless function and its versions/executions for the current tenant.
+      description: ''
       operationId: delete_delete_run_function
       parameters:
       - in: path
@@ -14241,12 +13201,10 @@ paths:
         required: true
         schema:
           type: integer
-      responses:
-        '204':
-          description: Serverless function deleted.
+      responses: {}
       summary: Delete a serverless function for the current tenant.
     get:
-      description: Get a single serverless function along with latest_version, recent_executions, and storage metadata.
+      description: ''
       operationId: get_get_run_function
       parameters:
       - in: path
@@ -14254,16 +13212,10 @@ paths:
         required: true
         schema:
           type: integer
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RunFunction'
-          description: Serverless function details with recent executions and storage metadata.
+      responses: {}
       summary: Get a single serverless function along with recent executions.
     put:
-      description: Update a serverless function, creating a new version when code changes.
+      description: ''
       operationId: put_update_run_function
       parameters:
       - in: path
@@ -14271,23 +13223,11 @@ paths:
         required: true
         schema:
           type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RunFunctionUpdateRequest'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RunFunction'
-          description: Updated serverless function with latest_version and storage metadata.
+      responses: {}
       summary: Update a serverless function, creating a new version when code changes.
   /api/v1/runs/{func_id}/invoke:
     post:
-      description: Queue a pending execution for a serverless function and return 202.
+      description: ''
       operationId: post_invoke_run_function
       parameters:
       - in: path
@@ -14295,19 +13235,7 @@ paths:
         required: true
         schema:
           type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RunInvokeRequest'
-        required: false
-      responses:
-        '202':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RunInvokeResponse'
-          description: Execution queued.
+      responses: {}
       summary: Queue a pending execution for a serverless function and return 202.
   /api/v1/sbom/components:
     get:
@@ -14411,8 +13339,10 @@ paths:
     get:
       description: "\nThis endpoint is used by the scanner worker to fetch all pending scans\nthat need\
         \ to be processed. Results are not paginated since the worker\nneeds all pending scans to process\
-        \ them efficiently.\n\nReturns:\n    200: List of pending scans (ordered by created_at ascending,\
-        \ oldest first)\n\nExample:\n    GET /api/v1/sbom/scans/pending"
+        \ them efficiently.\n\nThe list is advisory: a scan is only owned once ``POST /<id>/start``\n\
+        succeeds (atomic claim), and claimed scans no longer appear here.\nScans whose claim lease expired\
+        \ are re-queued before listing.\n\nReturns:\n    200: List of pending scans (ordered by created_at\
+        \ ascending, oldest first)\n\nExample:\n    GET /api/v1/sbom/scans/pending"
       operationId: get_get_pending_scans
       parameters: []
       responses: {}
@@ -14459,13 +13389,18 @@ paths:
   /api/v1/sbom/scans/{id}/results:
     post:
       description: "\nThis endpoint is called by the scanner worker to submit the results\nof a completed\
-        \ scan job.\n\nPath Parameters:\n    - id: Scan ID\n\nRequest Body:\n    - success: Boolean indicating\
-        \ if scan succeeded - required\n    - components: List of component dicts to insert - optional\n\
-        \    - files_scanned: List of files scanned - optional\n    - commit_hash: Git commit hash - optional\n\
-        \    - error_message: Error message if failed - optional\n    - scan_duration_ms: Scan duration\
-        \ in milliseconds - optional\n\nReturns:\n    200: Results processed\n    400: Invalid request\n\
-        \    404: Scan not found\n\nExample:\n    POST /api/v1/sbom/scans/1/results\n    {\n        \"\
-        success\": true,\n        \"components\": [...],\n        \"files_scanned\": [\"package.json\"\
+        \ scan job. The caller must present the claim token it got\nfrom ``POST /<id>/start`` (body ``claim_token``\
+        \ or ``X-Claim-Token``\nheader); results are applied only while the scan is running under that\n\
+        exact claim, so another caller -- or a claimant whose lease expired and\nwhose scan was re-claimed\
+        \ -- gets 409. Completion is idempotent: once a\nscan is terminal, later submissions are acknowledged\
+        \ with the stored\nscan and change nothing.\n\nPath Parameters:\n    - id: Scan ID\n\nRequest\
+        \ Body:\n    - success: Boolean indicating if scan succeeded - required\n    - components: List\
+        \ of component dicts to insert - optional\n    - files_scanned: List of files scanned - optional\n\
+        \    - commit_hash: Git commit hash - optional\n    - error_message: Error message if failed -\
+        \ optional\n    - scan_duration_ms: Scan duration in milliseconds - optional\n\nReturns:\n   \
+        \ 200: Results processed\n    400: Invalid request\n    404: Scan not found\n    409: Missing,\
+        \ wrong or superseded claim token\n\nExample:\n    POST /api/v1/sbom/scans/1/results\n    {\n\
+        \        \"success\": true,\n        \"components\": [...],\n        \"files_scanned\": [\"package.json\"\
         , \"requirements.txt\"],\n        \"commit_hash\": \"abc123\",\n        \"scan_duration_ms\":\
         \ 5432\n    }"
       operationId: post_submit_results
@@ -14480,8 +13415,11 @@ paths:
   /api/v1/sbom/scans/{id}/start:
     post:
       description: "\nThis endpoint is called by the scanner worker when it begins processing\na scan\
-        \ job.\n\nPath Parameters:\n    - id: Scan ID\n\nReturns:\n    200: Scan marked as running\n \
-        \   404: Scan not found\n    400: Scan already running or completed\n\nExample:\n    POST /api/v1/sbom/scans/1/start"
+        \ job. It is the atomic claim: with any number of scanner replicas\nracing on the same scan exactly\
+        \ one receives 200, the rest 400 and must\nskip the scan. The winner's response carries ``claim_token``,\
+        \ which must\nbe presented to ``POST /<id>/results``; it is returned exactly once.\n\nPath Parameters:\n\
+        \    - id: Scan ID\n\nReturns:\n    200: Scan marked as running\n    404: Scan not found\n   \
+        \ 400: Scan already running or completed\n\nExample:\n    POST /api/v1/sbom/scans/1/start"
       operationId: post_start_scan
       parameters:
       - in: path
@@ -14615,9 +13553,11 @@ paths:
       summary: Search entities with advanced filters.
   /api/v1/search/graph:
     post:
-      description: "\nRequest body:\n    {\n        \"start_entity_id\": 1,\n        \"max_depth\": 3,\n\
-        \        \"dependency_types\": [\"depends_on\", \"connects_to\"],\n        \"entity_filters\"\
-        : {...}\n    }\n\nReturns:\n    200: Graph search results\n    400: Invalid request"
+      description: "\nScoped to the caller's tenant: the start entity must belong to it and\nthe traversal\
+        \ never leaves it. Depth, nodes and edges are capped.\n\nRequest body:\n    {\n        \"start_entity_id\"\
+        : 1,\n        \"max_depth\": 3,\n        \"dependency_types\": [\"depends_on\", \"connects_to\"\
+        ],\n        \"entity_filters\": {...}\n    }\n\nReturns:\n    200: Graph search results\n    400:\
+        \ Invalid request\n    403: Missing scope or tenant claim\n    404: Start entity not found"
       operationId: post_search_graph
       parameters: []
       responses: {}
@@ -16852,15 +15792,40 @@ paths:
       parameters: []
       responses: {}
       summary: Create a new stream.
+  /api/v1/streams/approvals/history:
+    get:
+      description: "\nIncludes both human decisions and automated AI decisions (identified by\n``approver_identity_id\
+        \ is None`` or a comment prefixed with ``[AI]``).\n\nReturns:\n    200: JSON with ``history``\
+        \ list and ``count``."
+      operationId: get_get_approval_history
+      parameters: []
+      responses: {}
+      summary: Return recent approval decisions across the tenant for auditability.
   /api/v1/streams/executions:
     get:
       description: "\nQuery params:\n    - page: Page number (default: 1)\n    - per_page: Items per page\
-        \ (default: 20, max: 100)\n    - status: Filter by status\n    - stream_id: Optional filter by\
-        \ specific stream\n\nReturns:\n    200: Paginated list of executions across all tenant streams"
+        \ (default: 20, max: 100)\n    - source: Filter by source ('all' | 'playbook' | 'coderun' | 'webhook';\n\
+        \      defaults to 'playbook' when stream_id is provided, else 'all')\n    - status: Filter by\
+        \ status\n    - stream_id: Optional filter by specific stream/playbook\n    - search: Optional\
+        \ case-insensitive text search\n\nReturns:\n    200: Paginated list of normalized executions and\
+        \ per-source counts"
       operationId: get_list_all_executions
       parameters: []
       responses: {}
-      summary: List execution history across all streams for the tenant (global view).
+      summary: List unified execution history across playbooks, CodeRuns, and webhooks.
+  /api/v1/streams/executions/{execution_id}:
+    get:
+      description: "\nReturns:\n    200: Execution details with parent playbook metadata and node logs\n\
+        \    404: Execution or parent playbook not found / inaccessible"
+      operationId: get_get_execution_by_id
+      parameters:
+      - in: path
+        name: execution_id
+        required: true
+        schema:
+          type: string
+      responses: {}
+      summary: Get details of a specific execution by execution_id (tenant-scoped).
   /api/v1/streams/executions/{execution_id}/approval-status:
     get:
       description: "\nArgs:\n    execution_id: Execution identifier (string UUID)\n\nReturns:\n    200:\
@@ -17066,6 +16031,25 @@ paths:
           type: string
       responses: {}
       summary: Get details of a specific execution.
+  /api/v1/streams/{stream_id}/executions/{execution_id}/request-approval:
+    post:
+      description: "\nInvoked by the worker's ``action_human_approval`` node when a playbook\nreaches\
+        \ a Human Approval step.\n\nArgs:\n    stream_id: Playbook/stream numeric ID.\n    execution_id:\
+        \ Execution UUID string.\n\nReturns:\n    200: JSON with paused approval gate details."
+      operationId: post_request_execution_approval
+      parameters:
+      - in: path
+        name: stream_id
+        required: true
+        schema:
+          type: integer
+      - in: path
+        name: execution_id
+        required: true
+        schema:
+          type: string
+      responses: {}
+      summary: Pause a running execution and ensure an approval gate exists for it.
   /api/v1/streams/{stream_id}/lock:
     delete:
       description: "\nOnly the lock holder can release the lock.\n\nArgs:\n    stream_id: Stream identifier\n\
@@ -17555,24 +16539,21 @@ paths:
       summary: Create a new tenant.
   /api/v1/tenants/current/mfa-policy:
     get:
-      description: "\nReturns:\n    Tenant MFA policy, user enrollment state, license\
-        \ tier, and manageability."
+      description: "\nReturns:\n    Tenant MFA policy, user enrollment state, license tier, and manageability."
       operationId: get_get_current_tenant_mfa_policy
       parameters: []
       responses: {}
-      summary: Get the MFA enforcement policy for the authenticated user's current
-        tenant.
+      summary: Get the MFA enforcement policy for the authenticated user's current tenant.
     put:
-      description: "\nRequires an admin role and an Enterprise license.\n\nRequest\
-        \ body:\n    enforced: bool - Whether Google Authenticator MFA is enforced\n\
-        \    provider: str (optional) - MFA provider (google_authenticator)\n    grace_period_days:\
-        \ int (optional) - Grace period in days (0..90, default 7)\n\nReturns:\n \
-        \   Updated tenant MFA policy"
+      description: "\nRequires an admin role (tenant admin, global admin, or admin scope) and an\nEnterprise\
+        \ license (or PenguinTech bypass domain).\n\nRequest body:\n    enforced: bool - Whether Google\
+        \ Authenticator MFA is enforced\n    provider: str (optional) - MFA provider (``google_authenticator``)\n\
+        \    grace_period_days: int (optional) - Grace period in days (0..90, default 7)\n\nReturns:\n\
+        \    Updated tenant MFA policy"
       operationId: put_update_current_tenant_mfa_policy
       parameters: []
       responses: {}
-      summary: Update the MFA enforcement policy for the authenticated user's current
-        tenant.
+      summary: Update the MFA enforcement policy for the authenticated user's current tenant.
   /api/v1/tenants/{tenant_id}:
     delete:
       description: "\nRequires global admin. Cannot delete system tenant (id=1).\n\nArgs:\n    tenant_id:\
@@ -17735,9 +16716,11 @@ paths:
     get:
       description: "\nQuery Parameters:\n    - severity: Filter by severity (critical, high, medium, low,\
         \ unknown)\n    - cve_id: Filter by CVE ID\n    - source: Filter by source (osv, nvd, github_advisory,\
-        \ manual)\n    - page: Page number (default: 1)\n    - per_page: Items per page (default: 50)\n\
-        \    - search: Search in CVE ID, title, and description\n\nReturns:\n    200: List of vulnerabilities\
-        \ with pagination\n    400: Invalid parameters\n\nExample:\n    GET /api/v1/vulnerabilities?severity=critical"
+        \ manual)\n    - owner_organization_id: Filter by owning organization (OU) ID\n    - owner_entity_id:\
+        \ Filter by owning resource (entity) ID\n    - page: Page number (default: 1)\n    - per_page:\
+        \ Items per page (default: 50)\n    - search: Search in CVE ID, title, and description\n\nReturns:\n\
+        \    200: List of vulnerabilities with pagination\n    400: Invalid parameters\n\nExample:\n \
+        \   GET /api/v1/vulnerabilities?severity=critical"
       operationId: get_list_vulnerabilities
       parameters: []
       responses: {}
@@ -17819,15 +16802,15 @@ paths:
       responses: {}
       summary: Get a single vulnerability by ID.
     patch:
-      description: "\nPath Parameters:\n    - id: Vulnerability ID\n\nRequest Body (all optional):\n\
-        \    - title: Vulnerability title (max 512 chars)\n    - severity: critical, high, medium, low, info, unknown\n\
-        \    - description: Vulnerability description (nullable)\n    - cvss_score: Float 0.0-10.0 or null\n\
-        \    - adjusted_risk_score: Free-text adjusted risk score (max 64 chars) or null\n\
-        \    - owner_organization_id: Owning OU (organization) ID or null\n\
-        \    - owner_entity_id: Owning resource (entity) ID or null\n\
-        \    - remediation_issue_id: Linked remediation issue ID or null\n\
-        \    - published_at: ISO-8601 date/datetime or null\n\nReturns:\n    200: Updated vulnerability details\n\
-        \    400: Validation error\n    404: Vulnerability or referenced owner/issue not found"
+      description: "\nPath Parameters:\n    - id: Vulnerability ID\n\nRequest Body (all optional):\n \
+        \   - title: Vulnerability title (max 512 chars)\n    - severity: critical, high, medium, low,\
+        \ info, unknown\n    - description: Vulnerability description (nullable)\n    - cvss_score: Float\
+        \ 0.0-10.0 or null/\"\"\n    - adjusted_risk_score: Free-text adjusted risk score (max 64 chars)\
+        \ or null/\"\"\n    - owner_organization_id: Owning OU (organization) ID or null/\"\"\n    - owner_entity_id:\
+        \ Owning resource (entity) ID or null/\"\"\n    - remediation_issue_id: Linked remediation issue\
+        \ ID or null/\"\"\n    - published_at: ISO-8601 date/datetime or null/\"\"\n\nReturns:\n    200:\
+        \ Updated vulnerability details\n    400: Validation error\n    404: Vulnerability or referenced\
+        \ owner/issue not found"
       operationId: patch_update_vulnerability
       parameters:
       - in: path
@@ -17836,9 +16819,18 @@ paths:
         schema:
           type: integer
       responses: {}
-      summary: Update a vulnerability's metadata, ownership, CVSS, adjusted risk score, or remediation issue.
+      summary: Update a vulnerability's editable metadata, ownership, CVSS, adjusted risk score, or remediation
+        issue.
     put:
-      description: "\nPath Parameters:\n    - id: Vulnerability ID\n\nReturns:\n    200: Updated vulnerability details"
+      description: "\nPath Parameters:\n    - id: Vulnerability ID\n\nRequest Body (all optional):\n \
+        \   - title: Vulnerability title (max 512 chars)\n    - severity: critical, high, medium, low,\
+        \ info, unknown\n    - description: Vulnerability description (nullable)\n    - cvss_score: Float\
+        \ 0.0-10.0 or null/\"\"\n    - adjusted_risk_score: Free-text adjusted risk score (max 64 chars)\
+        \ or null/\"\"\n    - owner_organization_id: Owning OU (organization) ID or null/\"\"\n    - owner_entity_id:\
+        \ Owning resource (entity) ID or null/\"\"\n    - remediation_issue_id: Linked remediation issue\
+        \ ID or null/\"\"\n    - published_at: ISO-8601 date/datetime or null/\"\"\n\nReturns:\n    200:\
+        \ Updated vulnerability details\n    400: Validation error\n    404: Vulnerability or referenced\
+        \ owner/issue not found"
       operationId: put_update_vulnerability
       parameters:
       - in: path
@@ -17847,7 +16839,8 @@ paths:
         schema:
           type: integer
       responses: {}
-      summary: Update a vulnerability's metadata, ownership, CVSS, adjusted risk score, or remediation issue.
+      summary: Update a vulnerability's editable metadata, ownership, CVSS, adjusted risk score, or remediation
+        issue.
   /api/v1/vulnerabilities/{id}/assign:
     post:
       description: "\nRequires maintainer role.\n\nPath Parameters:\n    - id: Vulnerability ID\n\nRequest\
@@ -17866,12 +16859,13 @@ paths:
       summary: Assign a vulnerability to a service or software.
   /api/v1/vulnerabilities/{id}/create-issue:
     post:
-      description: "\nPath Parameters:\n    - id: Vulnerability ID\n\nRequest Body (optional):\n\
-        \    - organization_id: Override/set the owning OU (organization) ID\n\
-        \    - title: Custom issue title\n    - description: Custom issue description\n\
-        \    - priority: Issue priority (low, medium, high, urgent, critical)\n\nReturns:\n\
-        \    201: Created issue summary and updated vulnerability\n    400: Missing owning OU or invalid parameters\n\
-        \    404: Vulnerability or owning OU not found\n    409: Vulnerability already has a linked remediation issue"
+      description: "\nPath Parameters:\n    - id: Vulnerability ID\n\nRequest Body (optional):\n    -\
+        \ organization_id: Override/set the owning OU (organization) ID if not already set\n    - title:\
+        \ Custom issue title (defaults to \"[<cve_id>] Remediate <title>\")\n    - description: Custom\
+        \ issue description\n    - priority: Issue priority (low, medium, high, urgent, critical)\n\n\
+        Returns:\n    201: Created issue summary and updated vulnerability\n    400: Missing owning OU\
+        \ or invalid parameters\n    404: Vulnerability or owning OU not found\n    409: Vulnerability\
+        \ already has a linked remediation issue"
       operationId: post_create_vulnerability_issue
       parameters:
       - in: path
@@ -17901,6 +16895,53 @@ paths:
       parameters: []
       responses: {}
       summary: Create a new webhook for the caller's tenant.
+  /api/v1/webhooks/alert-configurations:
+    get:
+      description: ''
+      operationId: get_list_alert_configurations
+      parameters: []
+      responses: {}
+      summary: List alert configurations scoped to the caller's tenant.
+    post:
+      description: ''
+      operationId: post_create_alert_configuration
+      parameters: []
+      responses: {}
+      summary: Create a new alert configuration with a universal village_id.
+  /api/v1/webhooks/alert-configurations/{config_id}:
+    delete:
+      description: ''
+      operationId: delete_delete_alert_configuration
+      parameters:
+      - in: path
+        name: config_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Delete an alert configuration scoped to the caller's tenant.
+    get:
+      description: ''
+      operationId: get_get_alert_configuration
+      parameters:
+      - in: path
+        name: config_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Get a single alert configuration scoped to the caller's tenant.
+    put:
+      description: ''
+      operationId: put_update_alert_configuration
+      parameters:
+      - in: path
+        name: config_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Update an alert configuration scoped to the caller's tenant.
   /api/v1/webhooks/broadcast:
     post:
       description: "belonging to the caller's tenant.\n\nRequest body:\n    {\n        \"event_type\"\
@@ -17981,7 +17022,7 @@ paths:
   /api/v1/webhooks/notification-rules:
     get:
       description: "\nQuery params:\n    - organization_id: Filter by organization\n    - channel: Filter\
-        \ by channel type\n\nReturns:\n    200: List of notification rules"
+        \ by channel type\n\nReturns:\n    200: List of notification rules\n    403: Tenant not found"
       operationId: get_list_notification_rules
       parameters: []
       responses: {}
@@ -17991,14 +17032,15 @@ paths:
         channel\": \"email\",\n        \"events\": [\"issue.created\"],\n        \"config\": {\n     \
         \       \"recipients\": [\"team@company.com\"],\n            \"priority_filter\": \"critical\"\
         \n        },\n        \"organization_id\": 1,\n        \"description\": \"Send email alerts for\
-        \ critical issues\"\n    }\n\nReturns:\n    201: Rule created\n    400: Invalid request"
+        \ critical issues\"\n    }\n\nReturns:\n    201: Rule created\n    400: Invalid request\n    403:\
+        \ Tenant not found\n    404: organization_id not found in tenant"
       operationId: post_create_notification_rule
       parameters: []
       responses: {}
       summary: Create a new notification rule.
   /api/v1/webhooks/notification-rules/{rule_id}:
     delete:
-      description: "\nReturns:\n    200: Rule deleted\n    404: Rule not found"
+      description: "\nReturns:\n    200: Rule deleted\n    403: Tenant not found\n    404: Rule not found"
       operationId: delete_delete_notification_rule
       parameters:
       - in: path
@@ -18009,7 +17051,8 @@ paths:
       responses: {}
       summary: Delete notification rule.
     get:
-      description: "\nReturns:\n    200: Rule details\n    404: Rule not found or cross-tenant"
+      description: "\nReturns:\n    200: Rule details\n    403: Tenant not found\n    404: Rule not found\
+        \ or cross-tenant"
       operationId: get_get_notification_rule
       parameters:
       - in: path
@@ -18023,7 +17066,8 @@ paths:
       description: "\nRequest body (all optional):\n    {\n        \"name\": \"Updated name\",\n     \
         \   \"events\": [\"issue.created\", \"issue.updated\"],\n        \"config\": {\"recipients\":\
         \ [\"new@company.com\"]},\n        \"description\": \"Updated description\",\n        \"enabled\"\
-        : false\n    }\n\nReturns:\n    200: Rule updated\n    404: Rule not found"
+        : false\n    }\n\nReturns:\n    200: Rule updated\n    400: Invalid request\n    403: Tenant not\
+        \ found\n    404: Rule not found"
       operationId: put_update_notification_rule
       parameters:
       - in: path
@@ -18035,8 +17079,8 @@ paths:
       summary: Update notification rule.
   /api/v1/webhooks/notification-rules/{rule_id}/test:
     post:
-      description: "\nReturns:\n    200: Test notification sent\n    400: Test failed\n    404: Rule not\
-        \ found"
+      description: "\nReturns:\n    200: Test notification sent\n    400: Test failed\n    403: Tenant\
+        \ not found\n    404: Rule not found"
       operationId: post_test_notification_rule
       parameters:
       - in: path

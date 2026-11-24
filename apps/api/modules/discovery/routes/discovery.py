@@ -10,7 +10,13 @@ from apps.api.auth.decorators import admin_required, login_required, require_sco
 from apps.api.auth.jwt_handler import is_system_service_worker
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.discovery import DiscoveryService
+from apps.api.utils.pagination import parse_limit
 from apps.api.utils.tenant_scoping import get_current_tenant_id
+from apps.worker.discovery.service import (
+    DiscoveryClaimTokenError,
+    DiscoveryJobNotClaimableError,
+)
+from shared.claim_tokens import CLAIM_TOKEN_HEADER
 
 logger = logging.getLogger(__name__)
 
@@ -334,7 +340,7 @@ def get_discovery_job_history(job_id):
     try:
         service = get_discovery_service(read_only=True)
 
-        limit = request.args.get("limit", 50, type=int)
+        limit = parse_limit(request.args, 50)
 
         history = service.get_discovery_history(job_id=job_id, limit=limit)
 
@@ -360,7 +366,7 @@ def get_all_discovery_history():
     try:
         service = get_discovery_service(read_only=True)
 
-        limit = request.args.get("limit", 50, type=int)
+        limit = parse_limit(request.args, 50)
 
         history = service.get_discovery_history(limit=limit)
 
@@ -430,9 +436,10 @@ def start_job(job_id):
     tenant via organization_id before mutating it.
 
     Returns:
-        200: Job marked as running
+        200: Job marked as running; body carries the one-time ``claim_token``
         401: Authentication required
         404: Job not found (including jobs belonging to another tenant)
+        409: Job already claimed by another scanner, or not due
     """
     try:
         db = current_app.db
@@ -452,6 +459,10 @@ def start_job(job_id):
         result = service.mark_job_running(job_id)
         return jsonify(result), 200
 
+    except DiscoveryJobNotClaimableError:
+        # Another scanner holds the job (or it is not due): the caller must
+        # skip it. Not a server error.
+        return jsonify({"error": f"Job {job_id} is already claimed or not due"}), 409
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Job not found", 404)
@@ -472,18 +483,21 @@ async def complete_job(job_id):
     write). Now requires discovery:write and verifies job_id belongs to the
     caller's tenant via organization_id before mutating it.
 
-    Request body:
+    Request body (``claim_token`` is the value returned by ``/start``; it
+    may instead be sent as the ``X-Claim-Token`` header):
         {
             "success": true,
             "results": {...},
-            "error_message": null
+            "error_message": null,
+            "claim_token": "..."
         }
 
     Returns:
-        200: Results recorded
+        200: Results recorded (or ignored: job no longer running)
         400: Request body required
         401: Authentication required
         404: Job not found (including jobs belonging to another tenant)
+        409: Missing claim token, or it does not match the current claim
     """
     try:
         db = current_app.db
@@ -510,9 +524,16 @@ async def complete_job(job_id):
             success=data.get("success", False),
             results=data.get("results", {}),
             error_message=data.get("error_message"),
+            claim_token=data.get("claim_token")
+            or request.headers.get(CLAIM_TOKEN_HEADER),
         )
         return jsonify(result), 200
 
+    except DiscoveryClaimTokenError:
+        return (
+            jsonify({"error": "Missing or invalid claim token for this job"}),
+            409,
+        )
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Job not found", 404)

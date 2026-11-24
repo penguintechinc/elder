@@ -68,14 +68,6 @@ def _create_integrations_db(db_path: str) -> DAL:
         Field("updated_at", "datetime"),
     )
     db.define_table(
-        "iam_users",
-        Field("iam_provider_id", "integer"),
-    )
-    db.define_table(
-        "iam_roles",
-        Field("iam_provider_id", "integer"),
-    )
-    db.define_table(
         "google_workspace_providers",
         Field("name", "string", notnull=True),
         Field("domain", "string", notnull=True),
@@ -264,6 +256,7 @@ class TestIAMServiceHardening:
 
         # Fallback to first organization when organization_id omitted
         p1 = svc.create_provider(
+            1,
             name="AWS IAM Org1",
             provider_type="aws_iam",
             config={
@@ -281,6 +274,7 @@ class TestIAMServiceHardening:
         assert p1["config_json"]["api_key"] == "***REDACTED***"
 
         p2 = svc.create_provider(
+            1,
             name="K8s RBAC Org2",
             provider_type="kubernetes",
             config={"kubeconfig": "raw-kubeconfig-yaml", "namespace": "prod"},
@@ -292,6 +286,7 @@ class TestIAMServiceHardening:
 
         # Disable p2 and confirm enabled_only=True uses == True (not Python `is True`)
         svc.update_provider(
+            1,
             p2["id"],
             name="K8s RBAC Disabled",
             config={"kubeconfig": "***REDACTED***", "namespace": "staging"},
@@ -299,10 +294,10 @@ class TestIAMServiceHardening:
             enabled=False,
         )
 
-        enabled_list = svc.list_providers(enabled_only=True)
+        enabled_list = svc.list_providers(1, enabled_only=True)
         assert [p["name"] for p in enabled_list] == ["AWS IAM Org1"]
 
-        org2_list = svc.list_providers(organization_id=2)
+        org2_list = svc.list_providers(1, organization_id=2)
         assert [p["name"] for p in org2_list] == ["K8s RBAC Disabled"]
         assert org2_list[0]["description"] == "Updated K8s Desc"
 
@@ -318,6 +313,7 @@ class TestIAMServiceHardening:
         svc = IAMService(db)
         with pytest.raises(ValueError, match="organization_id"):
             svc.create_provider(
+                1,
                 name="No Org",
                 provider_type="aws_iam",
                 config={"region": "us-east-1"},

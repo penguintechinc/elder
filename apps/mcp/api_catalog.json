@@ -6318,7 +6318,7 @@
       "execution_id"
     ],
     "wildcard_path_params": [],
-    "summary": "Get a single execution record including stdout/stderr logs and output.",
+    "summary": "Get a single execution record enriched with parent function metadata.",
     "has_body": false,
     "destructive": false
   },
@@ -7583,7 +7583,7 @@
     "path": "/api/v1/streams/executions",
     "path_params": [],
     "wildcard_path_params": [],
-    "summary": "List execution history across all streams for the tenant (global view).",
+    "summary": "List unified execution history across playbooks, CodeRuns, and webhooks.",
     "has_body": false,
     "destructive": false
   },
@@ -8177,7 +8177,7 @@
       "id"
     ],
     "wildcard_path_params": [],
-    "summary": "Update a vulnerability's metadata, ownership, CVSS, adjusted risk score, or remediation issue.",
+    "summary": "Update a vulnerability's editable metadata, ownership, CVSS, adjusted risk score, or remediation issue.",
     "has_body": true,
     "destructive": true
   },
@@ -8190,7 +8190,7 @@
       "id"
     ],
     "wildcard_path_params": [],
-    "summary": "Update a vulnerability's metadata, ownership, CVSS, adjusted risk score, or remediation issue.",
+    "summary": "Update a vulnerability's editable metadata, ownership, CVSS, adjusted risk score, or remediation issue.",
     "has_body": true,
     "destructive": true
   },

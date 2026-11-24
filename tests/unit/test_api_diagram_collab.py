@@ -5,13 +5,16 @@ Coverage:
 - WebSocket: auth, permissions, cursor tracking, drawing ops, broadcasts
 """
 
+import asyncio
 import json
 import uuid
 from datetime import UTC, datetime, timezone
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
 from quart.testing import QuartClient
+from quart.wrappers import Websocket
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -214,16 +217,37 @@ async def test_ws_invalid_ticket(app, client: QuartClient, _setup_collab_db):
 
     app.extensions["license_client"] = _MockLicenseClient()
 
-    with _mock_posthog_flag(True):
-        # Try to connect with invalid ticket
-        async with client.websocket(
-            f"/api/v1/diagrams/{diagram_id}/collab/ws?ticket=invalid"
-        ) as ws:
-            # Should close with 1008 (policy violation)
-            # Note: Quart test client may handle this differently
-            pass
+    # A browser always sends Origin on a WebSocket handshake; without an allowed
+    # one quart-cors answers 400 before the handler (and its ticket check) runs.
+    origins = app.config["CORS_ORIGINS"]
+    origin = origins if isinstance(origins, str) else next(iter(origins))
 
-    # In real usage, invalid ticket closes connection
+    # Record the handler's close code. The Quart test client surfaces a
+    # pre-accept close only as a silent disconnect, so spy on Websocket.close.
+    closed = asyncio.Event()
+    close_codes: list[int] = []
+    original_close = Websocket.close
+
+    async def _spy_close(self, code: int, reason: str = "") -> None:
+        close_codes.append(code)
+        try:
+            await original_close(self, code, reason)
+        finally:
+            closed.set()
+
+    with _mock_posthog_flag(True), patch.object(Websocket, "close", _spy_close):
+        async with client.websocket(
+            f"/api/v1/diagrams/{diagram_id}/collab/ws?ticket=invalid",
+            headers={"Origin": origin},
+        ) as ws:
+            # Wait for the server's verdict instead of leaving the context at once:
+            # exiting immediately races the client disconnect against the handler,
+            # which made this test pass or fail depending on scheduling.
+            await asyncio.wait_for(closed.wait(), timeout=10)
+
+    # Rejected with 1008 (policy violation), never accepted
+    assert close_codes == [1008]
+    assert not ws.accepted
 
 
 @pytest.mark.asyncio
