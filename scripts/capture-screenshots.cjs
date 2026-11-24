@@ -34,7 +34,7 @@ const PAGES = [
   { name: 'compute-kubernetes', path: '/compute?tab=Kubernetes' },
   { name: 'data-stores', path: '/data-inventory' },
   { name: 'networking', path: '/networking' },
-  { name: 'ipam', path: '/ipam' },
+  { name: 'ipam', path: '/networking?tab=ipam' },
   { name: 'dependencies', path: '/dependencies' },
   { name: 'discovery', path: '/discovery' },
 

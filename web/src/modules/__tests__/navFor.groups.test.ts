@@ -203,4 +203,13 @@ describe("navFor — one section per WIRED pillar", () => {
       "/labels",
     ]);
   });
+
+  it("consolidates IPAM under Networking without a standalone /ipam sidebar item", () => {
+    const nav = navFor(new Set(["infrastructure", "ipam"]));
+    const infra = nav.find((c) => c.header === "Infrastructure");
+
+    expect(infra).toBeDefined();
+    expect(infra!.items.map((i) => i.href)).toContain("/networking");
+    expect(infra!.items.map((i) => i.href)).not.toContain("/ipam");
+  });
 });

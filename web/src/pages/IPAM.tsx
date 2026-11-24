@@ -128,20 +128,28 @@ function parseIpamTab(raw: string | null): TabType {
   return "prefixes";
 }
 
-export default function IPAM() {
+export interface IPAMProps {
+  embedded?: boolean;
+}
+
+export default function IPAM({ embedded = false }: IPAMProps = {}) {
   const [searchParams] = useSearchParams();
-  const tabParam = searchParams.get("tab");
+  const subTabParam = searchParams.get("subtab") || searchParams.get("tab");
   const highlightId = searchParams.get("highlight");
   const [activeTab, setActiveTab] = useState<TabType>(() =>
-    parseIpamTab(tabParam),
+    parseIpamTab(subTabParam),
   );
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    if (tabParam) {
-      setActiveTab(parseIpamTab(tabParam));
+    if (
+      subTabParam === "addresses" ||
+      subTabParam === "vlans" ||
+      subTabParam === "prefixes"
+    ) {
+      setActiveTab(subTabParam);
     }
-  }, [tabParam]);
+  }, [subTabParam]);
   const [organizationFilter, setOrganizationFilter] = useState<
     number | undefined
   >();
@@ -770,51 +778,66 @@ export default function IPAM() {
     { id: "vlans" as TabType, label: "VLANs", icon: Wifi },
   ];
 
+  const createButton = (
+    <Button
+      onClick={() => {
+        if (activeTab === "prefixes") setShowCreatePrefixModal(true);
+        else if (activeTab === "addresses") setShowCreateAddressModal(true);
+        else if (activeTab === "vlans") setShowCreateVlanModal(true);
+      }}
+    >
+      <Plus className="w-4 h-4 mr-2" />
+      Create{" "}
+      {activeTab === "prefixes"
+        ? "Prefix"
+        : activeTab === "addresses"
+          ? "Address"
+          : "VLAN"}
+    </Button>
+  );
+
   return (
-    <div className="p-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-white">
-            IP Address Management
-          </h1>
-          <p className="mt-2 text-slate-400">
-            Manage IP prefixes, addresses, and VLANs
-          </p>
+    <div className={embedded ? undefined : "p-8"}>
+      {/* Header (omitted when embedded inside Networking) */}
+      {!embedded && (
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-white">
+              IP Address Management
+            </h1>
+            <p className="mt-2 text-slate-400">
+              Manage IP prefixes, addresses, and VLANs
+            </p>
+          </div>
+          {createButton}
         </div>
-        <Button
-          onClick={() => {
-            if (activeTab === "prefixes") setShowCreatePrefixModal(true);
-            else if (activeTab === "addresses") setShowCreateAddressModal(true);
-            else if (activeTab === "vlans") setShowCreateVlanModal(true);
-          }}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Create{" "}
-          {activeTab === "prefixes"
-            ? "Prefix"
-            : activeTab === "addresses"
-              ? "Address"
-              : "VLAN"}
-        </Button>
-      </div>
+      )}
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-slate-800 p-1 rounded-lg w-fit">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              activeTab === tab.id
-                ? "bg-primary-600 text-white"
-                : "text-slate-400 hover:text-white hover:bg-slate-700"
-            }`}
-          >
-            <tab.icon className="w-4 h-4" />
-            {tab.label}
-          </button>
-        ))}
+      <div
+        className={
+          embedded
+            ? "flex flex-wrap items-center justify-between gap-4 mb-6"
+            : "mb-6"
+        }
+      >
+        <div className="flex gap-1 bg-slate-800 p-1 rounded-lg w-fit">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? "bg-primary-600 text-white"
+                  : "text-slate-400 hover:text-white hover:bg-slate-700"
+              }`}
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {embedded && createButton}
       </div>
 
       {/* Filters */}
