@@ -1,7 +1,6 @@
-"""Integration tests for issue.assigned delivery (Plan 05). requests.post is
-mocked at apps.api.services.webhooks.assignment.requests.post (dispatch's
-own module) — not apps.api.services.webhooks.service, which is a different
-mock target used by WebhookService's own delivery path.
+"""Integration tests for issue.assigned delivery (Plan 05). The dispatcher
+sends through the shared delivery engine, so only the engine's HTTP client
+is replaced (WebhookPostRecorder): vetting, pinning and signing run for real.
 
 webhooks.tenant_id is a real foreign key into tenants (see
 test_webhook_assignment_matching.py's _make_tenant), so each test mints its
@@ -20,6 +19,7 @@ from uuid import uuid4
 
 import pytest
 from quart import current_app
+from webhook_http import ENGINE_HTTP, WebhookPostRecorder
 
 
 def _make_tenant(db, name: str) -> int:
@@ -74,7 +74,7 @@ def _event(tenant_id, **overrides):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_send_delivers_to_matching_webhook_signed(mock_post, app):
     mock_post.return_value = MagicMock(status_code=200, text="ok")
 
@@ -118,7 +118,7 @@ async def test_send_delivers_to_matching_webhook_signed(mock_post, app):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_send_skips_non_matching_webhook(mock_post, app):
     async with app.app_context():
         from apps.api.services.webhooks.assignment import send_issue_assigned_webhooks
@@ -136,7 +136,7 @@ async def test_send_skips_non_matching_webhook(mock_post, app):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_send_never_raises_on_delivery_failure(mock_post, app):
     mock_post.side_effect = Exception("connection refused")
 

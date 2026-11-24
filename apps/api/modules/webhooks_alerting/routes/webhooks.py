@@ -30,6 +30,7 @@ from apps.api.services.webhooks.inbound_actions import (
 )
 from apps.api.services.webhooks.service import _UNSET
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
+from shared.webhooks.delivery import DeliveryShedError
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,24 @@ def _tenant_id() -> int | None:
         return int(raw)
     except (ValueError, TypeError):
         return None
+
+
+def _shed_response(exc: DeliveryShedError) -> Any:
+    """Answer an explicit send refused by a pending-delivery cap with 429.
+
+    ``Retry-After`` tells a well-behaved client when to try again; the body
+    names only the bounded reason, never queue depths or other tenants.
+    """
+    response = jsonify(
+        {
+            "error": "Webhook delivery queue is full; retry later",
+            "reason": exc.reason,
+            "retry_after": exc.retry_after,
+        }
+    )
+    response.status_code = 429
+    response.headers["Retry-After"] = str(exc.retry_after)
+    return response
 
 
 def get_webhook_service():
@@ -408,7 +427,7 @@ def delete_webhook(webhook_id):
 @bp.route("/<int:webhook_id>/test", methods=["POST"])
 @login_required
 @require_scope("webhooks_alerting:write")
-def test_webhook(webhook_id):
+async def test_webhook(webhook_id):
     """
     Send a test event to webhook (must belong to the caller's tenant).
 
@@ -417,6 +436,7 @@ def test_webhook(webhook_id):
         400: Test failed
         403: Tenant not found
         404: Webhook not found
+        429: Delivery queue full (Retry-After header set)
     """
     try:
         tenant_id = _tenant_id()
@@ -424,10 +444,13 @@ def test_webhook(webhook_id):
             return jsonify({"error": "Tenant not found"}), 403
 
         service = get_webhook_service()
-        result = service.test_webhook(webhook_id, tenant_id)
+        result = await service.test_webhook(webhook_id, tenant_id)
 
         status_code = 200 if result.get("success") else 400
         return jsonify(result), status_code
+
+    except DeliveryShedError as e:
+        return _shed_response(e)
 
     except Exception as e:
         if "not found" in str(e).lower():
@@ -476,7 +499,7 @@ def get_webhook_deliveries(webhook_id):
 @bp.route("/<int:webhook_id>/deliveries/<int:delivery_id>/redeliver", methods=["POST"])
 @admin_required
 @require_scope("webhooks_alerting:admin")
-def redeliver_webhook(webhook_id, delivery_id):
+async def redeliver_webhook(webhook_id, delivery_id):
     """
     Retry a failed webhook delivery (must belong to the caller's tenant).
 
@@ -484,6 +507,7 @@ def redeliver_webhook(webhook_id, delivery_id):
         200: Redelivery initiated
         403: Tenant not found
         404: Webhook or delivery not found
+        429: Delivery queue full (Retry-After header set)
     """
     try:
         tenant_id = _tenant_id()
@@ -491,10 +515,13 @@ def redeliver_webhook(webhook_id, delivery_id):
             return jsonify({"error": "Tenant not found"}), 403
 
         service = get_webhook_service()
-        result = service.redeliver_webhook(webhook_id, tenant_id, delivery_id)
+        result = await service.redeliver_webhook(webhook_id, tenant_id, delivery_id)
 
         status_code = 200 if result.get("success") else 400
         return jsonify(result), status_code
+
+    except DeliveryShedError as e:
+        return _shed_response(e)
 
     except Exception as e:
         if "not found" in str(e).lower():
@@ -738,7 +765,7 @@ def delete_notification_rule(rule_id):
 @bp.route("/notification-rules/<int:rule_id>/test", methods=["POST"])
 @login_required
 @require_scope("webhooks_alerting:write")
-def test_notification_rule(rule_id):
+async def test_notification_rule(rule_id):
     """
     Test a notification rule.
 
@@ -747,6 +774,7 @@ def test_notification_rule(rule_id):
         400: Test failed
         403: Tenant not found
         404: Rule not found
+        429: Delivery queue full (Retry-After header set)
     """
     try:
         tenant_id = _tenant_id()
@@ -754,10 +782,13 @@ def test_notification_rule(rule_id):
             return jsonify({"error": "Tenant not found"}), 403
 
         service = get_webhook_service()
-        result = service.test_notification_rule(rule_id, tenant_id=tenant_id)
+        result = await service.test_notification_rule(rule_id, tenant_id=tenant_id)
 
         status_code = 200 if result.get("success") else 400
         return jsonify(result), status_code
+
+    except DeliveryShedError as e:
+        return _shed_response(e)
 
     except Exception as e:
         if "not found" in str(e).lower():
@@ -967,10 +998,11 @@ async def broadcast_event():
         }
 
     Returns:
-        200: Event broadcasted
+        200: Event accepted; deliveries queued in the background
         400: Invalid request
         403: Tenant not found
         404: organization_id not found in tenant
+        429: Delivery queue full (Retry-After header set)
     """
     try:
         tenant_id = _tenant_id()
@@ -1006,7 +1038,7 @@ async def broadcast_event():
         ):
             return jsonify({"error": "organization_id not found in tenant"}), 404
 
-        result = service.broadcast_event(
+        result = await service.broadcast_event(
             event_type=data["event_type"],
             payload=data["payload"],
             organization_id=organization_id,
@@ -1014,6 +1046,9 @@ async def broadcast_event():
         )
 
         return jsonify(result), 200
+
+    except DeliveryShedError as e:
+        return _shed_response(e)
 
     except Exception as e:
         return log_error_and_respond(logger, e, "Failed to process request", 400)

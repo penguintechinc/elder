@@ -368,10 +368,9 @@ async def test_update_webhook_accepts_valid_in_tenant_filter_assignee_pair(
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.service.requests.post")
 @patch("apps.api.auth.decorators.get_current_user")
 async def test_broadcast_event_rejects_cross_tenant_organization_id(
-    mock_get_user, mock_post, async_client, generate_token, app
+    mock_get_user, async_client, generate_token, app, webhook_transport
 ):
     """Regression (security review, HIGH): POST /broadcast selected webhooks
     by `organization_id` alone, with no tenant scoping — a tenant-1 admin
@@ -382,7 +381,6 @@ async def test_broadcast_event_rejects_cross_tenant_organization_id(
     request is rejected AND no delivery attempt reaches the target
     webhook's URL."""
     mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
-    mock_post.return_value = MagicMock(status_code=200, text="ok")
 
     async with app.app_context():
         db = current_app.db
@@ -430,7 +428,12 @@ async def test_broadcast_event_rejects_cross_tenant_organization_id(
 
     # The strongest proof of the fix: no HTTP delivery was ever attempted
     # against tenant 2's webhook, regardless of the response status code.
-    mock_post.assert_not_called()
+    # Deliveries are dispatched in the background, so drain it first: an
+    # empty request log then proves none was ever queued either.
+    from shared.webhooks import delivery
+
+    await delivery.drain_background(timeout=5)
+    assert webhook_transport.requests == []
 
 
 @pytest.mark.asyncio

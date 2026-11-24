@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import pytest
 from quart import current_app
+from webhook_http import ENGINE_HTTP, WebhookPostRecorder
 
 from apps.api.services.portal_auth.service import PortalAuthService
 from apps.api.services.sso.oidc_service import OIDCService
@@ -275,7 +276,7 @@ async def test_matching_enforces_tenant_isolation_and_active_flag(app):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.user_events.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_delivery_signs_hmac_merges_headers_and_records_row(mock_post, app):
     mock_post.return_value = MagicMock(status_code=201, text="created")
 
@@ -325,7 +326,7 @@ async def test_delivery_signs_hmac_merges_headers_and_records_row(mock_post, app
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.user_events.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_delivery_failure_does_not_raise_and_records_error(mock_post, app):
     mock_post.side_effect = ConnectionError("connection refused")
 
@@ -354,7 +355,7 @@ async def test_delivery_failure_does_not_raise_and_records_error(mock_post, app)
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.user_events.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_regular_vs_admin_event_routing(mock_post, app):
     mock_post.return_value = MagicMock(status_code=200, text="ok")
 
@@ -397,7 +398,7 @@ def test_sync_dispatch_delivers_outside_event_loop(app):
     tenant_id = _make_tenant(db, "User Webhook Sync")
     webhook_id = _insert_webhook(db, tenant_id, ["user.created", "admin_user.created"])
 
-    with patch("apps.api.services.webhooks.user_events.requests.post") as mock_post:
+    with patch(ENGINE_HTTP, new_callable=WebhookPostRecorder) as mock_post:
         mock_post.return_value = MagicMock(status_code=200, text="ok")
         results = dispatch_user_created_webhooks_sync(
             db, _event(tenant_id=tenant_id, tenant_role="admin")
@@ -418,7 +419,7 @@ def test_sync_dispatch_delivers_outside_event_loop(app):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.user_events.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 @patch("apps.api.auth.decorators.get_current_user")
 async def test_users_create_route_regular_and_admin(
     mock_get_user, mock_post, async_client, app
@@ -496,7 +497,7 @@ async def test_users_create_route_regular_and_admin(
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.user_events.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 @patch("apps.api.auth.decorators.get_current_user")
 async def test_users_create_succeeds_even_when_webhook_fails(
     mock_get_user, mock_post, async_client, app
@@ -535,7 +536,7 @@ async def test_users_create_succeeds_even_when_webhook_fails(
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.user_events.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_auth_register_fires_only_user_created(mock_post, async_client, app):
     mock_post.return_value = MagicMock(status_code=200, text="ok")
 
@@ -585,7 +586,7 @@ async def test_auth_register_fires_only_user_created(mock_post, async_client, ap
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.user_events.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 @patch("apps.api.auth.decorators.get_current_user")
 async def test_identities_create_route_fires_user_created(
     mock_get_user, mock_post, async_client, app
@@ -640,7 +641,7 @@ async def test_identities_create_route_fires_user_created(
     new_callable=AsyncMock,
     return_value=None,
 )
-@patch("apps.api.services.webhooks.user_events.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_portal_auth_create_portal_user_regular_tenant_and_global_admin(
     mock_post, _mock_check_limit, app
 ):
@@ -703,7 +704,7 @@ async def test_portal_auth_create_portal_user_regular_tenant_and_global_admin(
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.user_events.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_scim_create_user_fires_only_on_creation(mock_post, app):
     mock_post.return_value = MagicMock(status_code=200, text="ok")
 
@@ -746,7 +747,7 @@ async def test_scim_create_user_fires_only_on_creation(mock_post, app):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.user_events.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_oidc_jit_fires_only_for_new_users(mock_post, app):
     mock_post.return_value = MagicMock(status_code=200, text="ok")
 
@@ -805,7 +806,7 @@ async def test_oidc_jit_fires_only_for_new_users(mock_post, app):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.user_events.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_saml_jit_fires_only_for_new_users(mock_post, app):
     mock_post.return_value = MagicMock(status_code=200, text="ok")
 
