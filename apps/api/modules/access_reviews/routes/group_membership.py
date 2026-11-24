@@ -13,6 +13,7 @@ from apps.api.auth.decorators import login_required, require_scope
 from apps.api.licensing_fallback import license_required
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.group_membership import GroupMembershipService
+from apps.api.utils.pagination import parse_limit, parse_offset
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +52,8 @@ def list_groups():
 
         include_members = request.args.get("include_members", "false").lower() == "true"
         include_pending = request.args.get("include_pending", "false").lower() == "true"
-        limit = request.args.get("limit", 50, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = parse_limit(request.args, 50)
+        offset = parse_offset(request.args)
 
         result = service.list_groups(
             include_members=include_members,
@@ -234,8 +235,8 @@ def list_group_requests(group_id):
                 return jsonify({"error": "Not authorized to view requests"}), 403
 
         status = request.args.get("status")
-        limit = request.args.get("limit", 50, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = parse_limit(request.args, 50)
+        offset = parse_offset(request.args)
 
         result = service.list_requests(
             group_id=group_id,
@@ -272,8 +273,8 @@ def list_pending_requests():
         if not current_user_id:
             return jsonify({"requests": [], "total": 0}), 200
 
-        limit = request.args.get("limit", 50, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = parse_limit(request.args, 50)
+        offset = parse_offset(request.args)
 
         result = service.get_pending_requests_for_owner(
             owner_identity_id=current_user_id,
@@ -481,8 +482,8 @@ def list_group_members(group_id):
     try:
         service = get_service()
 
-        limit = request.args.get("limit", 100, type=int)
-        offset = request.args.get("offset", 0, type=int)
+        limit = parse_limit(request.args, 100)
+        offset = parse_offset(request.args)
 
         result = service.get_group_members(
             group_id=group_id,

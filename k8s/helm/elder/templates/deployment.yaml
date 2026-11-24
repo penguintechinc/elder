@@ -25,6 +25,10 @@ spec:
         {{- with $componentConfig.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+      {{- if ($.Values.secrets).create }}
+      annotations:
+        checksum/secrets: {{ include (print $.Template.BasePath "/dev-secret.yaml") $ | sha256sum }}
+      {{- end }}
     spec:
       {{- with $.Values.global.imagePullSecrets }}
       imagePullSecrets:
@@ -32,11 +36,16 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "elder.serviceAccountName" $ }}
       securityContext:
-        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+        {{- include "elder.podSecurityContext" $ | nindent 8 }}
       containers:
       - name: {{ $component }}
         image: {{ include "elder.image" (list $component $) }}
         imagePullPolicy: {{ include "elder.imagePullPolicy" (list $component $) }}
+        {{- if eq $component "postgres" }}
+        args:
+        - -c
+        - max_connections={{ $componentConfig.maxConnections | default 100 }}
+        {{- end }}
         {{- $hasModules := or (eq $component "hub-api") (eq $component "svc-worker") }}
         {{- $isOtelComponent := or (eq $component "hub-api") (eq $component "hub-mcp") (eq $component "svc-worker") }}
         {{- $hasOtel := and $.Values.otel.enabled $isOtelComponent }}
@@ -57,12 +66,14 @@ spec:
         {{- $hasRunsS3 := and (eq $component "hub-api") ($runsStorage.bucket) }}
         {{- $hasCsvImportS3 := and (or (eq $component "hub-api") (eq $component "svc-worker")) ($csvBucket) }}
         {{- $needsPodName := or (eq $component "svc-worker") (eq $component "svc-flows-invoker") }}
-        {{- if or $componentConfig.env $hasOtel $needsPodName $hasRunsS3 $hasCsvImportS3 }}
+        {{- if or $componentConfig.env $componentConfig.secretEnv $componentConfig.database $hasOtel $needsPodName $hasRunsS3 $hasCsvImportS3 }}
         env:
         {{- range $key, $value := $componentConfig.env }}
         - name: {{ $key }}
           value: {{ $value | quote }}
         {{- end }}
+        {{- include "elder.secretEnv" (list $componentConfig $) | nindent 8 }}
+        {{- include "elder.dbPoolEnv" (list $component $componentConfig) | nindent 8 }}
         {{- if $hasRunsS3 }}
         - name: RUNS_S3_BUCKET
           value: {{ $runsStorage.bucket | quote }}
@@ -275,11 +286,7 @@ spec:
         {{- end }}
         {{- end }}
         securityContext:
-          {{- if $componentConfig.securityContext }}
-          {{- toYaml $componentConfig.securityContext | nindent 10 }}
-          {{- else }}
-          {{- toYaml $.Values.securityContext | nindent 10 }}
-          {{- end }}
+          {{- include "elder.containerSecurityContext" (list $componentConfig.securityContext $) | nindent 10 }}
       {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "svc-worker") (eq $component "hub-api") (eq $component "hub-webui") (eq $component "hub-mcp") (eq $component "svc-flows-invoker") }}
       volumes:
       {{- if eq $component "hub-api" }}

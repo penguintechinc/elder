@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-import csv
 import gzip
 import json
 import logging
@@ -15,6 +14,8 @@ from typing import Any, Dict, List, Optional
 import boto3
 from botocore.exceptions import ClientError
 from penguin_dal import DAL
+
+from shared.csv_safety import safe_dict_writer
 
 logger = logging.getLogger(__name__)
 
@@ -928,7 +929,7 @@ class BackupService:
                 csv_filepath = os.path.join(tempfile.gettempdir(), csv_filename)
 
                 with open(csv_filepath, "w", newline="") as f:
-                    writer = csv.DictWriter(f, fieldnames=records[0].keys())
+                    writer = safe_dict_writer(f, fieldnames=records[0].keys())
                     writer.writeheader()
                     writer.writerows(records)
 

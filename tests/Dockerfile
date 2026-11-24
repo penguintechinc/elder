@@ -52,6 +52,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# Node runtime for the unit tests that execute scripts/capture-screenshots.cjs
+# (tests/unit/test_screenshot_tool.py). Binary only — no npm/Playwright: those tests
+# exercise the tool's pure logic. Same digest-pinned image as web/Dockerfile.
+COPY --from=node:24-bookworm-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c \
+    /usr/local/bin/node /usr/local/bin/node
+
 # Create non-root test user
 RUN useradd -m -u 1000 tester
 

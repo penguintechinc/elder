@@ -9,6 +9,7 @@ from quart import Blueprint, current_app, jsonify, request
 from apps.api.auth.decorators import admin_required, login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.google_workspace import GoogleWorkspaceService
+from apps.api.utils.pagination import parse_limit
 
 logger = logging.getLogger(__name__)
 
@@ -251,7 +252,7 @@ def list_users(provider_id):
         service = get_google_workspace_service()
 
         domain = request.args.get("domain")
-        limit = request.args.get("limit", 100, type=int)
+        limit = parse_limit(request.args, 100)
 
         result = service.list_users(provider_id=provider_id, domain=domain, limit=limit)
 
@@ -430,7 +431,7 @@ def list_groups(provider_id):
         service = get_google_workspace_service()
 
         domain = request.args.get("domain")
-        limit = request.args.get("limit", 100, type=int)
+        limit = parse_limit(request.args, 100)
 
         result = service.list_groups(
             provider_id=provider_id, domain=domain, limit=limit
@@ -558,7 +559,7 @@ def list_group_members(provider_id, group_key):
     try:
         service = get_google_workspace_service()
 
-        limit = request.args.get("limit", 100, type=int)
+        limit = parse_limit(request.args, 100)
 
         result = service.list_group_members(
             provider_id=provider_id, group_key=group_key, limit=limit
