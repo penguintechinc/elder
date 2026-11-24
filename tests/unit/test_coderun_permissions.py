@@ -727,3 +727,151 @@ class TestMigration050:
             assert "granted_scopes_json" not in fn_cols_after
             assert "allowed_egress_domains_json" not in fn_cols_after
             assert "granted_scopes_json" not in ver_cols_after
+
+
+class TestClaimWorkerScopeAndAnomalies:
+    """Only platform (system) workers claim; unusual claims are flagged."""
+
+    async def _queue_run(self, client: Any, name: str) -> None:
+        """Create a function and queue one execution as the active user."""
+        resp = await client.post(
+            "/api/v1/runs",
+            json={"name": name, "runtime": "python", "code": "print(1)"},
+        )
+        assert resp.status_code == 201
+        func_id = (await resp.get_json())["id"]
+        resp = await client.post(f"/api/v1/runs/{func_id}/invoke", json={})
+        assert resp.status_code == 202
+
+    @pytest.mark.asyncio
+    async def test_tenant_scoped_worker_cannot_claim_and_anomalies_are_flagged(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from apps.api.modules.runs.routes import runs as runs_routes
+
+        app = _make_test_app(tmp_path)
+        active_auth: dict[str, Any] = {"user": None, "claims": {}, "worker": ""}
+        warnings: list[dict[str, Any]] = []
+        counted: list[dict[str, Any]] = []
+        real_warning = runs_routes.logger.warning
+
+        def _capture(event: str, **fields: Any) -> None:
+            if event == "run_claim_anomaly":
+                warnings.append(fields)
+            real_warning(event, **fields)
+
+        monkeypatch.setattr(runs_routes.logger, "warning", _capture, raising=False)
+        monkeypatch.setattr(
+            runs_routes._claim_anomaly_counter,
+            "add",
+            lambda amount, attrs=None: counted.append(dict(attrs or {})),
+            raising=False,
+        )
+        monkeypatch.setattr(runs_routes, "_claim_rate_windows", {})
+        monkeypatch.setenv("RUNS_CLAIM_RATE_WARN_THRESHOLD", "2")
+
+        class _MockUser:
+            def __init__(self, tenant_id: int) -> None:
+                self.id = 10
+                self.username = "tester"
+                self.is_active = True
+                self.is_superuser = False
+                self.tenant_id = tenant_id
+
+        @app.before_request
+        async def _inject_test_auth() -> None:
+            if active_auth["user"] is not None:
+                g.current_user = active_auth["user"]
+                g.claims = dict(active_auth["claims"])
+            elif active_auth["worker"]:
+                payload = verify_token(active_auth["worker"])
+                if payload is not None:
+                    g.claims = payload
+
+        client = app.test_client()
+
+        async def _queue(tenant_id: int, name: str) -> None:
+            active_auth["user"] = _MockUser(tenant_id)
+            active_auth["claims"] = {
+                "sub": "10",
+                "tenant": str(tenant_id),
+                "scope": ["runs:read", "runs:write", "runs:invoke"],
+            }
+            await self._queue_run(client, name)
+            active_auth["user"] = None
+            active_auth["claims"] = {}
+
+        async def _claim(tenant: str, limit: int = 10) -> Any:
+            token = _mint_service_worker_token(app, tenant=tenant)
+            active_auth["worker"] = token
+            return await client.get(
+                f"/api/v1/runs/internal/pending?limit={limit}&worker_id=wk-1",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        await _queue(1, "fn-a")
+        await _queue(2, "fn-b")
+
+        # A worker token scoped to any single tenant is refused: it can claim
+        # neither another tenant's executions nor its own.
+        for tenant in ("1", "2", "3", "", "abc"):
+            resp = await _claim(tenant)
+            assert resp.status_code in (401, 403), tenant
+        assert warnings == []
+
+        # The platform worker's first claim for each tenant is flagged.
+        resp = await _claim("system")
+        assert resp.status_code == 200
+        body = await resp.get_json()
+        assert sorted(item["tenant_id"] for item in body["items"]) == [1, 2]
+        assert sorted(w["tenant_id"] for w in warnings) == [1, 2]
+        assert {w["reason"] for w in warnings} == {"new_tenant"}
+        assert all(w["worker_id"] == "wk-1" for w in warnings)
+        assert counted == [{"reason": "new_tenant"}] * 2
+
+        # A tenant it already served is not flagged again; exceeding the
+        # per-window claim threshold is.
+        warnings.clear()
+        counted.clear()
+        await _queue(1, "fn-c")
+        resp = await _claim("system")
+        assert (await resp.get_json())["count"] == 1
+        assert [w["reason"] for w in warnings] == ["rate_spike"]
+        assert warnings[0]["claims_in_window"] == 3
+        assert counted == [{"reason": "rate_spike"}]
+
+    def test_anomaly_check_failure_never_fails_the_claim(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from apps.api.modules.runs.routes import runs as runs_routes
+
+        errors: list[str] = []
+        monkeypatch.setattr(
+            runs_routes.logger,
+            "error",
+            lambda event, **fields: errors.append(event),
+            raising=False,
+        )
+
+        class _BrokenDb:
+            def __call__(self, *args: Any, **kwargs: Any) -> Any:
+                raise RuntimeError("db down")
+
+            def __getattr__(self, name: str) -> Any:
+                raise RuntimeError("db down")
+
+        runs_routes._audit_claim_anomalies(
+            _BrokenDb(), "wk-1", None, [{"id": 1, "tenant_id": 1}]
+        )
+        assert errors == ["run_claim_anomaly_check_failed"]
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"), [("", 120), ("abc", 120), ("0", 120), ("7", 7)]
+    )
+    def test_claim_rate_threshold_parsing(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str, expected: int
+    ) -> None:
+        from apps.api.modules.runs.routes import runs as runs_routes
+
+        monkeypatch.setenv("RUNS_CLAIM_RATE_WARN_THRESHOLD", raw)
+        assert runs_routes._claim_rate_warn_threshold() == expected

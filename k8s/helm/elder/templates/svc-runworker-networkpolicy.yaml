@@ -1,11 +1,16 @@
 {{- $cfg := index .Values "svc-runworker" }}
 {{- if and $cfg $cfg.enabled .Values.networkPolicy.enabled ($cfg.networkPolicy).enabled }}
 {{- $execNs := $cfg.executionNamespace | default "elder-runs" }}
-# Dedicated CiliumNetworkPolicy for svc-runworker:
-# - Zero ingress (pure outbound polling worker)
-# - Egress restricted strictly to DNS, kube-apiserver, in-cluster hub-api,
-#   OTLP collector, and public HTTPS (for remote-cluster Elder API URLs)
-#   excluding RFC1918 and cloud metadata (169.254.0.0/16).
+{{- $backend := include "elder.runworker.backend" . }}
+{{- $np := $cfg.networkPolicy | default dict }}
+{{- $hubApiPort := (index .Values "hub-api").service.targetPort | default 5000 | quote }}
+# Controller policy for svc-runworker.
+# - Ingress: only the per-execution restriction gateway ports, and only from
+#   execution pods that were granted gateway access.
+# - Egress: DNS, kube-apiserver (Job backend only), hub-api, the OTLP
+#   collector, plus operator-declared FQDNs/CIDRs. There is deliberately no
+#   open internet rule: anything tenant code can influence (the gateway's
+#   egress proxy) is bounded by svc-runworker.networkPolicy.egressFQDNs.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -17,7 +22,18 @@ spec:
   endpointSelector:
     matchLabels:
       {{- include "elder.componentSelectorLabels" (list "svc-runworker" .) | nindent 6 }}
+  {{- if ne $backend "sandbox" }}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ $execNs }}
+            elder.penguintech.io/gateway-access: "true"
+      toPorts:
+        - ports:
+            {{- include "elder.runworker.gatewayPorts" . | nindent 12 }}
+  {{- else }}
   ingress: []
+  {{- end }}
   egress:
     # DNS (CoreDNS / kube-dns)
     - toEndpoints:
@@ -30,6 +46,12 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+          {{- if $np.egressFQDNs }}
+          rules:
+            dns:
+              - matchPattern: "*"
+          {{- end }}
+    {{- if ne $backend "sandbox" }}
     # Kubernetes API server (Job/ConfigMap/Pod management in executionNamespace)
     - toEntities:
         - kube-apiserver
@@ -39,34 +61,37 @@ spec:
               protocol: TCP
             - port: "6443"
               protocol: TCP
+    {{- end }}
     # Same-cluster Elder API (hub-api)
     - toEndpoints:
         - matchLabels:
             {{- include "elder.componentSelectorLabels" (list "hub-api" .) | nindent 12 }}
       toPorts:
         - ports:
-            - port: {{ (index .Values "hub-api").service.targetPort | default 5000 | quote }}
+            - port: {{ $hubApiPort }}
               protocol: TCP
-    # OTLP collector
+    {{- if .Values.otel.enabled }}
+    # OTLP collector (same namespace)
     - toEndpoints:
         - matchLabels: {}
       toPorts:
         - ports:
             - port: {{ .Values.networkPolicy.otelCollectorPort | default 4318 | quote }}
               protocol: TCP
-    # Remote-cluster Elder API over public HTTPS (excluding private + IMDS ranges)
-    - toCIDRSet:
-        - cidr: 0.0.0.0/0
-          except:
-            - 10.0.0.0/8
-            - 172.16.0.0/12
-            - 192.168.0.0/16
-            - 169.254.0.0/16
+    {{- end }}
+    {{- with $np.egressFQDNs }}
+    # Operator-declared HTTPS destinations: a remote-cluster Elder API host
+    # and/or the upper bound of what function egress allowlists may reach.
+    - toFQDNs:
+        {{- range . }}
+        - matchName: {{ . | quote }}
+        {{- end }}
       toPorts:
         - ports:
             - port: "443"
               protocol: TCP
-    {{- with ($cfg.networkPolicy).s3Egress }}
+    {{- end }}
+    {{- with $np.s3Egress }}
     # Optional explicit S3-compatible storage egress (e.g. in-cluster/RFC1918 MinIO/Garage)
     - toCIDRSet:
         - cidr: {{ .cidr | quote }}
@@ -76,9 +101,9 @@ spec:
               protocol: TCP
     {{- end }}
 ---
-# Default-deny all ingress and egress for serverless function pods in
-# executionNamespace so untrusted user code cannot reach cluster services,
-# cloud metadata, or the internet unless explicitly allowed.
+# Default-deny all ingress and egress for execution pods in executionNamespace
+# so tenant code cannot reach cluster services, cloud metadata, or the
+# internet unless explicitly allowed below.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -90,42 +115,32 @@ spec:
   endpointSelector: {}
   ingress: []
   egress: []
+{{- if ne $backend "sandbox" }}
 ---
-# Label-scoped CiliumNetworkPolicy allowing ONLY elder-runs pods explicitly
-# labeled elder.penguintech.io/elder-api-access: "true" (granted_scopes non-empty)
-# egress to hub-api:5000 (plus cluster DNS to resolve hub-api). Unprivileged
-# pods without this label remain locked at egress: [].
+# Execution pods labelled elder.penguintech.io/gateway-access: "true" (the
+# function was granted Elder API scopes or an egress allowlist) may reach ONLY
+# the controller's per-execution restriction gateway. The gateway enforces the
+# scopes and the per-function egress allowlist; there is no direct path to
+# hub-api, DNS, or the internet. Unlabelled pods stay at egress: [].
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: elder-runs-api-access
+  name: elder-runs-gateway-access
   namespace: {{ $execNs }}
   labels:
     {{- include "elder.componentLabels" (list "svc-runworker" .) | nindent 4 }}
 spec:
   endpointSelector:
     matchLabels:
-      elder.penguintech.io/elder-api-access: "true"
+      elder.penguintech.io/gateway-access: "true"
   ingress: []
   egress:
-    # DNS (CoreDNS / kube-dns) for resolving hub-api service name
-    - toEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kube-system
-            k8s-app: kube-dns
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
-    # Elder hub-api only (targetPort 5000)
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: {{ .Values.namespace }}
-            {{- include "elder.componentSelectorLabels" (list "hub-api" .) | nindent 12 }}
+            {{- include "elder.componentSelectorLabels" (list "svc-runworker" .) | nindent 12 }}
       toPorts:
         - ports:
-            - port: {{ (index .Values "hub-api").service.targetPort | default 5000 | quote }}
-              protocol: TCP
+            {{- include "elder.runworker.gatewayPorts" . | nindent 12 }}
+{{- end }}
 {{- end }}
