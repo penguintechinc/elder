@@ -4,6 +4,7 @@
 
 import hashlib
 import logging
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -57,6 +58,63 @@ SERVICE_WORKER_ALLOWED_SCOPES: dict[str, frozenset[str]] = {
 }
 
 WORKER_TOKEN_PREFIX = "ewk_"
+
+# Token-type allow-lists, one per verification context. Every verifier names
+# the exact `type` values it accepts; a missing or unrecognised type is never
+# defaulted to an identity access token.
+IDENTITY_ACCESS_TOKEN_TYPES: frozenset[str] = frozenset({"access"})
+IDENTITY_REFRESH_TOKEN_TYPES: frozenset[str] = frozenset({"refresh"})
+PORTAL_ACCESS_TOKEN_TYPES: frozenset[str] = frozenset({"portal_user"})
+PORTAL_REFRESH_TOKEN_TYPES: frozenset[str] = frozenset({"portal_refresh"})
+SERVICE_WORKER_TOKEN_TYPES: frozenset[str] = frozenset({"service_worker"})
+CODERUN_TOKEN_TYPES: frozenset[str] = frozenset({"coderun"})
+SERVICE_RESEARCHER_TOKEN_TYPES: frozenset[str] = frozenset({"service_researcher"})
+# Types accepted as an API credential (Authorization bearer / access cookie).
+# Refresh tokens are deliberately absent: they are only valid at their
+# refresh endpoint.
+API_BEARER_TOKEN_TYPES: frozenset[str] = (
+    IDENTITY_ACCESS_TOKEN_TYPES
+    | PORTAL_ACCESS_TOKEN_TYPES
+    | SERVICE_WORKER_TOKEN_TYPES
+    | CODERUN_TOKEN_TYPES
+    | SERVICE_RESEARCHER_TOKEN_TYPES
+)
+
+PRINCIPAL_IDENTITY = "identity"
+PRINCIPAL_PORTAL_USER = "portal_user"
+PRINCIPAL_SERVICE = "service"
+
+# Principal kind each token type is bound to. The user loader resolves `sub`
+# only in the table matching this kind.
+TOKEN_TYPE_PRINCIPAL_KIND: dict[str, str] = {
+    "access": PRINCIPAL_IDENTITY,
+    "refresh": PRINCIPAL_IDENTITY,
+    "portal_user": PRINCIPAL_PORTAL_USER,
+    "portal_refresh": PRINCIPAL_PORTAL_USER,
+    "service_worker": PRINCIPAL_SERVICE,
+    "coderun": PRINCIPAL_SERVICE,
+    "service_researcher": PRINCIPAL_SERVICE,
+}
+
+
+def token_principal_kind(payload: dict[str, Any]) -> str | None:
+    """Return the principal kind a decoded token is bound to, or None.
+
+    Derived strictly from the token `type`. When the token also carries an
+    explicit `principal_kind` claim it must agree with the derived kind;
+    any ambiguity (unknown type, mismatched claim) yields None (reject).
+    """
+    token_type = payload.get("type")
+    if not isinstance(token_type, str):
+        return None
+    derived = TOKEN_TYPE_PRINCIPAL_KIND.get(token_type)
+    if derived is None:
+        return None
+    explicit = payload.get("principal_kind")
+    if explicit is not None and explicit != derived:
+        return None
+    return derived
+
 
 WORKER_TYPE_TO_SERVICE_SUB: dict[str, str] = {
     "runworker": "svc-runworker",
@@ -560,6 +618,7 @@ def generate_token(identity: Row, token_type: str = "access") -> str:
         "sub": str(identity.id),
         "username": identity.username,
         "type": token_type,
+        "principal_kind": PRINCIPAL_IDENTITY,
         "iat": now,
         "exp": now + expires_delta,
         # penguin-aaa compatible claims — enables RBAC and tenant middleware
@@ -579,9 +638,17 @@ def generate_token(identity: Row, token_type: str = "access") -> str:
     return token
 
 
-def verify_token(token: str) -> dict[str, Any] | None:
+def verify_token(
+    token: str, expected_types: Collection[str] = API_BEARER_TOKEN_TYPES
+) -> dict[str, Any] | None:
     """
     Verify and decode JWT token.
+
+    Only tokens whose `type` is in ``expected_types`` are accepted; the
+    default is the API-bearer allow-list, so refresh tokens and any missing
+    or unrecognised type are rejected unless a caller explicitly asks for
+    them (e.g. the refresh endpoint passes ``IDENTITY_REFRESH_TOKEN_TYPES``).
+    The token must also bind unambiguously to a principal kind.
 
     Rejects a token whose `iss`/`aud` claim is PRESENT but does not match
     this service's configured `JWT_ISSUER`/`JWT_AUDIENCE` -- a mismatch
@@ -605,7 +672,7 @@ def verify_token(token: str) -> dict[str, Any] | None:
         Decoded payload dict or None if invalid
     """
     if isinstance(token, str) and token.startswith(WORKER_TOKEN_PREFIX):
-        return resolve_remote_worker_token(token)
+        return _enforce_token_type(resolve_remote_worker_token(token), expected_types)
 
     try:
         secret = (
@@ -635,6 +702,9 @@ def verify_token(token: str) -> dict[str, Any] | None:
         token_audience = payload.get("aud")
         if token_audience is not None and token_audience != expected_audience:
             logger.warning("Rejected token: audience mismatch")
+            return None
+
+        if _enforce_token_type(payload, expected_types) is None:
             return None
 
         if payload.get("type") == "service_researcher":
@@ -731,6 +801,26 @@ def verify_token(token: str) -> dict[str, Any] | None:
         return None
 
 
+def _enforce_token_type(
+    payload: dict[str, Any] | None, expected_types: Collection[str]
+) -> dict[str, Any] | None:
+    """Return ``payload`` only if its type is allowed here and its principal is unambiguous.
+
+    Fails closed: a missing, unknown or out-of-context `type` is rejected
+    rather than being treated as an identity access token.
+    """
+    if payload is None:
+        return None
+    token_type = payload.get("type")
+    if not isinstance(token_type, str) or token_type not in expected_types:
+        logger.warning("Rejected token: type not accepted in this context")
+        return None
+    if token_principal_kind(payload) is None:
+        logger.warning("Rejected token: ambiguous principal kind")
+        return None
+    return payload
+
+
 def get_token_from_header() -> str | None:
     """
     Extract the JWT, preferring the Authorization header but falling back to
@@ -800,7 +890,7 @@ def get_current_user() -> Any:
     db = current_app.db
 
     try:
-        token_type = payload.get("type", "access")
+        token_type = payload.get("type")
         if token_type == "service_researcher":
             tenant_id = int(str(payload["tenant"]).strip())
             read_scopes = [
@@ -923,11 +1013,27 @@ def get_current_user() -> Any:
             g.current_user = coderun_identity
             return coderun_identity
 
+        # Fail closed: only an explicit identity or portal-user access token
+        # may resolve to a stored principal, and only in its own table.
+        principal_kind = token_principal_kind(payload)
+        if (
+            token_type in PORTAL_ACCESS_TOKEN_TYPES
+            and principal_kind == PRINCIPAL_PORTAL_USER
+        ):
+            lookup_table = "portal_users"
+        elif (
+            token_type in IDENTITY_ACCESS_TOKEN_TYPES
+            and principal_kind == PRINCIPAL_IDENTITY
+        ):
+            lookup_table = "identities"
+        else:
+            logger.warning("Rejected token: type cannot authenticate a user")
+            return None
+
         user_id = int(payload["sub"])  # Convert string back to integer
-        token_type = payload.get("type", "access")
 
         # Handle portal_user tokens (from web UI login)
-        if token_type == "portal_user":
+        if lookup_table == "portal_users":
             portal_user = db.portal_users[user_id]
             if not portal_user:
                 logger.warning(f"Portal user not found with ID: {user_id}")

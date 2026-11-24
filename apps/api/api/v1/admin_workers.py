@@ -12,6 +12,7 @@ from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.auth.jwt_handler import (
+    SERVICE_WORKER_TOKEN_TYPES,
     WORKER_TOKEN_PREFIX,
     WORKER_TYPE_TO_SERVICE_SUB,
     get_token_from_header,
@@ -727,7 +728,7 @@ async def worker_heartbeat() -> tuple[Any, int]:
         return jsonify(resp_body), 200
 
     # Fallback: in-cluster service_worker JWT (svc-runworker / svc-scanner)
-    payload = verify_token(token)
+    payload = verify_token(token, SERVICE_WORKER_TOKEN_TYPES)
     if not payload:
         return ApiResponse.error("Invalid or expired token", 401)
     if payload.get("type") != "service_worker":
