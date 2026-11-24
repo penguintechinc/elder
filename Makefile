@@ -10,7 +10,7 @@
         build docker-build docker-build-alpha docker-push docker-scan \
         db-migrate db-create-migration db-downgrade db-reset db-shell db-backup \
         deploy-alpha deploy-beta \
-        helm-lint helm-template \
+        helm-lint helm-template test-helm \
         lock lock-api lock-dev lock-worker lock-mcp \
         license-validate license-check-features license-check-deps \
         clean clean-docker \
@@ -516,6 +516,10 @@ deploy-prod: ## Deploy to production cluster via Helm (context: $(PROJECT_NAME)-
 
 helm-lint: ## Lint the Helm chart
 	@helm lint $(HELM_DIR)
+
+test-helm: helm-lint ## Assert runworker isolation + secret/hardening guarantees on rendered Helm templates
+	@python3 tests/helm/check_runworker_chart.py
+	@python3 tests/helm/check_secrets_chart.py
 
 helm-template: ## Render Helm templates with alpha values (dry-run review)
 	@helm template $(PROJECT_NAME) $(HELM_DIR) --values $(HELM_DIR)/alpha.yml

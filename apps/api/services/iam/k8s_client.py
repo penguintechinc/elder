@@ -412,7 +412,7 @@ class KubernetesRBACClient(BaseIAMProvider):
             subject_objs = []
             for subj in subjects:
                 subject_objs.append(
-                    client.V1Subject(
+                    client.RbacV1Subject(
                         kind=subj.get("kind", "ServiceAccount"),
                         name=subj.get("name"),
                         namespace=subj.get("namespace", self.namespace),
@@ -480,7 +480,7 @@ class KubernetesRBACClient(BaseIAMProvider):
                     name=policy_identifier,
                 )
 
-                subject = client.V1Subject(
+                subject = client.RbacV1Subject(
                     kind="ServiceAccount",
                     name=user_identifier,
                     namespace=self.namespace,
@@ -581,7 +581,7 @@ class KubernetesRBACClient(BaseIAMProvider):
         try:
             # Create token request
             token_request = client.AuthenticationV1TokenRequest(
-                spec=client.AuthenticationV1TokenRequestSpec(
+                spec=client.V1TokenRequestSpec(
                     audiences=["https://kubernetes.default.svc"]
                 )
             )

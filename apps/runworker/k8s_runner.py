@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 import uuid
 from collections.abc import Callable
@@ -18,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from apps.runworker.elder_sdk_bundle import sdk_file_for_runtime
+from apps.runworker.gateway import DEFAULT_MAX_REQUESTS, RestrictionGateway
 from apps.runworker.runtimes import CONTAINER_TMP_DIR, RuntimeSpec, get_runtime
 
 logger = logging.getLogger(__name__)
@@ -177,10 +179,51 @@ def extract_structured_output(logs: str) -> Any | None:
     return None
 
 
+GATEWAY_ACCESS_LABEL = "elder.penguintech.io/gateway-access"
+
+
+class GatewayPortPool:
+    """Thread-safe pool of the NetworkPolicy-allowlisted gateway ports.
+
+    Execution pods may only reach the controller on these ports, so each
+    concurrent execution borrows one for its restriction gateway and returns
+    it afterwards.
+    """
+
+    def __init__(self, base_port: int, size: int) -> None:
+        if not 1024 <= int(base_port) <= 65535 - int(size) or int(size) < 1:
+            raise ValueError(
+                f"Invalid gateway port pool base={base_port!r} size={size!r}"
+            )
+        self._lock = threading.Lock()
+        self._free: list[int] = list(range(int(base_port), int(base_port) + int(size)))
+
+    def acquire(self) -> int:
+        """Borrow a free port; raises when every port is in use."""
+        with self._lock:
+            if not self._free:
+                raise RuntimeError(
+                    "No free restriction gateway port; raise the gateway port "
+                    "pool size to match RUNS_MAX_CONCURRENT"
+                )
+            return self._free.pop(0)
+
+    def release(self, port: int) -> None:
+        """Return a previously borrowed port to the pool."""
+        with self._lock:
+            if port not in self._free:
+                self._free.append(port)
+
+
+GATEWAY_SECRET_PREFIX = "elder-run-gw-"
+GATEWAY_TOKEN_SECRET_KEY = "token"
+
+
 def _base_labels(
     request: RunJobRequest,
     spec: RuntimeSpec,
 ) -> dict[str, str]:
+    """Return the labels shared by every object created for one execution."""
     labels = {
         "app.kubernetes.io/name": "elder-run",
         "app.kubernetes.io/component": "function-execution",
@@ -192,8 +235,10 @@ def _base_labels(
     ]
     if exec_label:
         labels["elder.penguintech.io/execution-id"] = exec_label
-    if request.granted_scopes:
-        labels["elder.penguintech.io/elder-api-access"] = "true"
+    if request.granted_scopes or request.allowed_egress_domains:
+        # Selects the NetworkPolicy that opens egress to the controller's
+        # per-execution restriction gateway and nothing else.
+        labels[GATEWAY_ACCESS_LABEL] = "true"
     return labels
 
 
@@ -232,6 +277,50 @@ def build_configmap_manifest(
     }
 
 
+def build_gateway_secret_manifest(
+    request: RunJobRequest,
+    *,
+    gateway_token: str,
+    namespace: str = "elder-runs",
+    secret_name: str | None = None,
+    owner_job_name: str | None = None,
+    owner_job_uid: str | None = None,
+) -> dict[str, Any]:
+    """Build the per-execution Secret holding the restriction gateway token.
+
+    One immutable Secret per execution, labelled with the execution id. When
+    the owning Job's UID is known it is set as owner so Kubernetes garbage
+    collection removes the Secret with the Job even if the worker dies before
+    its own cleanup runs.
+    """
+    spec = get_runtime(request.runtime)
+    metadata: dict[str, Any] = {
+        "name": secret_name
+        or sanitize_k8s_name(request.execution_id, prefix=GATEWAY_SECRET_PREFIX),
+        "namespace": namespace,
+        "labels": _base_labels(request, spec),
+    }
+    if owner_job_name and owner_job_uid:
+        metadata["ownerReferences"] = [
+            {
+                "apiVersion": "batch/v1",
+                "kind": "Job",
+                "name": owner_job_name,
+                "uid": owner_job_uid,
+                "controller": False,
+                "blockOwnerDeletion": False,
+            }
+        ]
+    return {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": metadata,
+        "type": "Opaque",
+        "immutable": True,
+        "stringData": {GATEWAY_TOKEN_SECRET_KEY: gateway_token},
+    }
+
+
 def build_job_manifest(
     request: RunJobRequest,
     *,
@@ -239,8 +328,18 @@ def build_job_manifest(
     runtime_class_name: str | None = None,
     job_name: str | None = None,
     configmap_name: str | None = None,
+    service_account_name: str | None = None,
+    gateway_url: str | None = None,
+    gateway_token_secret_name: str | None = None,
 ) -> dict[str, Any]:
-    """Build a hardened ``batch/v1`` Job manifest for a function execution."""
+    """Build a hardened ``batch/v1`` Job manifest for a function execution.
+
+    The pod never receives platform credentials: no API token is mounted,
+    service links are disabled, and the only credential it may carry is the
+    random per-execution restriction gateway token. That token is never
+    written into the Job or Pod spec: it is referenced from a per-execution
+    Secret, so reading Job/Pod objects or their events does not reveal it.
+    """
     spec = get_runtime(request.runtime)
     name = job_name or sanitize_k8s_name(request.execution_id, prefix="elder-run-")
     cm_name = configmap_name or sanitize_k8s_name(
@@ -258,11 +357,25 @@ def build_job_manifest(
         separators=(",", ":"),
     )
 
-    env_list: list[dict[str, str]] = [
+    env_list: list[dict[str, Any]] = [
         {"name": "ELDER_RUN_INPUT", "value": input_json},
         {"name": "ELDER_EXECUTION_ID", "value": request.execution_id},
         {"name": "TMPDIR", "value": CONTAINER_TMP_DIR},
     ]
+    if gateway_url and gateway_token_secret_name:
+        env_list.append({"name": "ELDER_GATEWAY_URL", "value": gateway_url})
+        env_list.append(
+            {
+                "name": "ELDER_GATEWAY_TOKEN",
+                "valueFrom": {
+                    "secretKeyRef": {
+                        "name": gateway_token_secret_name,
+                        "key": GATEWAY_TOKEN_SECRET_KEY,
+                        "optional": False,
+                    }
+                },
+            }
+        )
     seen_env = {entry["name"] for entry in env_list}
 
     for key, val in spec.extra_env:
@@ -299,6 +412,10 @@ def build_job_manifest(
     pod_spec: dict[str, Any] = {
         "restartPolicy": "Never",
         "automountServiceAccountToken": False,
+        "enableServiceLinks": False,
+        "hostNetwork": False,
+        "hostPID": False,
+        "hostIPC": False,
         "securityContext": {
             "runAsNonRoot": True,
             "runAsUser": NONROOT_UID,
@@ -403,6 +520,8 @@ def build_job_manifest(
 
     if runtime_class_name:
         pod_spec["runtimeClassName"] = runtime_class_name
+    if service_account_name:
+        pod_spec["serviceAccountName"] = service_account_name
 
     return {
         "apiVersion": "batch/v1",
@@ -437,9 +556,19 @@ class K8sRunner:
         batch_api: Any | None = None,
         core_api: Any | None = None,
         poll_interval: float = 0.5,
+        service_account_name: str | None = None,
+        elder_api_url: str = "http://hub-api:5000",
+        gateway_bind_host: str | None = None,
+        gateway_port_pool: GatewayPortPool | None = None,
+        max_gateway_requests: int = DEFAULT_MAX_REQUESTS,
     ) -> None:
         self.namespace = namespace
         self.runtime_class_name = runtime_class_name or None
+        self.service_account_name = service_account_name or None
+        self.elder_api_url = (elder_api_url or "http://hub-api:5000").rstrip("/")
+        self.gateway_bind_host = (gateway_bind_host or "").strip() or None
+        self.gateway_port_pool = gateway_port_pool
+        self.max_gateway_requests = max(1, int(max_gateway_requests))
         self._batch_api = batch_api
         self._core_api = core_api
         self.poll_interval = max(0.05, float(poll_interval))
@@ -469,7 +598,11 @@ class K8sRunner:
         on_logs: Callable[[str], None] | None = None,
         log_flush_interval: float = DEFAULT_LOG_FLUSH_INTERVAL_SECONDS,
     ) -> RunExecutionResult:
-        """Create ConfigMap + Job, wait for completion, collect logs, and clean up."""
+        """Create ConfigMap + Job, wait for completion, collect logs, and clean up.
+
+        The gateway token Secret and the code ConfigMap are removed on every
+        exit path (success, failure, timeout, cancellation or error).
+        """
         started = time.monotonic()
         batch_api, core_api = self._ensure_clients()
 
@@ -477,32 +610,70 @@ class K8sRunner:
         cm_name = sanitize_k8s_name(request.execution_id, prefix="elder-run-cm-")
 
         use_init_fetch = bool(request.use_init_container and request.code_url)
-        job_manifest = build_job_manifest(
-            request,
-            namespace=self.namespace,
-            runtime_class_name=self.runtime_class_name,
-            job_name=job_name,
-            configmap_name=cm_name,
+        secret_name = sanitize_k8s_name(
+            request.execution_id, prefix=GATEWAY_SECRET_PREFIX
         )
-
+        gateway, gateway_port = self._start_gateway(request)
         created_cm = False
-        if not use_init_fetch:
-            cm_manifest = build_configmap_manifest(
-                request,
-                namespace=self.namespace,
-                configmap_name=cm_name,
-            )
-            core_api.create_namespaced_config_map(
-                namespace=self.namespace,
-                body=cm_manifest,
-            )
-            created_cm = True
+        created_secret = False
 
         try:
-            batch_api.create_namespaced_job(
+            job_manifest = build_job_manifest(
+                request,
+                namespace=self.namespace,
+                runtime_class_name=self.runtime_class_name,
+                job_name=job_name,
+                configmap_name=cm_name,
+                service_account_name=self.service_account_name,
+                gateway_url=gateway.url if gateway is not None else None,
+                gateway_token_secret_name=secret_name if gateway is not None else None,
+            )
+
+            if not use_init_fetch:
+                cm_manifest = build_configmap_manifest(
+                    request,
+                    namespace=self.namespace,
+                    configmap_name=cm_name,
+                )
+                core_api.create_namespaced_config_map(
+                    namespace=self.namespace,
+                    body=cm_manifest,
+                )
+                created_cm = True
+
+            created_job = batch_api.create_namespaced_job(
                 namespace=self.namespace,
                 body=job_manifest,
             )
+
+            if gateway is not None:
+                # Created after the Job so the Secret can name it as owner;
+                # the pod cannot start its container until the Secret exists.
+                job_uid = getattr(getattr(created_job, "metadata", None), "uid", None)
+                if not isinstance(job_uid, str) or not job_uid:
+                    job_uid = None
+                    logger.warning(
+                        "runworker_gateway_secret_no_owner",
+                        extra={
+                            "job_name": job_name,
+                            "detail": "Job UID unavailable; Secret relies on "
+                            "explicit cleanup only",
+                        },
+                    )
+                # Marked before the call: a create that fails client-side may
+                # still have been applied, so cleanup is always attempted.
+                created_secret = True
+                core_api.create_namespaced_secret(
+                    namespace=self.namespace,
+                    body=build_gateway_secret_manifest(
+                        request,
+                        gateway_token=gateway.gateway_token,
+                        namespace=self.namespace,
+                        secret_name=secret_name,
+                        owner_job_name=job_name,
+                        owner_job_uid=job_uid,
+                    ),
+                )
 
             timeout = clamp_timeout_seconds(request.timeout_seconds)
             deadline = started + timeout + 15.0
@@ -574,8 +745,65 @@ class K8sRunner:
                 error=error_msg,
             )
         finally:
+            self._stop_gateway(gateway, gateway_port, request.execution_id)
+            if created_secret:
+                self._cleanup_gateway_secret(core_api, secret_name)
             if created_cm:
                 self._cleanup_configmap(core_api, cm_name)
+
+    def _start_gateway(
+        self, request: RunJobRequest
+    ) -> tuple[RestrictionGateway | None, int | None]:
+        """Start the per-execution restriction gateway when the request needs one.
+
+        Executions with granted scopes or an egress allowlist reach the Elder
+        API and the internet only through this proxy. If the controller was
+        not configured to host it, the execution is refused rather than run
+        with a silently missing capability.
+        """
+        if not (request.granted_scopes or request.allowed_egress_domains):
+            return None, None
+        if not self.gateway_bind_host or self.gateway_port_pool is None:
+            raise RuntimeError(
+                "Execution requests Elder API scopes or an egress allowlist but "
+                "the restriction gateway is not configured for the Job backend "
+                "(set POD_IP and RUNS_GATEWAY_PORT_BASE)"
+            )
+        port = self.gateway_port_pool.acquire()
+        try:
+            gateway = RestrictionGateway(
+                elder_api_url=self.elder_api_url,
+                elder_api_token=request.elder_api_token,
+                granted_scopes=request.granted_scopes,
+                allowed_egress_domains=request.allowed_egress_domains,
+                execution_id=request.execution_id,
+                tenant_id=request.tenant_id or "",
+                max_requests=self.max_gateway_requests,
+                bind_host=self.gateway_bind_host,
+                bind_port=port,
+            ).start()
+        except Exception:
+            self.gateway_port_pool.release(port)
+            raise
+        return gateway, port
+
+    def _stop_gateway(
+        self,
+        gateway: RestrictionGateway | None,
+        port: int | None,
+        execution_id: str,
+    ) -> None:
+        """Stop the per-execution gateway and return its port to the pool."""
+        if gateway is not None:
+            try:
+                gateway.stop()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "runworker_gateway_stop_failed",
+                    extra={"execution_id": execution_id, "error": str(exc)},
+                )
+        if port is not None and self.gateway_port_pool is not None:
+            self.gateway_port_pool.release(port)
 
     def _read_pod_logs_best_effort(self, core_api: Any, job_name: str) -> str:
         """Read current pod logs for an in-progress Job, ignoring transient states."""
@@ -676,4 +904,25 @@ class K8sRunner:
             logger.warning(
                 "runworker_configmap_cleanup_failed",
                 extra={"configmap": cm_name, "error": str(exc)},
+            )
+
+    def _cleanup_gateway_secret(self, core_api: Any, secret_name: str) -> None:
+        """Delete the per-execution gateway token Secret, ignoring not-found.
+
+        Only ever called with the name this runner derived for the execution
+        it created, so the delete permission is never used on other Secrets.
+        A failed delete is logged as an error: the owning Job's garbage
+        collection is then the remaining removal path.
+        """
+        try:
+            core_api.delete_namespaced_secret(
+                name=secret_name,
+                namespace=self.namespace,
+            )
+        except Exception as exc:  # noqa: BLE001
+            if getattr(exc, "status", None) == 404:
+                return
+            logger.error(
+                "runworker_gateway_secret_cleanup_failed",
+                extra={"secret": secret_name, "error": str(exc)},
             )

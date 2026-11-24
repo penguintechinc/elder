@@ -3,6 +3,14 @@
 
 namespace: elder
 
+# Credentials come from an operator-managed Secret (issue #385); no literal
+# credentials in this file. Create it before install — see
+# k8s/helm/elder/SECRETS.md for the required keys.
+environment: beta
+secrets:
+  existingSecret: elder-secrets
+  create: false
+
 # Global settings for beta
 global:
   imageRegistry: ""
@@ -27,7 +35,6 @@ postgres:
   env:
     POSTGRES_DB: elder
     POSTGRES_USER: elder
-    POSTGRES_PASSWORD: elder_beta_password
     POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
     PGDATA: /var/lib/postgresql/data/pgdata
   resources:
@@ -101,17 +108,13 @@ hub-api:
     pullPolicy: Always
   env:
     FLASK_ENV: production
-    SECRET_KEY: "CHANGE-IN-PRODUCTION-BETA"
     SITE_URL: "https://elder.penguintech.cloud"
     LOG_LEVEL: INFO
     RELEASE_MODE: "false"
     GRPC_REQUIRE_LICENSE: "true"
     LICENSE_SERVER_URL: "https://license.penguintech.io"
     DB_HOST: elder-postgres
-    DB_PASSWORD: elder_beta_password
-    DATABASE_URL: "postgresql://elder:elder_beta_password@elder-postgres:5432/elder"
     REDIS_HOST: elder-redis
-    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
     MCP_SERVER_URL: "http://hub-mcp:8080"
   resources:
     requests:
@@ -229,10 +232,9 @@ svc-worker:
     LOG_LEVEL: INFO
     LOG_FORMAT: json
     SYNC_ON_STARTUP: "true"
-    DATABASE_URL: "postgresql://elder:elder_beta_password@elder-postgres:5432/elder"
-    DATABASE_READ_URL: ""
-    DB_POOL_SIZE: "10"
-    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
+  database:
+    poolSize: 10
+    maxOverflow: 0
   resources:
     requests:
       memory: "256Mi"
@@ -255,11 +257,10 @@ svc-flows-invoker:
     pullPolicy: Always
   env:
     LOG_LEVEL: INFO
-    DATABASE_URL: "postgresql://elder:elder_beta_password@elder-postgres:5432/elder"
-    DATABASE_READ_URL: ""
-    DB_POOL_SIZE: "5"
-    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
     FLOWS_WORKSPACE_ROOT: "/workspace"
+  database:
+    poolSize: 5
+    maxOverflow: 0
   resources:
     requests:
       memory: "128Mi"

@@ -1,6 +1,8 @@
 {{- $cfg := index .Values "svc-runworker" }}
-{{- $hubApi := index .Values "hub-api" | default dict }}
 {{- if and $cfg $cfg.enabled }}
+{{- $backend := include "elder.runworker.backend" . }}
+{{- $exc := $cfg.kataException | default dict }}
+{{- $tokenSecret := required "svc-runworker.internalTokenSecret.name is required: onboard the worker (POST /api/v1/admin/workers) and store the issued token in a Secret" ($cfg.internalTokenSecret).name }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,7 +28,11 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: svc-runworker
-      automountServiceAccountToken: true
+      # The API token is mounted only when this pod is a pure Job controller.
+      # Whenever tenant code can run inside this pod (sandbox backend) no
+      # token is mounted; "auto" needs both and is gated on a Kata exception.
+      automountServiceAccountToken: {{ ne $backend "sandbox" }}
+      enableServiceLinks: false
       {{- if $cfg.podRuntimeClassName }}
       runtimeClassName: {{ $cfg.podRuntimeClassName | quote }}
       {{- end }}
@@ -51,11 +57,8 @@ spec:
             - name: ELDER_INTERNAL_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ ($cfg.internalTokenSecret).name | default "svc-runworker-token" }}
-                  key: {{ ($cfg.internalTokenSecret).key | default "token" }}
-                  optional: {{ if hasKey ($cfg.internalTokenSecret | default dict) "optional" }}{{ $cfg.internalTokenSecret.optional }}{{ else }}true{{ end }}
-            - name: JWT_SECRET_KEY
-              value: {{ ($hubApi.env).JWT_SECRET_KEY | default (($hubApi.env).SECRET_KEY | default "CHANGE-IN-PRODUCTION") | quote }}
+                  name: {{ $tokenSecret | quote }}
+                  key: {{ ($cfg.internalTokenSecret).key | default "token" | quote }}
             - name: RUNS_EXECUTION_NAMESPACE
               value: {{ $cfg.executionNamespace | default "elder-runs" | quote }}
             {{- if $cfg.runtimeClassName }}
@@ -75,7 +78,33 @@ spec:
             - name: RUNS_S3_FETCH_MODE
               value: {{ $cfg.s3FetchMode | default (($cfg.env).RUNS_S3_FETCH_MODE | default "worker") | quote }}
             - name: RUNS_RUNNER_BACKEND
-              value: {{ $cfg.runnerBackend | default (($cfg.env).RUNS_RUNNER_BACKEND | default "auto") | quote }}
+              value: {{ $backend | quote }}
+            {{- if $cfg.podRuntimeClassName }}
+            - name: RUNS_POD_RUNTIME_CLASS
+              value: {{ $cfg.podRuntimeClassName | quote }}
+            {{- end }}
+            - name: RUNS_SANDBOXED_RUNTIME_CLASSES
+              value: {{ join "," ($cfg.sandboxedRuntimeClasses | default (list "kata" "kata-qemu" "kata-clh" "kata-fc")) | quote }}
+            {{- if $exc.inPodSandbox }}
+            # KATA EXCEPTION (approved): svc-runworker.kataException.inPodSandbox
+            - name: RUNS_KATA_EXCEPTION_SANDBOX
+              value: "approved"
+            {{- end }}
+            {{- if $exc.executionPods }}
+            # KATA EXCEPTION (approved): svc-runworker.kataException.executionPods
+            - name: RUNS_KATA_EXCEPTION_JOBS
+              value: "approved"
+            {{- end }}
+            {{- if ne $backend "sandbox" }}
+            - name: RUNS_EXECUTION_SERVICE_ACCOUNT
+              value: {{ $cfg.executionServiceAccount | default "elder-run-exec" | quote }}
+            - name: RUNS_GATEWAY_PORT_BASE
+              value: {{ ($cfg.gateway).portBase | default 18080 | quote }}
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            {{- end }}
             - name: LOG_LEVEL
               value: {{ ($cfg.env).LOG_LEVEL | default "INFO" | quote }}
             {{- if .Values.otel.enabled }}
@@ -112,19 +141,7 @@ spec:
             - name: tmp
               mountPath: /tmp
           securityContext:
-            {{- if $cfg.securityContext }}
-            {{- toYaml $cfg.securityContext | nindent 12 }}
-            {{- else }}
-            runAsNonRoot: true
-            runAsUser: 1000
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-            seccompProfile:
-              type: RuntimeDefault
-            {{- end }}
+            {{- include "elder.containerSecurityContext" (list $cfg.securityContext .) | nindent 12 }}
       volumes:
         - name: tmp
           emptyDir:

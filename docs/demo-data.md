@@ -21,6 +21,10 @@ Defined in `scripts/demo_seed/common.py`, mirrored in
 | `DEMO_ADMIN_EMAIL` | `demo-admin@example.com` | reserved domain, no mailbox |
 | `DEMO_ADMIN_PASSWORD` | `demo-local-only-1` | **set explicitly** for anything shared; refused when `ELDER_ENV`/`QUART_ENV`/`FLASK_ENV`/`APP_ENV` is `production` |
 
+`make screenshots` (`scripts/capture-screenshots.cjs`) signs in with this same login by
+default; override with `ELDER_TEST_EMAIL`/`ELDER_TEST_PASSWORD` (or the `DEMO_ADMIN_*`
+variables above).
+
 Login is tenant-less: it resolves to the `system`/`default` tenant, which is where
 all demo data lives (so the bootstrap `admin@localhost.local` also sees it).
 

@@ -10,6 +10,7 @@ from apps.api.auth.decorators import admin_required, login_required, require_sco
 from apps.api.auth.jwt_handler import is_system_service_worker
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.discovery import DiscoveryService
+from apps.api.utils.pagination import parse_limit
 from apps.api.utils.tenant_scoping import get_current_tenant_id
 
 logger = logging.getLogger(__name__)
@@ -334,7 +335,7 @@ def get_discovery_job_history(job_id):
     try:
         service = get_discovery_service(read_only=True)
 
-        limit = request.args.get("limit", 50, type=int)
+        limit = parse_limit(request.args, 50)
 
         history = service.get_discovery_history(job_id=job_id, limit=limit)
 
@@ -360,7 +361,7 @@ def get_all_discovery_history():
     try:
         service = get_discovery_service(read_only=True)
 
-        limit = request.args.get("limit", 50, type=int)
+        limit = parse_limit(request.args, 50)
 
         history = service.get_discovery_history(limit=limit)
 

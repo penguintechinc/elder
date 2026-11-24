@@ -1,6 +1,6 @@
 """Tests for Redis Streams job-bus core library.
 
-All tests run against REAL Redis at localhost:56379/db5 (isolated).
+All tests run against REAL Redis, db 5 (isolated): REDIS_URL host/port when set, else localhost:56379.
 Tests exercise real stream semantics: XADD, XREADGROUP, XACK, XAUTOCLAIM, XPENDING.
 """
 
@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from datetime import UTC, datetime, timezone
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import pytest
@@ -23,12 +25,56 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
 
 from shared.jobbus import JobBus, JobEnvelope, ReclamedMessage
 
+_DEFAULT_JOBBUS_REDIS_URL = "redis://localhost:56379/5"
+_JOBBUS_REDIS_DB = 5
+
+
+def _jobbus_redis_url() -> str:
+    """Resolve the Redis URL for these tests from the environment.
+
+    ``JOBBUS_TEST_REDIS_URL`` is used verbatim. Otherwise the suite-wide
+    ``REDIS_URL`` supplies host/port/credentials and the database is forced to
+    db 5, because the fixture flushes its database on teardown and must not
+    wipe the db other tests share. Falls back to the historical default.
+    """
+    explicit = os.environ.get("JOBBUS_TEST_REDIS_URL")
+    if explicit:
+        return explicit
+    base = os.environ.get("REDIS_URL")
+    if not base:
+        return _DEFAULT_JOBBUS_REDIS_URL
+    return urlsplit(base)._replace(path=f"/{_JOBBUS_REDIS_DB}").geturl()
+
+
+@pytest.mark.parametrize(
+    ("env", "expected"),
+    [
+        ({}, "redis://localhost:56379/5"),
+        ({"REDIS_URL": "redis://cache:6380/0"}, "redis://cache:6380/5"),
+        ({"REDIS_URL": "rediss://u:p@cache:6380"}, "rediss://u:p@cache:6380/5"),
+        (
+            {
+                "REDIS_URL": "redis://cache:6380/0",
+                "JOBBUS_TEST_REDIS_URL": "redis://other:1/9",
+            },
+            "redis://other:1/9",
+        ),
+    ],
+)
+def test_jobbus_redis_url_resolution(monkeypatch, env, expected):
+    """The test Redis URL follows the environment and keeps the isolated db."""
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("JOBBUS_TEST_REDIS_URL", raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    assert _jobbus_redis_url() == expected
+
 
 @pytest_asyncio.fixture
 async def redis_client():
     """Create async Redis client for test database (db 5, isolated)."""
     client = await aioredis.from_url(
-        "redis://localhost:56379/5", encoding="utf-8", decode_responses=True
+        _jobbus_redis_url(), encoding="utf-8", decode_responses=True
     )
     yield client
     # Cleanup: flush test database

@@ -4,6 +4,28 @@
 
 namespace: elder
 
+# Deployment environment. dev/development/local/alpha permit the chart-created
+# dev Secret (secrets.create) and alpha-style mutable tags; anything else
+# (beta, gamma, production, ...) requires an operator-managed Secret.
+environment: production
+
+# Credentials (issue #385). Every signing key, password, token and
+# credential-bearing URL is injected via valueFrom.secretKeyRef from ONE
+# Secret — never as a literal env value. Rendering fails if a component's
+# `env` map contains a credential literal. See k8s/helm/elder/SECRETS.md.
+secrets:
+  # Name of an existing Secret (create it out-of-band: kubectl/SealedSecrets/
+  # ExternalSecrets). Required keys: SECRET_KEY, JWT_SECRET_KEY,
+  # POSTGRES_PASSWORD, DB_PASSWORD, DATABASE_URL, REDIS_URL, ADMIN_PASSWORD.
+  # Optional keys: LICENSE_KEY, REDIS_PASSWORD, DATABASE_READ_URL,
+  # ELDER_API_KEY, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
+  # LDAP_BIND_PASSWORD, GUEST_PASSWORD.
+  existingSecret: elder-secrets
+  # DEV/ALPHA ONLY: render the Secret from devValues. Rendering fails when
+  # environment is not dev/development/local/alpha.
+  create: false
+  devValues: {}
+
 # Global settings
 global:
   imageRegistry: ""
@@ -66,7 +88,6 @@ postgres:
   env:
     POSTGRES_DB: elder
     POSTGRES_USER: elder
-    POSTGRES_PASSWORD: elder_dev_password
     POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
     # Required when /var/lib/postgresql/data is a PVC mount: initdb chmods
     # PGDATA to 0700, which fails with "Operation not permitted" if the mount
@@ -75,6 +96,14 @@ postgres:
     # capabilities dropped. Pointing PGDATA at a subdirectory lets postgres
     # create + own that subdir itself instead of chmod'ing the mount root.
     PGDATA: /var/lib/postgresql/data/pgdata
+  secretEnv:
+    POSTGRES_PASSWORD: { key: POSTGRES_PASSWORD }
+  # Server-side connection ceiling (rendered as `-c max_connections=`).
+  # The chart fails to render when the summed client pools
+  # (<component>.database.poolSize + maxOverflow) x max pods (HPA
+  # maxReplicas when autoscaling) exceed maxConnections - reservedConnections.
+  maxConnections: 200
+  reservedConnections: 10
   resources:
     requests:
       memory: "256Mi"
@@ -112,8 +141,9 @@ redis:
   service:
     type: ClusterIP
     port: 6379
-  env:
-    REDIS_PASSWORD: elder_redis_password
+  env: {}
+  secretEnv:
+    REDIS_PASSWORD: { key: REDIS_PASSWORD, optional: true }
   resources:
     requests:
       memory: "128Mi"
@@ -145,7 +175,7 @@ hub-webui:
   enabled: true
   image:
     repository: elder/hub-webui
-    tag: latest
+    tag: ""  # empty = chart appVersion; "latest" is rejected
     pullPolicy: IfNotPresent
   replicaCount: 2
   # Container runs rootless Express on Node 24 (web/Dockerfile, web/server.ts),
@@ -205,7 +235,7 @@ hub-api:
     waddles.penguintech.io/ollama-client: "true"
   image:
     repository: elder/hub-api
-    tag: latest
+    tag: ""  # empty = chart appVersion; "latest" is rejected
     pullPolicy: IfNotPresent
   replicaCount: 2
   service:
@@ -222,7 +252,6 @@ hub-api:
     FLASK_APP: "apps.api.main:create_app"
     FLASK_HOST: "0.0.0.0"
     FLASK_PORT: "5000"
-    SECRET_KEY: "CHANGE-IN-PRODUCTION"
 
     # JWT Token Expiration
     JWT_ACCESS_TOKEN_HOURS: "4"
@@ -237,11 +266,6 @@ hub-api:
     DB_PORT: "5432"
     DB_NAME: elder
     DB_USER: elder
-    DB_PASSWORD: elder_dev_password
-    DB_POOL_SIZE: "20"
-
-    # Redis
-    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
 
     # gRPC
     GRPC_ENABLED: "true"
@@ -250,8 +274,7 @@ hub-api:
     GRPC_MAX_WORKERS: "10"
     GRPC_REQUIRE_LICENSE: "true"
 
-    # License Server
-    LICENSE_KEY: ""
+    # License Server (LICENSE_KEY comes from the Secret)
     PRODUCT_NAME: elder
     LICENSE_SERVER_URL: "https://license.penguintech.io"
 
@@ -262,13 +285,11 @@ hub-api:
 
     # Admin user
     ADMIN_USERNAME: admin
-    ADMIN_PASSWORD: admin123
     ADMIN_EMAIL: "admin@localhost.local"
 
     # Guest user
     ENABLE_GUEST_LOGIN: "false"
     GUEST_USERNAME: guest
-    GUEST_PASSWORD: guest
 
     # Logging
     LOG_LEVEL: INFO
@@ -289,6 +310,20 @@ hub-api:
     AI_RESEARCHER_MAX_STEPS: "6"
     ELDER_INTERNAL_API_URL: "http://127.0.0.1:5000"
     MCP_SERVER_URL: "http://hub-mcp:8080"
+  secretEnv:
+    SECRET_KEY: { key: SECRET_KEY }
+    JWT_SECRET_KEY: { key: JWT_SECRET_KEY }
+    DB_PASSWORD: { key: DB_PASSWORD }
+    REDIS_URL: { key: REDIS_URL }
+    ADMIN_PASSWORD: { key: ADMIN_PASSWORD }
+    DATABASE_URL: { key: DATABASE_URL, optional: true }
+    LICENSE_KEY: { key: LICENSE_KEY, optional: true }
+    GUEST_PASSWORD: { key: GUEST_PASSWORD, optional: true }
+  # Per-pod DB pool (DB_POOL_SIZE / SQLALCHEMY_MAX_OVERFLOW). Budget:
+  # (10+5) x 10 HPA max pods = 150 of postgres.maxConnections 200.
+  database:
+    poolSize: 10
+    maxOverflow: 5
   resources:
     requests:
       memory: "512Mi"
@@ -337,7 +372,7 @@ hub-mcp:
   enabled: true
   image:
     repository: elder/hub-mcp
-    tag: latest
+    tag: ""  # empty = chart appVersion; "latest" is rejected
     pullPolicy: IfNotPresent
   replicaCount: 2
   service:
@@ -394,7 +429,7 @@ svc-scanner:
   ttlSecondsAfterFinished: 600
   image:
     repository: elder/svc-scanner
-    tag: latest
+    tag: ""  # empty = chart appVersion; "latest" is rejected
     pullPolicy: IfNotPresent
   env:
     ELDER_API_URL: "http://hub-api:5000"
@@ -406,6 +441,8 @@ svc-scanner:
     SCANNER_JOB_TIMEOUT_SECONDS: "300"
     NVD_SYNC_ENABLED: "true"
     NVD_SYNC_INTERVAL: "21600"
+  secretEnv:
+    JWT_SECRET_KEY: { key: JWT_SECRET_KEY }
   resources:
     requests:
       memory: "128Mi"
@@ -440,7 +477,7 @@ svc-integrations:
   ttlSecondsAfterFinished: 600
   image:
     repository: elder/svc-integrations
-    tag: latest
+    tag: ""  # empty = chart appVersion; "latest" is rejected
     pullPolicy: IfNotPresent
   env:
     ELDER_API_URL: "http://hub-api:5000"
@@ -448,6 +485,8 @@ svc-integrations:
     RUST_LOG: "info"
     INTEGRATIONS_MAX_CONCURRENCY: "8"
     INTEGRATIONS_JOB_TIMEOUT_SECONDS: "120"
+  secretEnv:
+    JWT_SECRET_KEY: { key: JWT_SECRET_KEY }
   resources:
     requests:
       memory: "128Mi"
@@ -471,7 +510,7 @@ svc-worker:
   enabled: true
   image:
     repository: elder/svc-worker
-    tag: latest
+    tag: ""  # empty = chart appVersion; "latest" is rejected
     pullPolicy: IfNotPresent
   replicaCount: 1
   service:
@@ -481,20 +520,12 @@ svc-worker:
   env:
     # Elder API Configuration
     ELDER_API_URL: "http://hub-api:5000"
-    ELDER_API_KEY: ""
 
-    # Database (direct access for discovery jobs)
-    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
-    DATABASE_READ_URL: ""
-    DB_POOL_SIZE: "10"
-
-    # Redis (Phase-2 job-bus streams; XREADGROUP consumer id set via POD_NAME downward API)
-    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
+    # DATABASE_URL / REDIS_URL (job-bus streams; consumer id via POD_NAME)
+    # and all cloud/LDAP credentials come from secretEnv below.
 
     # AWS Configuration
     AWS_ENABLED: "false"
-    AWS_ACCESS_KEY_ID: ""
-    AWS_SECRET_ACCESS_KEY: ""
     AWS_DEFAULT_REGION: "us-east-1"
     AWS_REGIONS: "us-east-1,us-west-2"
     AWS_SYNC_INTERVAL: "3600"
@@ -519,7 +550,6 @@ svc-worker:
     LDAP_USE_SSL: "false"
     LDAP_VERIFY_CERT: "true"
     LDAP_BIND_DN: ""
-    LDAP_BIND_PASSWORD: ""
     LDAP_BASE_DN: ""
     LDAP_USER_FILTER: "(objectClass=person)"
     LDAP_GROUP_FILTER: "(objectClass=group)"
@@ -541,6 +571,17 @@ svc-worker:
     # Logging
     LOG_LEVEL: INFO
     LOG_FORMAT: json
+  secretEnv:
+    DATABASE_URL: { key: DATABASE_URL }
+    REDIS_URL: { key: REDIS_URL }
+    DATABASE_READ_URL: { key: DATABASE_READ_URL, optional: true }
+    ELDER_API_KEY: { key: ELDER_API_KEY, optional: true }
+    AWS_ACCESS_KEY_ID: { key: AWS_ACCESS_KEY_ID, optional: true }
+    AWS_SECRET_ACCESS_KEY: { key: AWS_SECRET_ACCESS_KEY, optional: true }
+    LDAP_BIND_PASSWORD: { key: LDAP_BIND_PASSWORD, optional: true }
+  database:
+    poolSize: 5
+    maxOverflow: 0
   resources:
     requests:
       memory: "256Mi"
@@ -584,23 +625,24 @@ svc-flows-invoker:
   enabled: true
   image:
     repository: elder/svc-flows-invoker
-    tag: latest
+    tag: ""  # empty = chart appVersion; "latest" is rejected
     pullPolicy: IfNotPresent
   replicaCount: 1
   env:
-    # Database (direct access for flow execution records)
-    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
-    DATABASE_READ_URL: ""
-    DB_POOL_SIZE: "5"
-
-    # Redis (job-bus streams; XREADGROUP consumer id set via POD_NAME downward API)
-    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
+    # DATABASE_URL / REDIS_URL come from secretEnv below.
 
     # Sandboxed CI workspace — writable emptyDir mount (readOnlyRootFilesystem stays true)
     FLOWS_WORKSPACE_ROOT: "/workspace"
 
     # Logging
     LOG_LEVEL: INFO
+  secretEnv:
+    DATABASE_URL: { key: DATABASE_URL }
+    REDIS_URL: { key: REDIS_URL }
+    DATABASE_READ_URL: { key: DATABASE_READ_URL, optional: true }
+  database:
+    poolSize: 5
+    maxOverflow: 0
   resources:
     requests:
       memory: "128Mi"
@@ -672,23 +714,59 @@ svc-runworker:
   enabled: false
   image:
     repository: elder/svc-runworker
-    tag: latest
+    tag: ""  # empty = chart appVersion; "latest" is rejected
     pullPolicy: IfNotPresent
   replicaCount: 1
   # Dedicated namespace where per-execution Kubernetes Jobs run.
   executionNamespace: "elder-runs"
   createExecutionNamespace: true
+  # Only when createExecutionNamespace is false: confirms the operator has
+  # labelled executionNamespace with pod-security.kubernetes.io/enforce=restricted
+  # (the chart cannot label a namespace it does not own). Rendering FAILS for
+  # the Job backend when the namespace is neither chart-created nor verified.
+  executionNamespacePodSecurityVerified: false
   # How svc-runworker fetches S3-backed artifacts:
   # - "worker": worker fetches via presigned URL, verifies SHA-256, mounts read-only ConfigMap (preserves zero-egress pods; auto-promotes >900KiB to init_container)
   # - "init_container": hardened initContainer fetches via presigned URL into emptyDir /workspace
   s3FetchMode: "worker"
-  # Optional RuntimeClass (e.g. "kata") for VM-isolated function pods.
-  runtimeClassName: ""
-  # Secret holding ELDER_INTERNAL_TOKEN (never hardcoded in values/manifests).
+  # Where tenant code runs:
+  # - "k8s_job" (default): every execution in its own pod in executionNamespace
+  #   (own ServiceAccount with no RBAC and no mounted token, default-deny
+  #   network, runtimeClassName below). The worker pod runs no tenant code.
+  # - "sandbox": opt-in warm in-pod execution. Rendering FAILS unless
+  #   podRuntimeClassName is one of sandboxedRuntimeClasses or
+  #   kataException.inPodSandbox is recorded. No API token is mounted.
+  # - "auto": in-pod when possible, else a Job. Tenant code then shares a pod
+  #   with a Kubernetes API token, so it always needs kataException.inPodSandbox.
+  runnerBackend: "k8s_job"
+  # RuntimeClass for execution pods. Required (rendering fails when empty)
+  # unless kataException.executionPods is recorded.
+  runtimeClassName: "kata"
+  # RuntimeClass of the svc-runworker pod itself (needed for "sandbox").
+  podRuntimeClassName: ""
+  # Runtime classes accepted as a VM isolation boundary, for the worker pod
+  # (podRuntimeClassName) and for execution pods (runtimeClassName). Both the
+  # chart and the worker require MEMBERSHIP in this list: any other value
+  # (runc, a misspelt class) fails rendering and is refused at worker start.
+  sandboxedRuntimeClasses: ["kata", "kata-qemu", "kata-clh", "kata-fc"]
+  # Running tenant code without a Kata boundary is unsupported for production.
+  # Only set a flag here with a recorded approval, and annotate the override
+  # in the environment values file with "# KATA EXCEPTION (approved)".
+  kataException:
+    executionPods: false
+    inPodSandbox: false
+  # ServiceAccount (no RBAC, no token) used by execution pods.
+  executionServiceAccount: "elder-run-exec"
+  # Per-execution restriction gateway ports on the worker pod; one port per
+  # concurrent execution (env.RUNS_MAX_CONCURRENT) starting at portBase.
+  gateway:
+    portBase: 18080
+  # REQUIRED: Secret holding this worker's provisioned token
+  # (POST /api/v1/admin/workers -> one-time ewk_ token). Rendering fails when
+  # name is empty. The worker is never given the platform signing key.
   internalTokenSecret:
-    name: "svc-runworker-token"
+    name: ""
     key: "token"
-    optional: true
   env:
     ELDER_API_URL: "http://hub-api:5000"
     RUNS_WORKER_CLUSTER: ""
@@ -722,6 +800,13 @@ svc-runworker:
   # function pods in executionNamespace.
   networkPolicy:
     enabled: true
+    # HTTPS hostnames the worker pod may reach beyond hub-api: a remote-cluster
+    # Elder API host, and the upper bound for function egress allowlists
+    # (the restriction gateway proxies those from the worker pod). Empty =
+    # no internet egress at all.
+    egressFQDNs: []
+    # Optional S3-compatible storage egress, e.g. {cidr: "10.0.5.0/24", port: 9000}
+    s3Egress: {}
 
 # Ingress configuration
 ingress:
@@ -766,6 +851,8 @@ podSecurityContext:
   fsGroup: 1000
   runAsNonRoot: true
   runAsUser: 1000
+  seccompProfile:
+    type: RuntimeDefault
 
 # Security Context
 securityContext:
@@ -776,6 +863,8 @@ securityContext:
   capabilities:
     drop:
       - ALL
+  seccompProfile:
+    type: RuntimeDefault
 
 # Node selector
 nodeSelector: {}
