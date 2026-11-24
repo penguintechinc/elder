@@ -72,6 +72,8 @@ curl -X POST /api/v1/tenants/{tenant_id} \
 
 ### Request Data Export (DSAR)
 
+Self-service (every tier, no feature flag): `GET /api/v1/privacy/me/export`, `POST /api/v1/privacy/me/erase`, `GET|POST /api/v1/privacy/me/consent`, `POST /api/v1/privacy/me/consent/withdraw` — see [dsar-erasure-inventory.md](dsar-erasure-inventory.md). Requests that cannot be made while signed in:
+
 Contact: `dpo@penguintech.io`
 
 Provide:
