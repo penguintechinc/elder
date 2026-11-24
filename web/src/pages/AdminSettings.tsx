@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Settings,
   Shield,
@@ -10,7 +10,9 @@ import {
   FileText,
   Search,
   RefreshCw,
+  Lock,
 } from "lucide-react";
+import toast from "react-hot-toast";
 import api, { type LicenseFeatures } from "@/lib/api";
 import Card, { CardHeader, CardContent } from "@/components/Card";
 
@@ -48,6 +50,8 @@ function getTierBadgeClass(tier: string | undefined): string {
 export default function AdminSettings() {
   const [logSearch, setLogSearch] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [gracePeriodInput, setGracePeriodInput] = useState("7");
+  const queryClient = useQueryClient();
 
   const { data: health } = useQuery({
     queryKey: ["health"],
@@ -66,8 +70,75 @@ export default function AdminSettings() {
   });
 
   const isAdmin = profile?.global_role === "admin";
+  const isMfaAdmin =
+    isAdmin ||
+    profile?.global_role === "super_admin" ||
+    profile?.tenant_role === "admin";
   const normalizedTier = (licenseStatus?.tier || "free").toLowerCase();
   const isEnterprise = normalizedTier === "enterprise";
+
+  const { data: mfaPolicy } = useQuery({
+    queryKey: ["mfa-policy"],
+    queryFn: () => api.getMfaPolicy(),
+    enabled: isMfaAdmin,
+  });
+
+  useEffect(() => {
+    if (typeof mfaPolicy?.grace_period_days === "number") {
+      setGracePeriodInput(String(mfaPolicy.grace_period_days));
+    }
+  }, [mfaPolicy?.grace_period_days]);
+
+  const mfaPolicyMutation = useMutation({
+    mutationFn: (payload: { enforced: boolean; grace_period_days: number }) =>
+      api.updateMfaPolicy({
+        enforced: payload.enforced,
+        provider: "google_authenticator",
+        grace_period_days: payload.grace_period_days,
+      }),
+    onSuccess: async (updated) => {
+      await queryClient.invalidateQueries({ queryKey: ["mfa-policy"] });
+      await queryClient.invalidateQueries({ queryKey: ["portal-profile"] });
+      await queryClient.invalidateQueries({ queryKey: ["profile"] });
+      toast.success(
+        updated.enforced
+          ? `Enterprise MFA enforcement active (${updated.grace_period_days}-day grace period)`
+          : "Enterprise MFA enforcement turned off",
+      );
+    },
+    onError: (err: unknown) => {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data
+          ?.error || "Failed to update MFA enforcement policy";
+      toast.error(msg);
+    },
+  });
+
+  const mfaEnforced = Boolean(mfaPolicy?.enforced);
+  const canManageMfa = Boolean(mfaPolicy?.can_manage ?? isEnterprise);
+
+  const parseGraceDays = (): number => {
+    const parsed = Number.parseInt(gracePeriodInput, 10);
+    if (Number.isNaN(parsed)) return 7;
+    return Math.max(0, Math.min(90, parsed));
+  };
+
+  const handleToggleMfaEnforcement = () => {
+    mfaPolicyMutation.mutate({
+      enforced: !mfaEnforced,
+      grace_period_days: parseGraceDays(),
+    });
+  };
+
+  const handleSaveGracePeriod = (e: React.FormEvent) => {
+    e.preventDefault();
+    const days = parseGraceDays();
+    setGracePeriodInput(String(days));
+    mfaPolicyMutation.mutate({
+      enforced: mfaEnforced,
+      grace_period_days: days,
+    });
+  };
   const tierLabel = formatTierLabel(licenseStatus?.tier, licenseLoading);
   const tierBadgeClass = getTierBadgeClass(licenseStatus?.tier);
   const statusLabel = licenseStatus?.status
@@ -283,6 +354,124 @@ export default function AdminSettings() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Enterprise MFA Enforcement - Admin Only */}
+      {isMfaAdmin && (
+        <div className="mt-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Lock className="w-5 h-5" />
+                  Enterprise MFA Enforcement (Google Authenticator / Passkey)
+                </h2>
+                <span className="px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/20 text-emerald-400">
+                  Enterprise
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-200 font-medium">
+                        Require Google Authenticator (TOTP) or Passkey
+                      </span>
+                      <span
+                        data-testid="mfa-policy-status"
+                        className={`px-2 py-0.5 rounded text-xs font-medium ${
+                          mfaEnforced
+                            ? "bg-emerald-500/20 text-emerald-300"
+                            : "bg-slate-700 text-slate-300"
+                        }`}
+                      >
+                        {mfaEnforced ? "Enforced" : "Optional"}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-400 mt-1">
+                      Require all organization users to enroll Google
+                      Authenticator (TOTP) or a Passkey. Users without MFA
+                      enrolled are locked out after the grace period expires.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={mfaEnforced}
+                    aria-label="Enforce MFA with Google Authenticator or Passkey"
+                    data-testid="mfa-policy-toggle"
+                    disabled={!canManageMfa || mfaPolicyMutation.isPending}
+                    onClick={handleToggleMfaEnforcement}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+                      mfaEnforced ? "bg-emerald-500" : "bg-slate-600"
+                    } ${
+                      !canManageMfa || mfaPolicyMutation.isPending
+                        ? "opacity-50 cursor-not-allowed"
+                        : "cursor-pointer"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        mfaEnforced ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <form
+                  onSubmit={handleSaveGracePeriod}
+                  className="pt-4 border-t border-slate-700 flex flex-col sm:flex-row sm:items-end gap-4"
+                >
+                  <div className="flex-1 max-w-xs">
+                    <label
+                      htmlFor="mfa-grace-period-days"
+                      className="block text-sm font-medium text-slate-300 mb-1"
+                    >
+                      Grace Period (days)
+                    </label>
+                    <input
+                      id="mfa-grace-period-days"
+                      data-testid="mfa-grace-period-input"
+                      type="number"
+                      min={0}
+                      max={90}
+                      value={gracePeriodInput}
+                      disabled={!canManageMfa || mfaPolicyMutation.isPending}
+                      onChange={(e) => setGracePeriodInput(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    data-testid="mfa-grace-period-save"
+                    disabled={!canManageMfa || mfaPolicyMutation.isPending}
+                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Save Grace Period
+                  </button>
+                </form>
+                <p className="text-xs text-slate-400">
+                  Valid range: 0–90 days (0 = immediate). Counts from when
+                  enforcement is turned on or when the user registered,
+                  whichever is further out.
+                </p>
+
+                {!isEnterprise && (
+                  <p
+                    data-testid="mfa-enterprise-upgrade-notice"
+                    className="text-sm text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2"
+                  >
+                    Upgrade to Enterprise to enforce Google Authenticator (TOTP)
+                    or Passkey MFA across all organization users.
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* System Logs - Admin Only */}
       {isAdmin && (

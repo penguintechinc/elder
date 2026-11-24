@@ -1,4 +1,10 @@
-import { useLocation, Outlet, useNavigate } from "react-router-dom";
+import {
+  useLocation,
+  Outlet,
+  useNavigate,
+  Link,
+  Navigate,
+} from "react-router-dom";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -155,6 +161,21 @@ export default function Layout() {
     !location.pathname.startsWith("/streams/executions") &&
     !location.pathname.startsWith("/streams/approvals");
 
+  const mfaSetupRequired = Boolean(userProfile?.mfa_setup_required);
+  const mfaLockedOut = Boolean(userProfile?.mfa_locked_out);
+  const mfaGraceDaysRemaining =
+    typeof userProfile?.mfa_grace_days_remaining === "number"
+      ? userProfile.mfa_grace_days_remaining
+      : 0;
+  const mfaGraceDeadlineLabel = userProfile?.mfa_grace_expires_at
+    ? new Date(userProfile.mfa_grace_expires_at).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
+    : null;
+  const isOnProfilePage = location.pathname === "/profile";
+
   return (
     <div className="min-h-screen bg-slate-900">
       {/* Sidebar */}
@@ -173,6 +194,58 @@ export default function Layout() {
 
       {/* Main content */}
       <div className="lg:pl-64 pl-0">
+        {mfaSetupRequired &&
+          (mfaLockedOut ? (
+            <div
+              role="alert"
+              data-testid="mfa-lockout-banner"
+              className="bg-red-500/20 border-b border-red-500/40 px-4 py-3 text-red-100 text-sm flex items-center justify-between gap-4 flex-wrap"
+            >
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-red-300 shrink-0" />
+                <span>
+                  Your MFA grace period has expired. You must set up Google
+                  Authenticator to continue using Elder.
+                </span>
+              </div>
+              {!isOnProfilePage && (
+                <Link
+                  to="/profile"
+                  className="font-semibold text-red-200 hover:text-white underline whitespace-nowrap"
+                >
+                  Go to Profile
+                </Link>
+              )}
+            </div>
+          ) : (
+            <div
+              role="alert"
+              data-testid="mfa-grace-warning-banner"
+              className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2.5 text-amber-100 text-sm flex items-center justify-between gap-4 flex-wrap"
+            >
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  Your organization requires Google Authenticator (TOTP) or
+                  Passkey MFA. You will be locked out in{" "}
+                  <strong>
+                    {mfaGraceDaysRemaining}{" "}
+                    {mfaGraceDaysRemaining === 1 ? "day" : "days"}
+                  </strong>
+                  {mfaGraceDeadlineLabel
+                    ? ` (by ${mfaGraceDeadlineLabel})`
+                    : ""}{" "}
+                  unless you enroll MFA.
+                </span>
+              </div>
+              <Link
+                to="/profile"
+                className="font-semibold text-amber-300 hover:text-amber-100 underline whitespace-nowrap"
+              >
+                Set up MFA
+              </Link>
+            </div>
+          ))}
         <main
           className={
             isFullBleedCanvas
@@ -180,7 +253,11 @@ export default function Layout() {
               : "min-h-screen max-w-screen-2xl mx-auto"
           }
         >
-          <Outlet />
+          {mfaLockedOut && !isOnProfilePage ? (
+            <Navigate to="/profile" replace />
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
     </div>

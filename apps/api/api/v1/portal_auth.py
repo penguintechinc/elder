@@ -21,7 +21,11 @@ from apps.api.auth.portal_cookies import (
     set_portal_auth_cookies,
 )
 from apps.api.models.schemas import PortalLoginRequest, PortalRegisterRequest
-from apps.api.services.portal_auth import PortalAuthService
+from apps.api.services.portal_auth import (
+    PortalAuthService,
+    compute_user_mfa_status,
+    user_has_mfa_enrolled,
+)
 from apps.api.utils.api_responses import ApiResponse
 
 bp = Blueprint("portal_auth", __name__)
@@ -158,6 +162,11 @@ async def _issue_token_response(
         "refresh_token": tokens.get("refresh_token"),
         "token_type": tokens.get("token_type"),
         "expires_in": tokens.get("expires_in"),
+        "mfa_enforced": bool(result.get("mfa_enforced", False)),
+        "mfa_setup_required": bool(result.get("mfa_setup_required", False)),
+        "mfa_grace_expires_at": result.get("mfa_grace_expires_at"),
+        "mfa_grace_days_remaining": result.get("mfa_grace_days_remaining"),
+        "mfa_locked_out": bool(result.get("mfa_locked_out", False)),
     }
 
     response = await make_response(jsonify(response_data), status_code)
@@ -444,19 +453,45 @@ def enable_mfa():
     return jsonify(result), 200
 
 
+@bp.route("/mfa/confirm", methods=["POST"])
+@portal_token_required
+async def confirm_mfa():
+    """Confirm MFA enrollment by verifying a 6-digit TOTP code.
+
+    Request body:
+        totp_code: str - 6-digit TOTP code from Google Authenticator
+
+    Returns:
+        ``{"verified": True}`` on success, or 400/401 on invalid code
+    """
+    data = await request.get_json(silent=True)
+    if not data or not data.get("totp_code"):
+        return ApiResponse.bad_request("totp_code is required")
+
+    user_id = int(request.portal_user["sub"])
+    result = PortalAuthService.confirm_mfa(user_id, str(data["totp_code"]))
+
+    if "error" in result:
+        status_code = result.get("status_code", 400)
+        return jsonify({"verified": False, "error": result["error"]}), status_code
+
+    return jsonify({"verified": True}), 200
+
+
 @bp.route("/mfa/disable", methods=["POST"])
 @portal_token_required
 def disable_mfa():
     """Disable MFA for the authenticated user.
 
     Returns:
-        Success status
+        Success status, or 403 if MFA is enforced by tenant policy
     """
     user_id = int(request.portal_user["sub"])
     result = PortalAuthService.disable_mfa(user_id)
 
     if "error" in result:
-        return jsonify(result), 400
+        status_code = result.get("status_code", 400)
+        return jsonify({"error": result["error"]}), status_code
 
     return jsonify(result), 200
 
@@ -626,6 +661,12 @@ def get_current_user():
         return ApiResponse.error("User not found", 404)
 
     permissions = PortalAuthService.get_user_permissions(user_id)
+    mfa_enabled = user_has_mfa_enrolled(user)
+    mfa_status = compute_user_mfa_status(
+        user.tenant_id,
+        mfa_enabled=mfa_enabled,
+        user_created_at=getattr(user, "created_at", None),
+    )
 
     return (
         jsonify(
@@ -636,7 +677,8 @@ def get_current_user():
                 "tenant_id": user.tenant_id,
                 "tenant_role": user.tenant_role,
                 "global_role": user.global_role,
-                "mfa_enabled": bool(user.mfa_secret),
+                "mfa_enabled": mfa_enabled,
+                **mfa_status,
                 "email_verified": user.email_verified,
                 "permissions": permissions,
             }

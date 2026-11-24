@@ -13664,6 +13664,14 @@ paths:
       parameters: []
       responses: {}
       summary: Update current authenticated portal user info.
+  /api/v1/portal-auth/mfa/confirm:
+    post:
+      description: "\nRequest body:\n    totp_code: str - 6-digit TOTP code from Google\
+        \ Authenticator\n\nReturns:\n    Verification status"
+      operationId: post_confirm_mfa
+      parameters: []
+      responses: {}
+      summary: Confirm MFA enrollment by verifying a 6-digit TOTP code.
   /api/v1/portal-auth/mfa/disable:
     post:
       description: "\nReturns:\n    Success status"
@@ -17538,6 +17546,26 @@ paths:
       parameters: []
       responses: {}
       summary: Create a new tenant.
+  /api/v1/tenants/current/mfa-policy:
+    get:
+      description: "\nReturns:\n    Tenant MFA policy, user enrollment state, license\
+        \ tier, and manageability."
+      operationId: get_get_current_tenant_mfa_policy
+      parameters: []
+      responses: {}
+      summary: Get the MFA enforcement policy for the authenticated user's current
+        tenant.
+    put:
+      description: "\nRequires an admin role and an Enterprise license.\n\nRequest\
+        \ body:\n    enforced: bool - Whether Google Authenticator MFA is enforced\n\
+        \    provider: str (optional) - MFA provider (google_authenticator)\n    grace_period_days:\
+        \ int (optional) - Grace period in days (0..90, default 7)\n\nReturns:\n \
+        \   Updated tenant MFA policy"
+      operationId: put_update_current_tenant_mfa_policy
+      parameters: []
+      responses: {}
+      summary: Update the MFA enforcement policy for the authenticated user's current
+        tenant.
   /api/v1/tenants/{tenant_id}:
     delete:
       description: "\nRequires global admin. Cannot delete system tenant (id=1).\n\nArgs:\n    tenant_id:\

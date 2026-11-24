@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { User, Mail, Building2, Lock } from 'lucide-react'
+import { User, Mail, Building2, Lock, Shield, Copy, CheckCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
-import api from '@/lib/api'
+import api, { type MfaSetupResponse } from '@/lib/api'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
@@ -22,6 +22,8 @@ export default function Profile() {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [mfaSetup, setMfaSetup] = useState<MfaSetupResponse | null>(null)
+  const [totpCode, setTotpCode] = useState('')
   const queryClient = useQueryClient()
 
   const { data: profile, isLoading: profileLoading } = useQuery({
@@ -63,6 +65,70 @@ export default function Profile() {
       toast.error(error.response?.data?.error || 'Failed to change password')
     },
   })
+
+  const enableMfaMutation = useMutation({
+    mutationFn: () => api.enableMfa(),
+    onSuccess: async (data) => {
+      setMfaSetup(data)
+      setTotpCode('')
+      await queryClient.invalidateQueries({ queryKey: ['profile'] })
+      await queryClient.invalidateQueries({ queryKey: ['portal-profile'] })
+      toast.success('Google Authenticator secret generated. Enter a code to verify.')
+    },
+    onError: (error: ApiError) => {
+      toast.error(error.response?.data?.error || 'Failed to start MFA setup')
+    },
+  })
+
+  const confirmMfaMutation = useMutation({
+    mutationFn: (code: string) => api.confirmMfa(code),
+    onSuccess: async () => {
+      setMfaSetup(null)
+      setTotpCode('')
+      await queryClient.invalidateQueries({ queryKey: ['profile'] })
+      await queryClient.invalidateQueries({ queryKey: ['portal-profile'] })
+      await queryClient.invalidateQueries({ queryKey: ['mfa-policy'] })
+      toast.success('Google Authenticator verified and enabled')
+    },
+    onError: (error: ApiError) => {
+      toast.error(error.response?.data?.error || 'Invalid verification code')
+    },
+  })
+
+  const disableMfaMutation = useMutation({
+    mutationFn: () => api.disableMfa(),
+    onSuccess: async () => {
+      setMfaSetup(null)
+      setTotpCode('')
+      await queryClient.invalidateQueries({ queryKey: ['profile'] })
+      await queryClient.invalidateQueries({ queryKey: ['portal-profile'] })
+      await queryClient.invalidateQueries({ queryKey: ['mfa-policy'] })
+      toast.success('Two-factor authentication disabled')
+    },
+    onError: (error: ApiError) => {
+      toast.error(error.response?.data?.error || 'Failed to disable MFA')
+    },
+  })
+
+  const handleCopySecret = async () => {
+    if (!mfaSetup?.secret) return
+    try {
+      await navigator.clipboard.writeText(mfaSetup.secret)
+      toast.success('Secret copied to clipboard')
+    } catch {
+      toast.error('Failed to copy secret')
+    }
+  }
+
+  const handleVerifyMfa = (e: React.FormEvent) => {
+    e.preventDefault()
+    const cleaned = totpCode.trim()
+    if (!cleaned) {
+      toast.error('Please enter the 6-digit verification code')
+      return
+    }
+    confirmMfaMutation.mutate(cleaned)
+  }
 
   const [formData, setFormData] = useState({
     email: '',
@@ -315,6 +381,191 @@ export default function Profile() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Two-Factor Authentication Card */}
+      <Card className="mt-6">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                <Shield className="w-6 h-6 text-emerald-400" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-white">
+                  Two-Factor Authentication (Google Authenticator)
+                </h2>
+                <p className="text-sm text-slate-400">
+                  Protect your account with Google Authenticator (TOTP) or a Passkey
+                </p>
+              </div>
+            </div>
+            {profile?.mfa_enabled && !mfaSetup && (
+              <span
+                data-testid="profile-mfa-enabled-badge"
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-emerald-500/20 text-emerald-300"
+              >
+                <CheckCircle className="w-4 h-4" />
+                Enabled (Google Authenticator)
+              </span>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {mfaSetup ? (
+            <div className="space-y-5">
+              <p className="text-sm text-slate-300">
+                Add this account to Google Authenticator using the Base32 secret or
+                provisioning URI below, then enter a 6-digit code to verify your setup.
+              </p>
+
+              <div>
+                <span className="block text-sm font-medium text-slate-300 mb-1">
+                  Secret Key (Base32)
+                </span>
+                <div className="flex items-center gap-2">
+                  <code
+                    data-testid="mfa-setup-secret"
+                    className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-emerald-300 font-mono text-sm break-all"
+                  >
+                    {mfaSetup.secret}
+                  </code>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleCopySecret}
+                    aria-label="Copy Base32 secret"
+                  >
+                    <Copy className="w-4 h-4 mr-1" />
+                    Copy
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <span className="block text-sm font-medium text-slate-300 mb-1">
+                  Provisioning URI (otpauth://)
+                </span>
+                <code
+                  data-testid="mfa-setup-uri"
+                  className="block px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-300 font-mono text-xs break-all"
+                >
+                  {mfaSetup.provisioning_uri}
+                </code>
+              </div>
+
+              {Array.isArray(mfaSetup.backup_codes) &&
+                mfaSetup.backup_codes.length > 0 && (
+                  <div>
+                    <span className="block text-sm font-medium text-slate-300 mb-2">
+                      Backup Codes (save these in a safe place)
+                    </span>
+                    <div
+                      data-testid="mfa-backup-codes"
+                      className="grid grid-cols-2 sm:grid-cols-5 gap-2"
+                    >
+                      {mfaSetup.backup_codes.map((code) => (
+                        <code
+                          key={code}
+                          className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-center text-xs font-mono text-slate-200"
+                        >
+                          {code}
+                        </code>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              <form onSubmit={handleVerifyMfa} className="space-y-4 pt-2 border-t border-slate-700">
+                <Input
+                  label="6-Digit Verification Code"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  required
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value)}
+                  placeholder="123456"
+                  autoComplete="one-time-code"
+                />
+                <div className="flex gap-3">
+                  <Button
+                    type="submit"
+                    isLoading={confirmMfaMutation.isPending}
+                  >
+                    Verify Code
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setMfaSetup(null)
+                      setTotpCode('')
+                    }}
+                    disabled={confirmMfaMutation.isPending}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </form>
+            </div>
+          ) : profile?.mfa_enabled ? (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-300">
+                Two-factor authentication is active on your account via Google
+                Authenticator (TOTP).
+              </p>
+              {profile?.mfa_enforced && (
+                <p
+                  data-testid="profile-mfa-enforced-notice"
+                  className="text-sm text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2"
+                >
+                  MFA is enforced by your organization&apos;s Enterprise security
+                  policy and cannot be disabled.
+                </p>
+              )}
+              <div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={Boolean(profile?.mfa_enforced) || disableMfaMutation.isPending}
+                  isLoading={disableMfaMutation.isPending}
+                  onClick={() => disableMfaMutation.mutate()}
+                >
+                  Disable MFA
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {profile?.mfa_setup_required && (
+                <p
+                  data-testid="profile-mfa-required-notice"
+                  className={`text-sm rounded-lg px-3 py-2 border ${
+                    profile.mfa_locked_out
+                      ? 'text-red-200 bg-red-500/15 border-red-500/40'
+                      : 'text-amber-200 bg-amber-500/15 border-amber-500/30'
+                  }`}
+                >
+                  {profile.mfa_locked_out
+                    ? 'Your MFA grace period has expired. You must set up Google Authenticator to continue using Elder.'
+                    : `Your organization requires Google Authenticator (TOTP) or Passkey MFA. Set up MFA within ${profile.mfa_grace_days_remaining ?? 0} day(s) to avoid lockout.`}
+                </p>
+              )}
+              <p className="text-slate-400">
+                Enroll Google Authenticator (TOTP) to add a second layer of security
+                to your sign-in.
+              </p>
+              <Button
+                type="button"
+                isLoading={enableMfaMutation.isPending}
+                onClick={() => enableMfaMutation.mutate()}
+              >
+                Set Up Google Authenticator
+              </Button>
             </div>
           )}
         </CardContent>

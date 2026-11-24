@@ -7,8 +7,10 @@ with tenant context for multi-tenancy support.
 # flake8: noqa: E501
 
 import datetime
+import json
+import math
 import secrets
-from typing import Optional
+from typing import Any, Optional
 
 import pyotp
 import structlog
@@ -23,6 +25,225 @@ from apps.api.services.webhooks.user_events import (
 from apps.api.utils.village_id import mint_village_id
 
 logger = structlog.get_logger(__name__)
+
+
+def parse_tenant_settings(raw: Any) -> dict[str, Any]:
+    """Normalize a tenant.settings column value into a plain dict.
+
+    Handles None, dict, or JSON-encoded string values defensively.
+    """
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except (ValueError, TypeError):
+            return {}
+    return {}
+
+
+DEFAULT_MFA_GRACE_PERIOD_DAYS = 7
+DEFAULT_MFA_PROVIDER = "google_authenticator"
+
+
+def _to_utc_datetime(val: Any) -> datetime.datetime | None:
+    """Convert an ISO-8601 string or datetime into a timezone-aware UTC datetime."""
+    if val is None:
+        return None
+    if isinstance(val, str):
+        raw = val.strip()
+        if not raw:
+            return None
+        try:
+            dt = datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    elif isinstance(val, datetime.datetime):
+        dt = val
+    else:
+        return None
+
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=datetime.UTC)
+    return dt.astimezone(datetime.UTC)
+
+
+def get_tenant_mfa_policy(tenant_id: int | None, db: Any = None) -> dict[str, Any]:
+    """Read the normalized MFA policy from a tenant's settings JSON.
+
+    Args:
+        tenant_id: Tenant ID to inspect.
+        db: Optional PyDAL database instance (defaults to ``current_app.db``).
+
+    Returns:
+        Dict with ``enforced``, ``enforced_at``, ``grace_period_days``, and ``provider``.
+    """
+    default_policy: dict[str, Any] = {
+        "enforced": False,
+        "enforced_at": None,
+        "grace_period_days": DEFAULT_MFA_GRACE_PERIOD_DAYS,
+        "provider": DEFAULT_MFA_PROVIDER,
+    }
+    if not tenant_id:
+        return default_policy
+    database = db if db is not None else current_app.db
+    tenant = database(database.tenants.id == tenant_id).select().first()
+    if not tenant:
+        return default_policy
+    settings = parse_tenant_settings(getattr(tenant, "settings", None))
+    raw_grace = settings.get("mfa_grace_period_days", DEFAULT_MFA_GRACE_PERIOD_DAYS)
+    try:
+        grace_days = int(raw_grace)
+    except (TypeError, ValueError):
+        grace_days = DEFAULT_MFA_GRACE_PERIOD_DAYS
+    grace_days = max(0, min(90, grace_days))
+    return {
+        "enforced": bool(settings.get("mfa_enforced", False)),
+        "enforced_at": settings.get("mfa_enforced_at"),
+        "grace_period_days": grace_days,
+        "provider": settings.get("mfa_provider") or DEFAULT_MFA_PROVIDER,
+    }
+
+
+def is_tenant_mfa_enforced(tenant_id: int | None, db: Any = None) -> bool:
+    """Return True if the given tenant enforces MFA via its settings JSON.
+
+    Args:
+        tenant_id: Tenant ID to inspect.
+        db: Optional PyDAL database instance (defaults to ``current_app.db``).
+
+    Returns:
+        bool: True when ``tenant.settings["mfa_enforced"]`` is truthy.
+    """
+    return bool(get_tenant_mfa_policy(tenant_id, db=db)["enforced"])
+
+
+def user_has_mfa_enrolled(user: Any, db: Any = None) -> bool:
+    """Return True if the user has TOTP MFA or an active passkey/WebAuthn credential.
+
+    Encapsulates MFA enrollment checks so both Google Authenticator (TOTP) and
+    future Passkey / WebAuthn credentials satisfy Enterprise MFA enforcement.
+    """
+    if not user:
+        return False
+    if bool(getattr(user, "mfa_secret", None)):
+        return True
+    if bool(getattr(user, "mfa_enabled", False)):
+        return True
+
+    user_id = getattr(user, "id", None)
+    if not user_id:
+        return False
+
+    database = db
+    if database is None:
+        try:
+            database = current_app.db
+        except RuntimeError:
+            return False
+
+    tables = getattr(database, "tables", None)
+    for table_name in ("passkeys", "webauthn_credentials"):
+        if tables is not None and table_name not in tables:
+            continue
+        try:
+            table = getattr(database, table_name, None)
+        except (AttributeError, KeyError):
+            continue
+        if table is None:
+            continue
+        user_col = None
+        for col_name in ("portal_user_id", "user_id"):
+            try:
+                user_col = getattr(table, col_name, None)
+            except (AttributeError, KeyError):
+                user_col = None
+            if user_col is not None:
+                break
+        if user_col is None:
+            continue
+        query = user_col == user_id
+        try:
+            is_active_col = getattr(table, "is_active", None)
+        except (AttributeError, KeyError):
+            is_active_col = None
+        if is_active_col is not None:
+            query = query & (is_active_col == True)  # noqa: E712
+        try:
+            if database(query).count() > 0:
+                return True
+        except Exception:
+            continue
+
+    return False
+
+
+def compute_user_mfa_status(
+    tenant_id: int | None,
+    mfa_enabled: bool,
+    user_created_at: Any = None,
+    *,
+    db: Any = None,
+    now: datetime.datetime | None = None,
+) -> dict[str, Any]:
+    """Compute per-user MFA enforcement, grace period deadline, and lockout state.
+
+    The grace period anchor is ``max(mfa_enforced_at, user.created_at)`` in UTC,
+    falling back gracefully if either timestamp is absent.
+
+    Args:
+        tenant_id: User's tenant ID.
+        mfa_enabled: Whether the user has enrolled MFA.
+        user_created_at: User's creation timestamp (datetime or ISO string).
+        db: Optional PyDAL database instance (defaults to ``current_app.db``).
+        now: Optional current UTC timestamp override (for deterministic tests).
+
+    Returns:
+        Dict with ``mfa_enforced``, ``mfa_setup_required``,
+        ``mfa_grace_expires_at``, ``mfa_grace_days_remaining``, and
+        ``mfa_locked_out``.
+    """
+    policy = get_tenant_mfa_policy(tenant_id, db=db)
+    enforced = policy["enforced"]
+    setup_required = enforced and not bool(mfa_enabled)
+
+    if not setup_required:
+        return {
+            "mfa_enforced": enforced,
+            "mfa_setup_required": False,
+            "mfa_grace_expires_at": None,
+            "mfa_grace_days_remaining": None,
+            "mfa_locked_out": False,
+        }
+
+    current_time = _to_utc_datetime(now) or datetime.datetime.now(datetime.UTC)
+    enforced_dt = _to_utc_datetime(policy["enforced_at"])
+    created_dt = _to_utc_datetime(user_created_at)
+
+    if enforced_dt is not None and created_dt is not None:
+        anchor = max(enforced_dt, created_dt)
+    elif enforced_dt is not None:
+        anchor = enforced_dt
+    elif created_dt is not None:
+        anchor = created_dt
+    else:
+        anchor = current_time
+
+    grace_days = policy["grace_period_days"]
+    grace_expires_at = anchor + datetime.timedelta(days=grace_days)
+    remaining_seconds = (grace_expires_at - current_time).total_seconds()
+    days_remaining = max(0, math.ceil(remaining_seconds / 86400))
+    grace_expired = current_time >= grace_expires_at
+
+    return {
+        "mfa_enforced": True,
+        "mfa_setup_required": True,
+        "mfa_grace_expires_at": grace_expires_at.isoformat(),
+        "mfa_grace_days_remaining": days_remaining,
+        "mfa_locked_out": grace_expired,
+    }
 
 
 def _admin_kind(tenant_role: str | None, global_role: str | None) -> str | None:
@@ -236,6 +457,11 @@ class PortalAuthService:
                 "tenant_id": tenant_id,
             }
 
+        mfa_status = compute_user_mfa_status(
+            user.tenant_id,
+            mfa_enabled=user_has_mfa_enrolled(user),
+            user_created_at=getattr(user, "created_at", None),
+        )
         return {
             "id": user.id,
             "email": user.email,
@@ -243,6 +469,7 @@ class PortalAuthService:
             "tenant_role": user.tenant_role,
             "global_role": user.global_role,
             "full_name": user.full_name,
+            **mfa_status,
         }
 
     @staticmethod
@@ -315,18 +542,57 @@ class PortalAuthService:
         }
 
     @staticmethod
+    def confirm_mfa(user_id: int, totp_code: str) -> dict:
+        """Confirm MFA enrollment by validating a TOTP code against the user's secret.
+
+        Args:
+            user_id: Portal user ID
+            totp_code: 6-digit TOTP code from Google Authenticator
+
+        Returns:
+            ``{"verified": True}`` on success, or an error dict with ``status_code``
+        """
+        user = current_app.db.portal_users[user_id]
+        if not user:
+            return {"error": "User not found", "status_code": 404}
+
+        if not user.mfa_secret:
+            return {
+                "error": "MFA has not been initialized for this user",
+                "status_code": 400,
+            }
+
+        totp = pyotp.TOTP(user.mfa_secret)
+        if not totp.verify(str(totp_code).strip(), valid_window=1):
+            return {"error": "Invalid verification code", "status_code": 400}
+
+        return {"verified": True}
+
+    @staticmethod
     def disable_mfa(user_id: int) -> dict:
         """Disable MFA for a user.
+
+        Refuses with HTTP 403 if the user's tenant enforces MFA via its
+        Enterprise security policy.
 
         Args:
             user_id: Portal user ID
 
         Returns:
-            Success dict
+            Success dict or error dict (with optional ``status_code``)
         """
         user = current_app.db.portal_users[user_id]
         if not user:
             return {"error": "User not found"}
+
+        if is_tenant_mfa_enforced(user.tenant_id):
+            return {
+                "error": (
+                    "MFA is enforced by your organization's Enterprise security "
+                    "policy and cannot be disabled."
+                ),
+                "status_code": 403,
+            }
 
         current_app.db(current_app.db.portal_users.id == user.id).update(
             mfa_secret=None,
