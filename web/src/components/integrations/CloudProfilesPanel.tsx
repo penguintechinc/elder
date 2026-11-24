@@ -47,6 +47,7 @@ const CLOUD_PROVIDERS: Array<{
   { value: "azure", label: "Azure" },
   { value: "kubernetes", label: "Kubernetes" },
   { value: "vultr", label: "Vultr" },
+  { value: "digitalocean", label: "DigitalOcean" },
 ];
 
 const CLOUD_PROVIDER_SET = new Set<string>(CLOUD_PROVIDERS.map((p) => p.value));
@@ -95,6 +96,8 @@ interface CloudFormState {
   k8s_namespace: string;
   // Vultr
   vultr_api_key: string;
+  // DigitalOcean
+  do_api_token: string;
 }
 
 const INITIAL_CLOUD_FORM: CloudFormState = {
@@ -128,6 +131,7 @@ const INITIAL_CLOUD_FORM: CloudFormState = {
   k8s_context: "",
   k8s_namespace: "default",
   vultr_api_key: "",
+  do_api_token: "",
 };
 
 function inferAWSAuthMethod(cfg: Record<string, unknown>): AWSAuthMethod {
@@ -223,6 +227,12 @@ function buildConfigFromForm(
     } else if (!isEdit) {
       cfg.api_key = "";
     }
+  } else if (form.provider === "digitalocean") {
+    if (form.do_api_token.trim()) {
+      cfg.api_token = form.do_api_token.trim();
+    } else if (!isEdit) {
+      cfg.api_token = "";
+    }
   }
   return cfg;
 }
@@ -281,6 +291,7 @@ function hydrateFormFromJob(
     k8s_context: String(cfg.context || ""),
     k8s_namespace: String(cfg.namespace || "default"),
     vultr_api_key: "",
+    do_api_token: "",
   };
 }
 
@@ -311,6 +322,8 @@ function summarizeCloudJob(job: DiscoveryJobItem): string[] {
     if (cfg.context) parts.push(`Context: ${String(cfg.context)}`);
   } else if (job.provider === "vultr") {
     parts.push("Vultr API v2");
+  } else if (job.provider === "digitalocean") {
+    parts.push("DigitalOcean API v2");
   }
   return parts;
 }
@@ -600,6 +613,14 @@ export default function CloudProfilesPanel({
         setFormError("Vultr API key is required.");
         return;
       }
+      if (
+        formState.provider === "digitalocean" &&
+        !editingJob &&
+        !formState.do_api_token.trim()
+      ) {
+        setFormError("DigitalOcean API token is required.");
+        return;
+      }
       configPayload = buildConfigFromForm(formState, editingJob !== null);
     }
 
@@ -640,6 +661,7 @@ export default function CloudProfilesPanel({
         "client_secret",
         "kubeconfig",
         "api_key",
+        "api_token",
         "token",
       ]),
     [editingJob],
@@ -654,7 +676,7 @@ export default function CloudProfilesPanel({
           </h2>
           <p className="mt-0.5 text-sm text-slate-400">
             Configure typed authentication profiles for AWS, GCP, Azure,
-            Kubernetes, and Vultr discovery
+            Kubernetes, Vultr, and DigitalOcean discovery
           </p>
         </div>
         <Button
@@ -715,7 +737,8 @@ export default function CloudProfilesPanel({
               </h3>
               <p className="text-sm text-slate-400 mt-1 max-w-xl mx-auto">
                 Add typed credential profiles for AWS, GCP, Azure, Kubernetes,
-                or Vultr to discover infrastructure resources automatically.
+                Vultr, or DigitalOcean to discover infrastructure resources
+                automatically.
               </p>
             </div>
             <div className="flex flex-wrap justify-center gap-2">
@@ -748,6 +771,7 @@ export default function CloudProfilesPanel({
               "client_secret",
               "kubeconfig",
               "api_key",
+              "api_token",
               "token",
             ]);
             const testResult = testResults[job.id];
@@ -1763,6 +1787,35 @@ export default function CloudProfilesPanel({
                           editingJob && hasSavedSecret
                             ? "Leave blank to keep existing secret"
                             : "Enter Vultr Personal Access Token"
+                        }
+                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
+                      />
+                    </div>
+                  )}
+
+                  {/* DigitalOcean Fields */}
+                  {formState.provider === "digitalocean" && (
+                    <div>
+                      <label
+                        htmlFor="digitalocean-api-token"
+                        className="block text-sm font-medium text-yellow-500 mb-1.5"
+                      >
+                        DigitalOcean API Token {editingJob ? "" : "*"}
+                      </label>
+                      <input
+                        id="digitalocean-api-token"
+                        type="password"
+                        value={formState.do_api_token}
+                        onChange={(e) =>
+                          setFormState((p) => ({
+                            ...p,
+                            do_api_token: e.target.value,
+                          }))
+                        }
+                        placeholder={
+                          editingJob && hasSavedSecret
+                            ? "Leave blank to keep existing secret"
+                            : "Enter DigitalOcean Personal Access Token (dop_v1_...)"
                         }
                         className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
                       />

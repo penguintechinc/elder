@@ -55,6 +55,7 @@ const CLOUD_PROVIDER_KEYS = new Set([
   "azure",
   "kubernetes",
   "vultr",
+  "digitalocean",
 ]);
 
 interface UnifiedIntegrationRow {
@@ -136,6 +137,15 @@ const CATALOG_ENTRIES: CatalogEntry[] = [
     cloudProvider: "vultr",
   },
   {
+    id: "digitalocean",
+    title: "DigitalOcean Discovery",
+    category: "cloud",
+    categoryLabel: "Cloud & Infrastructure",
+    description:
+      "Discover Droplets, DOKS, App Platform, VPCs, Load Balancers & Managed DBs.",
+    cloudProvider: "digitalocean",
+  },
+  {
     id: "fleetdm",
     title: "FleetDM Endpoints",
     category: "endpoints",
@@ -199,6 +209,9 @@ function describeDiscoveryTarget(job: DiscoveryJobItem): string {
   }
   if (job.provider === "kubernetes") {
     return `Namespace ${String(cfg.namespace || "default")}`;
+  }
+  if (job.provider === "digitalocean") {
+    return "DigitalOcean API v2";
   }
   if (job.provider === "fleetdm") {
     return String(cfg.url || cfg.fleetdm_url || "FleetDM server");
