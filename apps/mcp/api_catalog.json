@@ -8045,6 +8045,19 @@
   },
   {
     "service": "vulnerabilities",
+    "operation": "create_vulnerability_issue",
+    "method": "POST",
+    "path": "/api/v1/vulnerabilities/{id}/create-issue",
+    "path_params": [
+      "id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Create a remediation issue assigned to the vulnerability's owning OU and link it.",
+    "has_body": true,
+    "destructive": false
+  },
+  {
+    "service": "vulnerabilities",
     "operation": "get_dashboard",
     "method": "GET",
     "path": "/api/v1/vulnerabilities/dashboard",
@@ -8088,6 +8101,32 @@
     "summary": "List vulnerabilities with optional filtering.",
     "has_body": false,
     "destructive": false
+  },
+  {
+    "service": "vulnerabilities",
+    "operation": "patch_update_vulnerability",
+    "method": "PATCH",
+    "path": "/api/v1/vulnerabilities/{id}",
+    "path_params": [
+      "id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Update a vulnerability's metadata, ownership, CVSS, adjusted risk score, or remediation issue.",
+    "has_body": true,
+    "destructive": true
+  },
+  {
+    "service": "vulnerabilities",
+    "operation": "put_update_vulnerability",
+    "method": "PUT",
+    "path": "/api/v1/vulnerabilities/{id}",
+    "path_params": [
+      "id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Update a vulnerability's metadata, ownership, CVSS, adjusted risk score, or remediation issue.",
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "vulnerabilities",

@@ -17783,6 +17783,36 @@ paths:
           type: integer
       responses: {}
       summary: Get a single vulnerability by ID.
+    patch:
+      description: "\nPath Parameters:\n    - id: Vulnerability ID\n\nRequest Body (all optional):\n\
+        \    - title: Vulnerability title (max 512 chars)\n    - severity: critical, high, medium, low, info, unknown\n\
+        \    - description: Vulnerability description (nullable)\n    - cvss_score: Float 0.0-10.0 or null\n\
+        \    - adjusted_risk_score: Free-text adjusted risk score (max 64 chars) or null\n\
+        \    - owner_organization_id: Owning OU (organization) ID or null\n\
+        \    - owner_entity_id: Owning resource (entity) ID or null\n\
+        \    - remediation_issue_id: Linked remediation issue ID or null\n\
+        \    - published_at: ISO-8601 date/datetime or null\n\nReturns:\n    200: Updated vulnerability details\n\
+        \    400: Validation error\n    404: Vulnerability or referenced owner/issue not found"
+      operationId: patch_update_vulnerability
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Update a vulnerability's metadata, ownership, CVSS, adjusted risk score, or remediation issue.
+    put:
+      description: "\nPath Parameters:\n    - id: Vulnerability ID\n\nReturns:\n    200: Updated vulnerability details"
+      operationId: put_update_vulnerability
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Update a vulnerability's metadata, ownership, CVSS, adjusted risk score, or remediation issue.
   /api/v1/vulnerabilities/{id}/assign:
     post:
       description: "\nRequires maintainer role.\n\nPath Parameters:\n    - id: Vulnerability ID\n\nRequest\
@@ -17799,6 +17829,23 @@ paths:
           type: integer
       responses: {}
       summary: Assign a vulnerability to a service or software.
+  /api/v1/vulnerabilities/{id}/create-issue:
+    post:
+      description: "\nPath Parameters:\n    - id: Vulnerability ID\n\nRequest Body (optional):\n\
+        \    - organization_id: Override/set the owning OU (organization) ID\n\
+        \    - title: Custom issue title\n    - description: Custom issue description\n\
+        \    - priority: Issue priority (low, medium, high, urgent, critical)\n\nReturns:\n\
+        \    201: Created issue summary and updated vulnerability\n    400: Missing owning OU or invalid parameters\n\
+        \    404: Vulnerability or owning OU not found\n    409: Vulnerability already has a linked remediation issue"
+      operationId: post_create_vulnerability_issue
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Create a remediation issue assigned to the vulnerability's owning OU and link it.
   /api/v1/webhooks:
     get:
       description: "\nQuery params:\n    - enabled: Filter by active status\n\nReturns:\n    200: List\

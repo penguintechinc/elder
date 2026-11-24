@@ -2,11 +2,12 @@
 
 # flake8: noqa: E501
 
+import math
 from dataclasses import asdict
 from datetime import UTC, datetime
 
 from pydantic import ValidationError
-from quart import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import (
     login_required,
@@ -37,6 +38,189 @@ from apps.api.utils.validation_helpers import validate_resource_exists
 
 bp = Blueprint("vulnerabilities", __name__)
 
+_SEVERITY_TO_ISSUE_PRIORITY = {
+    "CRITICAL": "CRITICAL",
+    "HIGH": "HIGH",
+    "MEDIUM": "MEDIUM",
+    "LOW": "LOW",
+}
+
+
+def _parse_optional_positive_int(
+    raw_value, field_name: str
+) -> tuple[int | None, str | None]:
+    """Parse an optional positive integer ID (None or '' clears the field)."""
+    if raw_value is None or raw_value == "":
+        return None, None
+    if isinstance(raw_value, bool):
+        return None, f"{field_name} must be a positive integer"
+    try:
+        parsed = int(raw_value)
+    except (TypeError, ValueError):
+        return None, f"{field_name} must be a positive integer"
+    if parsed <= 0:
+        return None, f"{field_name} must be a positive integer"
+    return parsed, None
+
+
+def _parse_optional_cvss_score(raw_value) -> tuple[float | None, str | None]:
+    """Parse an optional CVSS score in [0.0, 10.0] (None or '' clears the field)."""
+    if raw_value is None or raw_value == "":
+        return None, None
+    if isinstance(raw_value, bool):
+        return None, "cvss_score must be a valid number"
+    try:
+        parsed = float(raw_value)
+    except (TypeError, ValueError):
+        return None, "cvss_score must be a valid number"
+    if not math.isfinite(parsed) or parsed < 0.0 or parsed > 10.0:
+        return None, "cvss_score must be between 0.0 and 10.0"
+    return parsed, None
+
+
+def _parse_optional_adjusted_risk_score(raw_value) -> tuple[str | None, str | None]:
+    """Parse an optional free-text adjusted risk score (trimmed, max 64 chars)."""
+    if raw_value is None:
+        return None, None
+    if isinstance(raw_value, bool) or not isinstance(raw_value, (str, int, float)):
+        return None, "adjusted_risk_score must be a string (max 64 chars)"
+    trimmed = str(raw_value).strip()
+    if not trimmed:
+        return None, None
+    if len(trimmed) > 64:
+        return None, "adjusted_risk_score must be at most 64 characters"
+    return trimmed, None
+
+
+def _serialize_issue_summary(issue_row) -> dict | None:
+    """Return a compact remediation issue summary dict."""
+    if not issue_row:
+        return None
+    raw_status = getattr(issue_row, "status", None)
+    raw_priority = getattr(issue_row, "priority", None)
+    return {
+        "id": issue_row.id,
+        "title": issue_row.title,
+        "status": str(raw_status).lower() if raw_status is not None else "open",
+        "priority": str(raw_priority).lower() if raw_priority is not None else "medium",
+        "village_id": getattr(issue_row, "village_id", None),
+    }
+
+
+def _validate_ownership_refs(
+    db,
+    tenant_id: int,
+    *,
+    owner_organization_id: int | None = None,
+    owner_entity_id: int | None = None,
+    remediation_issue_id: int | None = None,
+) -> tuple[str | None, int | None]:
+    """Validate that non-null ownership and remediation issue IDs belong to tenant_id."""
+    if owner_organization_id is not None:
+        org = get_tenant_scoped(db, db.organizations, owner_organization_id, tenant_id)
+        if not org:
+            return "Owner organization not found", 404
+    if owner_entity_id is not None:
+        entity = get_tenant_scoped(
+            db, db.entities, owner_entity_id, tenant_id, org_fk="organization_id"
+        )
+        if not entity:
+            return "Owner entity not found", 404
+    if remediation_issue_id is not None:
+        issue = get_tenant_scoped(db, db.issues, remediation_issue_id, tenant_id)
+        if not issue:
+            return "Remediation issue not found", 404
+    return None, None
+
+
+def _enrich_vulnerability_dicts(
+    db,
+    items: list[VulnerabilityDTO],
+    tenant_id: int | None,
+    affected_map: dict[int, list[dict]] | None = None,
+) -> list[dict]:
+    """Enrich VulnerabilityDTO items with tenant-scoped owner names and remediation issue summaries."""
+    org_ids = {
+        item.owner_organization_id
+        for item in items
+        if item.owner_organization_id is not None
+    }
+    entity_ids = {
+        item.owner_entity_id for item in items if item.owner_entity_id is not None
+    }
+    issue_ids = {
+        item.remediation_issue_id
+        for item in items
+        if item.remediation_issue_id is not None
+    }
+
+    org_names: dict[int, str] = {}
+    entity_names: dict[int, str] = {}
+    issue_summaries: dict[int, dict] = {}
+
+    if tenant_id is not None:
+        if org_ids:
+            org_rows = db(
+                db.organizations.id.belongs(list(org_ids))
+                & (db.organizations.tenant_id == tenant_id)
+            ).select()
+            org_names = {row.id: row.name for row in org_rows}
+
+        if entity_ids:
+            entity_rows = db(db.entities.id.belongs(list(entity_ids))).select()
+            entity_org_ids = {
+                row.organization_id
+                for row in entity_rows
+                if getattr(row, "organization_id", None) is not None
+            }
+            allowed_org_ids: set[int] = set()
+            if entity_org_ids:
+                allowed_orgs = db(
+                    db.organizations.id.belongs(list(entity_org_ids))
+                    & (db.organizations.tenant_id == tenant_id)
+                ).select()
+                allowed_org_ids = {row.id for row in allowed_orgs}
+            entity_names = {
+                row.id: row.name
+                for row in entity_rows
+                if getattr(row, "organization_id", None) in allowed_org_ids
+            }
+
+        if issue_ids:
+            issue_rows = db(
+                db.issues.id.belongs(list(issue_ids))
+                & (db.issues.tenant_id == tenant_id)
+            ).select()
+            issue_summaries = {
+                row.id: _serialize_issue_summary(row) for row in issue_rows
+            }
+
+    enriched: list[dict] = []
+    for item in items:
+        item_dict = asdict(item)
+        if item_dict.get("cvss_score") is not None:
+            item_dict["cvss_score"] = float(item_dict["cvss_score"])
+        item_dict["owner_organization_name"] = (
+            org_names.get(item.owner_organization_id)
+            if item.owner_organization_id is not None
+            else None
+        )
+        item_dict["owner_entity_name"] = (
+            entity_names.get(item.owner_entity_id)
+            if item.owner_entity_id is not None
+            else None
+        )
+        item_dict["remediation_issue"] = (
+            issue_summaries.get(item.remediation_issue_id)
+            if item.remediation_issue_id is not None
+            else None
+        )
+        if affected_map is not None:
+            item_dict["affected_entities"] = affected_map.get(item.id, [])
+        enriched.append(item_dict)
+
+    return enriched
+
 
 @bp.route("", methods=["GET"])
 @login_required
@@ -49,6 +233,8 @@ async def list_vulnerabilities():
         - severity: Filter by severity (critical, high, medium, low, unknown)
         - cve_id: Filter by CVE ID
         - source: Filter by source (osv, nvd, github_advisory, manual)
+        - owner_organization_id: Filter by owning organization (OU) ID
+        - owner_entity_id: Filter by owning resource (entity) ID
         - page: Page number (default: 1)
         - per_page: Items per page (default: 50)
         - search: Search in CVE ID, title, and description
@@ -62,6 +248,18 @@ async def list_vulnerabilities():
     """
     db = current_app.db
     tenant_id = get_current_tenant_id()
+
+    owner_org_filter, org_filter_err = _parse_optional_positive_int(
+        request.args.get("owner_organization_id"), "owner_organization_id"
+    )
+    if org_filter_err:
+        return ApiResponse.error(org_filter_err, 400)
+
+    owner_entity_filter, entity_filter_err = _parse_optional_positive_int(
+        request.args.get("owner_entity_id"), "owner_entity_id"
+    )
+    if entity_filter_err:
+        return ApiResponse.error(entity_filter_err, 400)
 
     # Get pagination params using helper
     pagination = PaginationParams.from_request()
@@ -79,6 +277,12 @@ async def list_vulnerabilities():
 
         if request.args.get("source"):
             query &= db.vulnerabilities.source == request.args.get("source")
+
+        if owner_org_filter is not None:
+            query &= db.vulnerabilities.owner_organization_id == owner_org_filter
+
+        if owner_entity_filter is not None:
+            query &= db.vulnerabilities.owner_entity_id == owner_entity_filter
 
         if request.args.get("search"):
             search = request.args.get("search")
@@ -106,67 +310,57 @@ async def list_vulnerabilities():
     # Convert to DTOs
     items = from_pydal_rows(rows, VulnerabilityDTO)
 
-    # Batch-query affected entities for each vulnerability
+    # Batch-query affected entities, owner names, and remediation issues
     vuln_ids = [item.id for item in items]
 
-    def get_affected_entities():
-        if not vuln_ids:
-            return {}
-
-        # Query component_vulnerabilities for these vulnerability IDs,
-        # scoped to the caller's tenant (gh-237) -- without this filter,
-        # every tenant's linked sbom_components (and the service/software
-        # names they belong to) leaked through this enrichment step.
-        cv_rows = db(
-            db.component_vulnerabilities.vulnerability_id.belongs(vuln_ids)
-            & (db.component_vulnerabilities.tenant_id == tenant_id)
-        ).select()
-
-        # Build map of vulnerability_id -> list of affected entities
+    def enrich_list():
         affected = {}
-        for cv in cv_rows:
-            vid = cv.vulnerability_id
-            comp_id = cv.component_id
+        if vuln_ids:
+            # Query component_vulnerabilities for these vulnerability IDs,
+            # scoped to the caller's tenant (gh-237) -- without this filter,
+            # every tenant's linked sbom_components (and the service/software
+            # names they belong to) leaked through this enrichment step.
+            cv_rows = db(
+                db.component_vulnerabilities.vulnerability_id.belongs(vuln_ids)
+                & (db.component_vulnerabilities.tenant_id == tenant_id)
+            ).select()
 
-            # Look up the sbom_component to get parent info, scoped to
-            # caller's tenant (gh-237)
-            comp = get_tenant_scoped(db, db.sbom_components, comp_id, tenant_id)
-            if not comp:
-                continue
+            for cv in cv_rows:
+                vid = cv.vulnerability_id
+                comp_id = cv.component_id
 
-            parent_type = comp.parent_type
-            parent_id = comp.parent_id
-            source_file = comp.source_file if hasattr(comp, "source_file") else None
-            parent_name = None
+                # Look up the sbom_component to get parent info, scoped to
+                # caller's tenant (gh-237)
+                comp = get_tenant_scoped(db, db.sbom_components, comp_id, tenant_id)
+                if not comp:
+                    continue
 
-            if parent_type == "service" and parent_id:
-                svc = get_tenant_scoped(db, db.services, parent_id, tenant_id)
-                parent_name = svc.name if svc else None
-            elif parent_type == "software" and parent_id:
-                sw = get_tenant_scoped(db, db.software, parent_id, tenant_id)
-                parent_name = sw.name if sw else None
+                parent_type = comp.parent_type
+                parent_id = comp.parent_id
+                source_file = comp.source_file if hasattr(comp, "source_file") else None
+                parent_name = None
 
-            if parent_name:
-                if vid not in affected:
-                    affected[vid] = []
-                affected[vid].append(
-                    {
-                        "parent_type": parent_type,
-                        "parent_name": parent_name,
-                        "source_file": source_file,
-                    }
-                )
+                if parent_type == "service" and parent_id:
+                    svc = get_tenant_scoped(db, db.services, parent_id, tenant_id)
+                    parent_name = svc.name if svc else None
+                elif parent_type == "software" and parent_id:
+                    sw = get_tenant_scoped(db, db.software, parent_id, tenant_id)
+                    parent_name = sw.name if sw else None
 
-        return affected
+                if parent_name:
+                    if vid not in affected:
+                        affected[vid] = []
+                    affected[vid].append(
+                        {
+                            "parent_type": parent_type,
+                            "parent_name": parent_name,
+                            "source_file": source_file,
+                        }
+                    )
 
-    affected_map = await run_in_threadpool(get_affected_entities)
+        return _enrich_vulnerability_dicts(db, items, tenant_id, affected_map=affected)
 
-    # Enrich items with affected entities
-    enriched_items = []
-    for item in items:
-        item_dict = asdict(item)
-        item_dict["affected_entities"] = affected_map.get(item.id, [])
-        enriched_items.append(item_dict)
+    enriched_items = await run_in_threadpool(enrich_list)
 
     # Create paginated response
     response = PaginatedResponse(
@@ -207,16 +401,33 @@ async def create_vulnerability():
             "severity must be one of: critical, high, medium, low, info", 400
         )
 
-    cvss_score = data.get("cvss_score")
-    if cvss_score is not None and cvss_score != "":
-        try:
-            cvss_score = float(cvss_score)
-            if cvss_score < 0.0 or cvss_score > 10.0:
-                return ApiResponse.error("cvss_score must be between 0.0 and 10.0", 400)
-        except (TypeError, ValueError):
-            return ApiResponse.error("cvss_score must be a valid number", 400)
-    else:
-        cvss_score = None
+    cvss_score, cvss_err = _parse_optional_cvss_score(data.get("cvss_score"))
+    if cvss_err:
+        return ApiResponse.error(cvss_err, 400)
+
+    adjusted_risk_score, risk_err = _parse_optional_adjusted_risk_score(
+        data.get("adjusted_risk_score")
+    )
+    if risk_err:
+        return ApiResponse.error(risk_err, 400)
+
+    owner_organization_id, org_err = _parse_optional_positive_int(
+        data.get("owner_organization_id"), "owner_organization_id"
+    )
+    if org_err:
+        return ApiResponse.error(org_err, 400)
+
+    owner_entity_id, entity_err = _parse_optional_positive_int(
+        data.get("owner_entity_id"), "owner_entity_id"
+    )
+    if entity_err:
+        return ApiResponse.error(entity_err, 400)
+
+    remediation_issue_id, issue_err = _parse_optional_positive_int(
+        data.get("remediation_issue_id"), "remediation_issue_id"
+    )
+    if issue_err:
+        return ApiResponse.error(issue_err, 400)
 
     published_at = None
     if data.get("published_at"):
@@ -233,9 +444,20 @@ async def create_vulnerability():
     def create():
         from apps.api.utils.village_id import mint_village_id
 
+        ref_err, ref_status = _validate_ownership_refs(
+            db,
+            tenant_id,
+            owner_organization_id=owner_organization_id,
+            owner_entity_id=owner_entity_id,
+            remediation_issue_id=remediation_issue_id,
+        )
+        if ref_err:
+            return None, ref_err, ref_status
+
         existing = db(db.vulnerabilities.cve_id == cve_id).select().first()
         if existing:
-            return None, True
+            return None, f"Vulnerability '{cve_id}' already exists", 409
+
         now = datetime.now(UTC)
         vuln_id = db.vulnerabilities.insert(
             tenant_id=tenant_id,
@@ -244,6 +466,10 @@ async def create_vulnerability():
             title=title,
             severity=severity,
             cvss_score=cvss_score,
+            adjusted_risk_score=adjusted_risk_score,
+            owner_organization_id=owner_organization_id,
+            owner_entity_id=owner_entity_id,
+            remediation_issue_id=remediation_issue_id,
             description=(data.get("description") or "").strip() or None,
             affected_packages=data.get("affected_packages")
             if isinstance(data.get("affected_packages"), list)
@@ -261,13 +487,16 @@ async def create_vulnerability():
             updated_at=now,
         )
         db.commit()
-        return db.vulnerabilities[vuln_id], False  # tenant-scope-exempt
+        row = db.vulnerabilities[vuln_id]  # tenant-scope-exempt
+        dto = from_pydal_row(row, VulnerabilityDTO)
+        enriched = _enrich_vulnerability_dicts(db, [dto], tenant_id)[0]
+        return enriched, None, 201
 
-    row, duplicate = await run_in_threadpool(create)
-    if duplicate:
-        return ApiResponse.error(f"Vulnerability '{cve_id}' already exists", 409)
+    enriched, err_msg, status_code = await run_in_threadpool(create)
+    if err_msg:
+        return ApiResponse.error(err_msg, status_code)
 
-    return jsonify(asdict(from_pydal_row(row, VulnerabilityDTO))), 201
+    return jsonify(enriched), 201
 
 
 @bp.route("/<int:id>", methods=["GET"])
@@ -288,6 +517,7 @@ async def get_vulnerability(id: int):
         GET /api/v1/vulnerabilities/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # tenant-scope-exempt: vulnerabilities is a shared CVE reference
     # dataset (OSV/NVD/GitHub Advisory sourced) -- not tenant-partitioned
@@ -301,7 +531,338 @@ async def get_vulnerability(id: int):
         return error
 
     vulnerability_dto = from_pydal_row(vulnerability, VulnerabilityDTO)
-    return ApiResponse.success(asdict(vulnerability_dto))
+    enriched = await run_in_threadpool(
+        lambda: _enrich_vulnerability_dicts(db, [vulnerability_dto], tenant_id)[0]
+    )
+    return ApiResponse.success(enriched)
+
+
+@bp.route("/<int:id>", methods=["PATCH", "PUT"])
+@login_required
+@require_scope("sbom:write")
+async def update_vulnerability(id: int):
+    """
+    Update a vulnerability's editable metadata, ownership, CVSS, adjusted risk score, or remediation issue.
+
+    Path Parameters:
+        - id: Vulnerability ID
+
+    Request Body (all optional):
+        - title: Vulnerability title (max 512 chars)
+        - severity: critical, high, medium, low, info, unknown
+        - description: Vulnerability description (nullable)
+        - cvss_score: Float 0.0-10.0 or null/""
+        - adjusted_risk_score: Free-text adjusted risk score (max 64 chars) or null/""
+        - owner_organization_id: Owning OU (organization) ID or null/""
+        - owner_entity_id: Owning resource (entity) ID or null/""
+        - remediation_issue_id: Linked remediation issue ID or null/""
+        - published_at: ISO-8601 date/datetime or null/""
+
+    Returns:
+        200: Updated vulnerability details
+        400: Validation error
+        404: Vulnerability or referenced owner/issue not found
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return ApiResponse.error("Tenant context is required", 403)
+
+    data = await request.get_json()
+    if not isinstance(data, dict):
+        return ApiResponse.error("Invalid JSON body", 400)
+
+    vulnerability, error = await validate_resource_exists(
+        db.vulnerabilities, id, "Vulnerability"
+    )
+    if error:
+        return error
+
+    update_fields: dict = {}
+
+    if "title" in data:
+        title = (data.get("title") or "").strip()
+        if not title or len(title) > 512:
+            return ApiResponse.error("title must be 1-512 characters", 400)
+        update_fields["title"] = title
+
+    if "severity" in data:
+        severity = (data.get("severity") or "").strip().upper()
+        if severity not in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO", "UNKNOWN"):
+            return ApiResponse.error(
+                "severity must be one of: critical, high, medium, low, info, unknown",
+                400,
+            )
+        update_fields["severity"] = severity
+
+    if "description" in data:
+        raw_desc = data.get("description")
+        if raw_desc is None:
+            update_fields["description"] = None
+        else:
+            update_fields["description"] = str(raw_desc).strip() or None
+
+    if "cvss_score" in data:
+        cvss_score, cvss_err = _parse_optional_cvss_score(data.get("cvss_score"))
+        if cvss_err:
+            return ApiResponse.error(cvss_err, 400)
+        update_fields["cvss_score"] = cvss_score
+
+    if "adjusted_risk_score" in data:
+        adjusted_risk, risk_err = _parse_optional_adjusted_risk_score(
+            data.get("adjusted_risk_score")
+        )
+        if risk_err:
+            return ApiResponse.error(risk_err, 400)
+        update_fields["adjusted_risk_score"] = adjusted_risk
+
+    owner_org_id_to_check = None
+    if "owner_organization_id" in data:
+        owner_org_id, org_err = _parse_optional_positive_int(
+            data.get("owner_organization_id"), "owner_organization_id"
+        )
+        if org_err:
+            return ApiResponse.error(org_err, 400)
+        update_fields["owner_organization_id"] = owner_org_id
+        owner_org_id_to_check = owner_org_id
+
+    owner_entity_id_to_check = None
+    if "owner_entity_id" in data:
+        owner_entity_id, entity_err = _parse_optional_positive_int(
+            data.get("owner_entity_id"), "owner_entity_id"
+        )
+        if entity_err:
+            return ApiResponse.error(entity_err, 400)
+        update_fields["owner_entity_id"] = owner_entity_id
+        owner_entity_id_to_check = owner_entity_id
+
+    remediation_issue_id_to_check = None
+    if "remediation_issue_id" in data:
+        rem_issue_id, issue_err = _parse_optional_positive_int(
+            data.get("remediation_issue_id"), "remediation_issue_id"
+        )
+        if issue_err:
+            return ApiResponse.error(issue_err, 400)
+        update_fields["remediation_issue_id"] = rem_issue_id
+        remediation_issue_id_to_check = rem_issue_id
+
+    if "published_at" in data:
+        raw_pub = data.get("published_at")
+        if raw_pub is None or raw_pub == "":
+            update_fields["published_at"] = None
+        else:
+            try:
+                update_fields["published_at"] = datetime.fromisoformat(
+                    str(raw_pub).strip().replace("Z", "+00:00")
+                )
+            except ValueError:
+                return ApiResponse.error(
+                    "published_at must be a valid ISO-8601 date or datetime", 400
+                )
+
+    def apply_update():
+        ref_err, ref_status = _validate_ownership_refs(
+            db,
+            tenant_id,
+            owner_organization_id=owner_org_id_to_check,
+            owner_entity_id=owner_entity_id_to_check,
+            remediation_issue_id=remediation_issue_id_to_check,
+        )
+        if ref_err:
+            return None, ref_err, ref_status
+
+        if update_fields:
+            update_fields["updated_at"] = datetime.now(UTC)
+            db(db.vulnerabilities.id == id).update(**update_fields)
+            db.commit()
+
+        row = db.vulnerabilities[id]  # tenant-scope-exempt
+        dto = from_pydal_row(row, VulnerabilityDTO)
+        enriched = _enrich_vulnerability_dicts(db, [dto], tenant_id)[0]
+        return enriched, None, 200
+
+    enriched, err_msg, status_code = await run_in_threadpool(apply_update)
+    if err_msg:
+        return ApiResponse.error(err_msg, status_code)
+
+    return jsonify(enriched), 200
+
+
+@bp.route("/<int:id>/create-issue", methods=["POST"])
+@login_required
+@require_scope("sbom:write")
+async def create_vulnerability_issue(id: int):
+    """
+    Create a remediation issue assigned to the vulnerability's owning OU and link it.
+
+    Path Parameters:
+        - id: Vulnerability ID
+
+    Request Body (optional):
+        - organization_id: Override/set the owning OU (organization) ID if not already set
+        - title: Custom issue title (defaults to "[<cve_id>] Remediate <title>")
+        - description: Custom issue description
+        - priority: Issue priority (low, medium, high, urgent, critical)
+
+    Returns:
+        201: Created issue summary and updated vulnerability
+        400: Missing owning OU or invalid parameters
+        404: Vulnerability or owning OU not found
+        409: Vulnerability already has a linked remediation issue
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return ApiResponse.error("Tenant context is required", 403)
+
+    data = await request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return ApiResponse.error("Invalid JSON body", 400)
+
+    vulnerability, error = await validate_resource_exists(
+        db.vulnerabilities, id, "Vulnerability"
+    )
+    if error:
+        return error
+
+    org_override, org_err = _parse_optional_positive_int(
+        data.get("organization_id"), "organization_id"
+    )
+    if org_err:
+        return ApiResponse.error(org_err, 400)
+
+    raw_priority = data.get("priority")
+    if raw_priority is not None and str(raw_priority).strip():
+        priority_upper = str(raw_priority).strip().upper()
+        if priority_upper not in ("LOW", "MEDIUM", "HIGH", "URGENT", "CRITICAL"):
+            return ApiResponse.error(
+                "priority must be one of: low, medium, high, urgent, critical", 400
+            )
+    else:
+        vuln_sev = str(getattr(vulnerability, "severity", "") or "").upper()
+        priority_upper = _SEVERITY_TO_ISSUE_PRIORITY.get(vuln_sev, "MEDIUM")
+
+    custom_title = (data.get("title") or "").strip() if data.get("title") else None
+    custom_description = (
+        str(data.get("description")).strip()
+        if data.get("description") is not None and str(data.get("description")).strip()
+        else None
+    )
+
+    current_user = getattr(g, "current_user", None)
+    current_user_id = getattr(current_user, "id", None)
+    redis_client = getattr(current_app, "redis_client", None)
+
+    def create_and_link():
+        from apps.api.utils.village_id import mint_village_id
+
+        existing_issue_id = getattr(vulnerability, "remediation_issue_id", None)
+        if existing_issue_id:
+            existing_issue = get_tenant_scoped(
+                db, db.issues, existing_issue_id, tenant_id
+            )
+            if existing_issue:
+                return (
+                    None,
+                    None,
+                    "Vulnerability already has a linked remediation issue",
+                    409,
+                )
+
+        target_org_id = org_override or getattr(
+            vulnerability, "owner_organization_id", None
+        )
+        if not target_org_id:
+            return (
+                None,
+                None,
+                "An owning OU (owner_organization_id) is required to create a remediation issue",
+                400,
+            )
+
+        org = get_tenant_scoped(db, db.organizations, target_org_id, tenant_id)
+        if not org:
+            return None, None, "Owner organization not found", 404
+
+        owner_entity_name = None
+        owner_entity_id = getattr(vulnerability, "owner_entity_id", None)
+        if owner_entity_id:
+            ent = get_tenant_scoped(
+                db, db.entities, owner_entity_id, tenant_id, org_fk="organization_id"
+            )
+            if ent:
+                owner_entity_name = ent.name
+
+        cve_id = getattr(vulnerability, "cve_id", "") or f"VULN-{id}"
+        vuln_title = getattr(vulnerability, "title", None) or cve_id
+        issue_title = (custom_title or f"[{cve_id}] Remediate {vuln_title}")[:255]
+
+        if custom_description:
+            issue_description = custom_description
+        else:
+            lines = [
+                f"Remediation tracking issue for **{cve_id}**.",
+                "",
+                f"- **Severity:** {str(getattr(vulnerability, 'severity', 'unknown')).upper()}",
+            ]
+            cvss_val = getattr(vulnerability, "cvss_score", None)
+            if cvss_val is not None:
+                lines.append(f"- **CVSS Score:** {float(cvss_val):.1f}")
+            adj_val = getattr(vulnerability, "adjusted_risk_score", None)
+            if adj_val:
+                lines.append(f"- **Adjusted Risk Score:** {adj_val}")
+            lines.append(f"- **Owning OU:** {org.name}")
+            if owner_entity_name:
+                lines.append(f"- **Owning Resource:** {owner_entity_name}")
+            vuln_desc = getattr(vulnerability, "description", None)
+            if vuln_desc:
+                lines.extend(["", "### Vulnerability Details", vuln_desc])
+            issue_description = "\n".join(lines)
+
+        now = datetime.now(UTC)
+        issue_id = db.issues.insert(
+            tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
+            title=issue_title,
+            description=issue_description,
+            status="OPEN",
+            priority=priority_upper,
+            issue_type="SECURITY",
+            resource_type="organization",
+            resource_id=target_org_id,
+            is_incident=0,
+            reporter_id=current_user_id,
+            assignee_id=target_org_id,
+            assignee_type="org_unit",
+            created_at=now,
+            updated_at=now,
+        )
+
+        vuln_updates = {
+            "remediation_issue_id": issue_id,
+            "updated_at": now,
+        }
+        if not getattr(vulnerability, "owner_organization_id", None):
+            vuln_updates["owner_organization_id"] = target_org_id
+
+        db(db.vulnerabilities.id == id).update(**vuln_updates)
+        db.commit()
+
+        issue_row = get_tenant_scoped(db, db.issues, issue_id, tenant_id)
+        vuln_row = db.vulnerabilities[id]  # tenant-scope-exempt
+        vuln_dto = from_pydal_row(vuln_row, VulnerabilityDTO)
+        enriched_vuln = _enrich_vulnerability_dicts(db, [vuln_dto], tenant_id)[0]
+        return _serialize_issue_summary(issue_row), enriched_vuln, None, 201
+
+    issue_summary, enriched_vuln, err_msg, status_code = await run_in_threadpool(
+        create_and_link
+    )
+    if err_msg:
+        return ApiResponse.error(err_msg, status_code)
+
+    return jsonify({"issue": issue_summary, "vulnerability": enriched_vuln}), 201
 
 
 @bp.route("/sync", methods=["POST"])
