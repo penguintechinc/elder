@@ -110,8 +110,25 @@ describe("Profile Google Authenticator QR code & backup codes", () => {
       await screen.findByText(/6 single-use bypass code\(s\) remaining/i),
     ).toBeTruthy();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /reset backup codes/i }),
+    // A session alone cannot mint backup codes: the button stays disabled
+    // until the current authenticator/backup code is supplied.
+    const resetButton = screen.getByRole("button", {
+      name: /reset backup codes/i,
+    }) as HTMLButtonElement;
+    expect(resetButton.disabled).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: /disable mfa/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    fireEvent.change(screen.getByTestId("profile-mfa-current-code"), {
+      target: { value: " 654321 " },
+    });
+    expect(resetButton.disabled).toBe(false);
+    fireEvent.click(resetButton);
+
+    await waitFor(() =>
+      expect(mockRegenerateBackupCodes).toHaveBeenCalledWith("654321"),
     );
 
     const codesBox = await waitFor(() =>

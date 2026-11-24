@@ -457,7 +457,13 @@ class TestMfaDisableAndConfirm:
         assert "Enterprise security policy" in body["error"]
         assert db.portal_users[user_id].mfa_secret == secret
 
-    async def test_disable_mfa_allowed_when_not_enforced(self) -> None:
+    async def test_disable_mfa_not_enforced_requires_current_code(self) -> None:
+        """Without tenant enforcement, disabling still needs a current MFA code.
+
+        A session token alone must not strip the second factor; the
+        with-a-valid-code path is covered against a real database in
+        test_mfa_totp_encryption.py.
+        """
         app, db = _make_app("enterprise")
         secret = pyotp.random_base32()
         tenant_id, user_id = _seed_tenant_and_user(
@@ -472,8 +478,9 @@ class TestMfaDisableAndConfirm:
             "/api/v1/portal-auth/mfa/disable",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert resp.status_code == 200
-        assert db.portal_users[user_id].mfa_secret is None
+        assert resp.status_code == 403
+        assert (await resp.get_json())["mfa_code_required"] is True
+        assert db.portal_users[user_id].mfa_secret == secret
 
     async def test_confirm_mfa_valid_and_invalid_totp(self) -> None:
         app, db = _make_app("enterprise")
@@ -694,3 +701,8 @@ class TestPortalMeAndLoginMfaFlags:
         assert login_body["mfa_setup_required"] is True
         assert login_body["mfa_grace_days_remaining"] == 0
         assert login_body["mfa_locked_out"] is True
+        # Grace expired: only the enrolment-scoped token is issued, no session.
+        assert login_body["mfaEnrollmentRequired"] is True
+        assert login_body["enrollment_token"]
+        assert "token" not in login_body
+        assert "refresh_token" not in login_body

@@ -5968,7 +5968,7 @@
     "path": "/api/v1/portal-auth/mfa/enable",
     "path_params": [],
     "wildcard_path_params": [],
-    "summary": "Enable MFA for the authenticated user.",
+    "summary": "Start MFA setup for the authenticated user.",
     "has_body": true,
     "destructive": false
   },

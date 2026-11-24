@@ -44,7 +44,9 @@ export default function MFASetup({ isOpen, onClose, onSuccess }: MFASetupProps) 
   })
 
   const verifyMutation = useMutation({
-    mutationFn: (code: string) => api.portalMfaVerify(code),
+    // Setup is confirmed with /mfa/confirm; /mfa/verify is the login step
+    // and needs a server-issued challenge.
+    mutationFn: (code: string) => api.confirmMfa(code),
     onSuccess: () => {
       toast.success('MFA enabled successfully!')
       onSuccess?.()

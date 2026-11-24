@@ -148,3 +148,49 @@ describe('ApiClient - auth cookie migration (gh security audit)', () => {
     expect(isAuthenticated()).toBe(true)
   })
 })
+
+// MFA hardening: the login MFA step is bound to a server-issued challenge,
+// and changing an enrolled factor carries proof of the current one.
+describe('ApiClient - MFA request shapes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockAxiosInstance.post.mockResolvedValue({ data: {} })
+  })
+
+  it('portalMfaVerify sends the challenge id, never a user id', async () => {
+    await api.portalMfaVerify('opaque-challenge', '123456')
+
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/portal-auth/mfa/verify', {
+      mfa_challenge: 'opaque-challenge',
+      totp_code: '123456',
+    })
+    const body = mockAxiosInstance.post.mock.calls[0][1]
+    expect(body).not.toHaveProperty('user_id')
+  })
+
+  it('enableMfa sends a current code only when re-enrolling', async () => {
+    await api.enableMfa()
+    expect(mockAxiosInstance.post).toHaveBeenLastCalledWith(
+      '/portal-auth/mfa/enable',
+      undefined,
+    )
+
+    await api.enableMfa('654321')
+    expect(mockAxiosInstance.post).toHaveBeenLastCalledWith('/portal-auth/mfa/enable', {
+      current_code: '654321',
+    })
+  })
+
+  it('disableMfa and regenerateMfaBackupCodes carry the current code', async () => {
+    await api.disableMfa('654321')
+    expect(mockAxiosInstance.post).toHaveBeenLastCalledWith('/portal-auth/mfa/disable', {
+      current_code: '654321',
+    })
+
+    await api.regenerateMfaBackupCodes('a1b2c3d4')
+    expect(mockAxiosInstance.post).toHaveBeenLastCalledWith(
+      '/portal-auth/mfa/backup-codes/regenerate',
+      { current_code: 'a1b2c3d4' },
+    )
+  })
+})

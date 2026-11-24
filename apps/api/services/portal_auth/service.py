@@ -7,14 +7,19 @@ with tenant context for multi-tenancy support.
 # flake8: noqa: E501
 
 import datetime
+import hashlib
+import hmac
 import json
 import math
+import re
 import secrets
 from typing import Any, Optional
 
+import jwt
 import pyotp
 import structlog
 from quart import current_app
+from sqlalchemy import func
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from apps.api.common.licensing.enforce import check_limit
@@ -22,9 +27,180 @@ from apps.api.services.webhooks.user_events import (
     UserCreatedEvent,
     schedule_user_created_webhooks,
 )
+from apps.api.utils.mfa_crypto import (
+    MfaKeyring,
+    build_keyring,
+    derive_subkey,
+    encrypt_totp_secret,
+    hash_backup_code,
+    hash_challenge_id,
+    is_encrypted,
+    match_backup_code,
+    needs_reseal,
+    normalize_backup_code,
+    open_totp_secret,
+)
 from apps.api.utils.village_id import mint_village_id
+from shared.observability import get_meter, get_tracer
 
 logger = structlog.get_logger(__name__)
+
+_tracer = get_tracer(__name__)
+_mfa_verify_counter = get_meter("elder").create_counter(
+    "elder.portal_auth.mfa_verify",
+    unit="1",
+    description="Portal MFA verification attempts by outcome",
+)
+
+MFA_TOTP_INTERVAL_SECONDS = 30
+MFA_TOTP_VALID_WINDOW = 1
+MFA_BACKUP_CODE_COUNT = 10
+_TOTP_CODE_RE = re.compile(r"^[0-9]{6}$")
+_MFA_LOCKED_ERROR = "Too many failed MFA attempts. Try again later."
+MFA_ENROLLMENT_TOKEN_TYPE = "portal_mfa_enrollment"
+MFA_ENROLLMENT_TOKEN_AUDIENCE = "elder-mfa-enrollment"
+_MFA_ENROLLMENT_KEY_INFO = b"elder/portal-auth/mfa-enrollment-token/hs256/v1"
+
+
+def _mfa_enrollment_key() -> bytes:
+    """Return the signing key reserved for MFA enrolment-only tokens.
+
+    HKDF-derived from the JWT secret under its own label, so an enrolment
+    token fails signature verification in every other token verifier.
+    """
+    master = current_app.config.get("JWT_SECRET_KEY") or current_app.config.get(
+        "SECRET_KEY"
+    )
+    return derive_subkey(str(master or ""), _MFA_ENROLLMENT_KEY_INFO)
+
+
+def _fingerprint_hash(fingerprint: str | None) -> str | None:
+    """Hash a client fingerprint (User-Agent) for storage with a challenge.
+
+    Only a digest is kept so the challenge table never holds raw client
+    metadata; None means the client sent nothing to bind to.
+    """
+    if not fingerprint:
+        return None
+    return hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
+
+
+def _record_mfa_outcome(outcome: str) -> None:
+    """Count one MFA verification outcome without ever failing the request.
+
+    ``outcome`` is a small fixed vocabulary (success, backup_code, invalid,
+    replay, locked) so the metric label stays bounded.
+    """
+    try:
+        _mfa_verify_counter.add(1, {"outcome": outcome})
+    except Exception:  # pragma: no cover - telemetry must never break auth
+        logger.debug("mfa_verify_metric_failed", outcome=outcome)
+
+
+def _mfa_keyring() -> MfaKeyring:
+    """Build the MFA keyring from the running application's configuration.
+
+    Raises loudly (``MfaKeyUnavailableError``) when no key is configured --
+    callers must not catch it and continue without MFA.
+    """
+    return build_keyring(current_app.config)
+
+
+def _mfa_aad(user_id: Any) -> str:
+    """Return the row binding used as AES-GCM associated data.
+
+    Ties each envelope to its ``portal_users`` row so a ciphertext copied
+    onto another account does not decrypt.
+    """
+    return f"portal_users:{int(user_id)}"
+
+
+def _seal_totp_secret(user_id: Any, secret: str) -> str:
+    """Encrypt a TOTP secret for storage -- the only write path for the column.
+
+    Every writer goes through here so no call site ever stores plaintext.
+    """
+    return encrypt_totp_secret(secret, _mfa_keyring(), aad=_mfa_aad(user_id))
+
+
+def _load_totp_secret(user: Any) -> str:
+    """Return the usable TOTP secret for a user row -- the only read path.
+
+    Decrypts the stored envelope; a pre-encryption plaintext value is passed
+    through (and re-sealed on the next successful verification). Decryption
+    problems raise instead of being treated as "no MFA".
+    """
+    stored = user.mfa_secret
+    if not is_encrypted(stored):
+        logger.warning("mfa_secret_legacy_plaintext_row", user_id=user.id)
+        return str(stored)
+    return _open_totp_secret(user.id, stored)
+
+
+def _open_totp_secret(user_id: Any, stored: str) -> str:
+    """Decrypt one sealed TOTP secret (active or pending) for a user row.
+
+    Shared by the active-secret accessor and the pending-enrolment check so
+    both use the same row binding.
+    """
+    return open_totp_secret(stored, _mfa_keyring(), aad=_mfa_aad(user_id))
+
+
+def _pending_backup_codes(user: Any) -> list[Any]:
+    """Return the hashed backup codes waiting on a pending enrolment.
+
+    Tolerates the JSON column arriving as a decoded list or a JSON string.
+    """
+    raw = getattr(user, "mfa_pending_backup_codes", None)
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return []
+    return list(raw) if isinstance(raw, list) else []
+
+
+def _match_totp_counter(secret: str, code: str, now: datetime.datetime) -> int | None:
+    """Return the RFC 6238 time-step counter that ``code`` is valid for.
+
+    Every step in the accepted window is compared in constant time with no
+    early exit; the matched counter is returned so the caller can reject a
+    code that was already used (replay protection).
+    """
+    if not _TOTP_CODE_RE.fullmatch(code):
+        return None
+    totp = pyotp.TOTP(secret)
+    base = int(now.timestamp()) // MFA_TOTP_INTERVAL_SECONDS
+    matched: int | None = None
+    for offset in range(-MFA_TOTP_VALID_WINDOW, MFA_TOTP_VALID_WINDOW + 1):
+        counter = base + offset
+        if hmac.compare_digest(totp.generate_otp(counter), code):
+            matched = counter
+    return matched
+
+
+def _new_backup_codes() -> tuple[list[str], list[str]]:
+    """Generate a fresh backup-code set as ``(plaintext, hashed)`` lists.
+
+    The plaintext list is shown to the user exactly once; only the hashed
+    list is ever persisted.
+    """
+    plaintext = [secrets.token_hex(4) for _ in range(MFA_BACKUP_CODE_COUNT)]
+    return plaintext, [hash_backup_code(code) for code in plaintext]
+
+
+def _stored_backup_codes(user: Any) -> list[Any]:
+    """Return a user's stored backup-code entries as a list.
+
+    Tolerates the JSON column arriving as a decoded list or a JSON string.
+    """
+    raw = getattr(user, "mfa_backup_codes", None)
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return []
+    return list(raw) if isinstance(raw, list) else []
 
 
 def parse_tenant_settings(raw: Any) -> dict[str, Any]:
@@ -277,6 +453,19 @@ class PortalAuthService:
     MIN_PASSWORD_LENGTH = 8
     MAX_LOGIN_ATTEMPTS = 5
     LOCKOUT_DURATION_MINUTES = 30
+    # Second-factor attempts are budgeted separately from password attempts:
+    # a correct password must not reset the TOTP guess counter.
+    MAX_MFA_ATTEMPTS = 5
+    MFA_LOCKOUT_DURATION_MINUTES = 30
+    # Login MFA challenge: short-lived, single-use, attempt-capped.
+    MFA_CHALLENGE_TTL_SECONDS = 300
+    MAX_MFA_CHALLENGE_ATTEMPTS = 5
+    MAX_LIVE_MFA_CHALLENGES = 5
+    MFA_CHALLENGE_PRUNE_BATCH = 500
+    # A started-but-unconfirmed enrolment is discarded after this long.
+    MFA_PENDING_TTL_MINUTES = 10
+    # Lifetime of the enrolment-only token issued once MFA grace has expired.
+    MFA_ENROLLMENT_TOKEN_TTL_MINUTES = 15
 
     @staticmethod
     async def create_portal_user(
@@ -473,50 +662,162 @@ class PortalAuthService:
         }
 
     @staticmethod
+    def _mfa_locked_response(user_id: Any) -> dict:
+        """Build the lockout error dict and record the outcome.
+
+        Kept in one place so every lockout path returns the same 429 shape
+        and none of them reveals whether the submitted code was correct.
+        """
+        _record_mfa_outcome("locked")
+        logger.warning("mfa_verify_locked", user_id=user_id)
+        return {"error": _MFA_LOCKED_ERROR, "status_code": 429, "locked": True}
+
+    @staticmethod
+    def _register_mfa_failure(user_id: Any, now: datetime.datetime) -> None:
+        """Lock MFA verification once the failed-attempt budget is spent.
+
+        The attempt itself was already counted atomically before the code
+        was checked; this only converts an exhausted budget into a timed lock.
+        """
+        db = current_app.db
+        table = db.portal_users
+        fresh = table[user_id]
+        attempts = int(getattr(fresh, "mfa_failed_attempts", 0) or 0)
+        if attempts >= PortalAuthService.MAX_MFA_ATTEMPTS:
+            db(table.id == user_id).update(
+                mfa_locked_until=now
+                + datetime.timedelta(
+                    minutes=PortalAuthService.MFA_LOCKOUT_DURATION_MINUTES
+                ),
+            )
+            db.commit()
+            logger.warning("mfa_verify_lockout_started", user_id=user_id)
+
+    @staticmethod
     def verify_mfa(user_id: int, totp_code: str) -> dict:
-        """Verify MFA TOTP code.
+        """Verify an MFA TOTP code or single-use backup code.
+
+        Hardened second-factor check: failed attempts are budgeted and lock
+        verification for a period, a TOTP code is accepted at most once
+        (per-user last-accepted time step), and backup codes are compared
+        against stored hashes and consumed on use.
 
         Args:
             user_id: Portal user ID
-            totp_code: 6-digit TOTP code
+            totp_code: 6-digit TOTP code or 8-character backup code
 
         Returns:
-            User dict on success, error dict on failure
+            User dict on success, error dict on failure (``status_code`` 429
+            while locked out)
         """
-        user = current_app.db.portal_users[user_id]
+        with _tracer.start_as_current_span("portal_auth.verify_mfa"):
+            return PortalAuthService._verify_mfa(user_id, totp_code)
+
+    @staticmethod
+    def _verify_mfa(user_id: int, totp_code: str) -> dict:
+        """Run the MFA verification state machine for ``verify_mfa``.
+
+        Split out so the public entry point stays a thin traced wrapper.
+        """
+        db = current_app.db
+        table = db.portal_users
+        user = table[user_id]
         if not user:
             return {"error": "User not found"}
 
         if not user.mfa_secret:
             return {"error": "MFA not enabled for this user"}
 
-        normalized_code = str(totp_code).strip()
-        totp = pyotp.TOTP(user.mfa_secret)
-        if not totp.verify(normalized_code, valid_window=1):
-            raw_codes = getattr(user, "mfa_backup_codes", None)
-            if isinstance(raw_codes, str):
-                try:
-                    raw_codes = json.loads(raw_codes)
-                except ValueError:
-                    raw_codes = []
-            backup_codes = list(raw_codes) if isinstance(raw_codes, list) else []
-            matched_idx = next(
-                (
-                    idx
-                    for idx, code in enumerate(backup_codes)
-                    if str(code).strip().lower() == normalized_code.lower()
-                ),
-                None,
-            )
-            if matched_idx is None:
-                return {"error": "Invalid MFA code"}
-            backup_codes.pop(matched_idx)
-            current_app.db(current_app.db.portal_users.id == user.id).update(
-                mfa_backup_codes=backup_codes,
-                updated_at=datetime.datetime.now(datetime.UTC),
-            )
-            current_app.db.commit()
+        now = datetime.datetime.now(datetime.UTC)
+        locked_until = _to_utc_datetime(getattr(user, "mfa_locked_until", None))
+        if locked_until is not None:
+            if locked_until > now:
+                return PortalAuthService._mfa_locked_response(user.id)
+            # Lock expired: start a fresh attempt budget.
+            db(table.id == user.id).update(mfa_locked_until=None, mfa_failed_attempts=0)
+            db.commit()
 
+        # Reserve the attempt BEFORE checking the code, in one atomic UPDATE,
+        # so a burst of concurrent guesses cannot exceed the budget.
+        attempts = table.mfa_failed_attempts
+        reserved = db(
+            (table.id == user.id)
+            & (
+                (attempts == None)  # noqa: E711 - SQL NULL comparison
+                | (attempts < PortalAuthService.MAX_MFA_ATTEMPTS)
+            )
+        ).update(mfa_failed_attempts=func.coalesce(attempts.column, 0) + 1)
+        db.commit()
+        if reserved != 1:
+            PortalAuthService._register_mfa_failure(user.id, now)
+            return PortalAuthService._mfa_locked_response(user.id)
+
+        # Raises (never falls through) if the key is missing or wrong.
+        secret = _load_totp_secret(user)
+        normalized_code = str(totp_code).strip()
+        outcome = "invalid"
+
+        counter = _match_totp_counter(secret, normalized_code, now)
+        if counter is not None:
+            updates: dict[str, Any] = {
+                "mfa_last_totp_counter": counter,
+                "mfa_failed_attempts": 0,
+                "mfa_locked_until": None,
+                "updated_at": now,
+            }
+            if needs_reseal(user.mfa_secret, _mfa_keyring()):
+                updates["mfa_secret"] = _seal_totp_secret(user.id, secret)
+            last = table.mfa_last_totp_counter
+            # Conditional UPDATE: only the first use of a time step wins.
+            accepted = db(
+                (table.id == user.id) & ((last == None) | (last < counter))  # noqa: E711
+            ).update(**updates)
+            db.commit()
+            if accepted == 1:
+                _record_mfa_outcome("success")
+                return PortalAuthService._mfa_success(user)
+            outcome = "replay"
+            logger.warning("mfa_totp_replay_rejected", user_id=user.id)
+        else:
+            backup_code = normalize_backup_code(normalized_code)
+            if backup_code is not None:
+                stored_codes = _stored_backup_codes(user)
+                matched_idx = match_backup_code(stored_codes, backup_code)
+                if matched_idx is not None:
+                    remaining = (
+                        stored_codes[:matched_idx] + stored_codes[matched_idx + 1 :]
+                    )
+                    # Optimistic guard on updated_at so two concurrent uses of
+                    # the same backup code cannot both succeed.
+                    consumed = db(
+                        (table.id == user.id) & (table.updated_at == user.updated_at)
+                    ).update(
+                        mfa_backup_codes=remaining,
+                        mfa_failed_attempts=0,
+                        mfa_locked_until=None,
+                        updated_at=now,
+                    )
+                    db.commit()
+                    if consumed == 1:
+                        _record_mfa_outcome("backup_code")
+                        logger.info(
+                            "mfa_backup_code_consumed",
+                            user_id=user.id,
+                            remaining=len(remaining),
+                        )
+                        return PortalAuthService._mfa_success(user)
+
+        _record_mfa_outcome(outcome)
+        PortalAuthService._register_mfa_failure(user.id, now)
+        return {"error": "Invalid MFA code"}
+
+    @staticmethod
+    def _mfa_success(user: Any) -> dict:
+        """Build the post-MFA user dict handed to token generation.
+
+        An explicit field list -- never the row itself -- so MFA columns can
+        not leak into a response.
+        """
         return {
             "id": user.id,
             "email": user.email,
@@ -527,30 +828,236 @@ class PortalAuthService:
         }
 
     @staticmethod
-    def enable_mfa(user_id: int) -> dict:
-        """Enable MFA for a user and generate secret.
+    def create_mfa_challenge(
+        user_id: int, tenant_id: int, fingerprint: str | None = None
+    ) -> str:
+        """Create a server-side MFA login challenge and return its opaque id.
+
+        Called only after the password step succeeded, so holding a challenge
+        id proves the password was presented. Only the id's hash is stored;
+        the row is short-lived, single-use and attempt-capped.
+        """
+        db = current_app.db
+        table = db.portal_mfa_challenges
+        now = datetime.datetime.now(datetime.UTC)
+        # Opportunistic pruning: expired rows go table-wide (in bounded
+        # batches), and each user keeps at most MAX_LIVE_MFA_CHALLENGES live
+        # challenges, the oldest being evicted first.
+        expired_ids = [
+            r.id
+            for r in db(table.expires_at < now).select(
+                table.id,
+                limitby=(0, PortalAuthService.MFA_CHALLENGE_PRUNE_BATCH),
+            )
+        ]
+        if expired_ids:
+            db(table.id.belongs(expired_ids)).delete()
+        live_ids = [
+            r.id
+            for r in db(table.portal_user_id == user_id).select(
+                table.id, orderby=~table.id
+            )
+        ]
+        evict = live_ids[PortalAuthService.MAX_LIVE_MFA_CHALLENGES - 1 :]
+        if evict:
+            db(table.id.belongs(evict)).delete()
+        challenge_id = secrets.token_urlsafe(32)
+        table.insert(
+            challenge_hash=hash_challenge_id(challenge_id),
+            portal_user_id=user_id,
+            tenant_id=tenant_id,
+            fingerprint_hash=_fingerprint_hash(fingerprint),
+            attempts=0,
+            expires_at=now
+            + datetime.timedelta(seconds=PortalAuthService.MFA_CHALLENGE_TTL_SECONDS),
+            created_at=now,
+        )
+        db.commit()
+        return challenge_id
+
+    @staticmethod
+    def verify_mfa_challenge(
+        challenge_id: Any, totp_code: str, fingerprint: str | None = None
+    ) -> dict:
+        """Complete the MFA step of a login using a server-issued challenge.
+
+        The challenge -- not a caller-supplied user id -- selects the account,
+        so nobody can reach a user's second factor (or its lockout counter)
+        without first presenting that user's password. A challenge is
+        consumed on success and dies after a fixed number of attempts.
+
+        Returns:
+            User dict on success; error dict otherwise (``challenge_invalid``
+            when the challenge can no longer be used, ``status_code`` 429
+            while the account's MFA step is locked).
+        """
+        invalid = {
+            "error": "Invalid or expired MFA challenge",
+            "status_code": 401,
+            "challenge_invalid": True,
+        }
+        if not isinstance(challenge_id, str) or not challenge_id.strip():
+            return invalid
+
+        db = current_app.db
+        table = db.portal_mfa_challenges
+        now = datetime.datetime.now(datetime.UTC)
+        row = (
+            db(table.challenge_hash == hash_challenge_id(challenge_id.strip()))
+            .select()
+            .first()
+        )
+        if not row or row.consumed_at is not None:
+            return invalid
+        expires_at = _to_utc_datetime(row.expires_at)
+        if expires_at is None or expires_at <= now:
+            return invalid
+        if row.fingerprint_hash and not hmac.compare_digest(
+            row.fingerprint_hash, _fingerprint_hash(fingerprint) or ""
+        ):
+            logger.warning(
+                "mfa_challenge_fingerprint_mismatch", user_id=row.portal_user_id
+            )
+            return invalid
+
+        user = db.portal_users[row.portal_user_id]
+        if not user or user.tenant_id != row.tenant_id or not user.is_active:
+            return invalid
+
+        # Atomically take one of the challenge's attempts before checking.
+        reserved = db(
+            (table.id == row.id)
+            & (table.consumed_at == None)  # noqa: E711 - SQL NULL comparison
+            & (table.attempts < PortalAuthService.MAX_MFA_CHALLENGE_ATTEMPTS)
+        ).update(attempts=table.attempts.column + 1)
+        db.commit()
+        if reserved != 1:
+            return invalid
+
+        result = PortalAuthService.verify_mfa(row.portal_user_id, totp_code)
+        if "error" in result:
+            if (
+                int(row.attempts or 0) + 1
+                >= PortalAuthService.MAX_MFA_CHALLENGE_ATTEMPTS
+            ):
+                return {**result, "challenge_invalid": True}
+            return result
+
+        consumed = db(
+            (table.id == row.id) & (table.consumed_at == None)  # noqa: E711
+        ).update(consumed_at=now)
+        db.commit()
+        if consumed != 1:
+            return invalid
+        return result
+
+    @staticmethod
+    def issue_mfa_enrollment_token(user: dict) -> str:
+        """Mint the enrolment-only token for a user whose MFA grace has expired.
+
+        Signed with a key derived solely for this purpose, so no other token
+        verifier in the application can accept it: it authorises MFA setup
+        and logout, nothing else.
+        """
+        now = datetime.datetime.now(datetime.UTC)
+        payload = {
+            "sub": str(user["id"]),
+            "tenant_id": user["tenant_id"],
+            "type": MFA_ENROLLMENT_TOKEN_TYPE,
+            "aud": MFA_ENROLLMENT_TOKEN_AUDIENCE,
+            "scope": [],
+            "iat": now,
+            "exp": now
+            + datetime.timedelta(
+                minutes=PortalAuthService.MFA_ENROLLMENT_TOKEN_TTL_MINUTES
+            ),
+        }
+        return jwt.encode(payload, _mfa_enrollment_key(), algorithm="HS256")
+
+    @staticmethod
+    def verify_mfa_enrollment_token(token: str) -> dict | None:
+        """Return the claims of a valid enrolment-only token, else None.
+
+        Rejects anything not signed with the dedicated enrolment key, which
+        includes every ordinary access or refresh token.
+        """
+        try:
+            payload = jwt.decode(
+                token,
+                _mfa_enrollment_key(),
+                algorithms=["HS256"],
+                audience=MFA_ENROLLMENT_TOKEN_AUDIENCE,
+            )
+        except jwt.InvalidTokenError:
+            return None
+        if payload.get("type") != MFA_ENROLLMENT_TOKEN_TYPE:
+            return None
+        return payload
+
+    @staticmethod
+    def _require_current_factor(user: Any, current_code: Any) -> dict | None:
+        """Demand proof of the existing second factor before changing it.
+
+        Returns None when ``current_code`` is a valid TOTP or backup code for
+        the user's active MFA (it is consumed, and lockout applies), else an
+        error dict. A session alone must never be enough to replace, remove
+        or mint MFA credentials.
+        """
+        if current_code is None or not str(current_code).strip():
+            return {
+                "error": "A current MFA code is required for this action",
+                "status_code": 403,
+                "mfa_code_required": True,
+            }
+        result = PortalAuthService.verify_mfa(user.id, str(current_code))
+        if "error" in result:
+            return {
+                "error": result["error"],
+                "status_code": result.get("status_code", 403),
+                "mfa_code_required": True,
+            }
+        return None
+
+    @staticmethod
+    def enable_mfa(user_id: int, current_code: Any = None) -> dict:
+        """Start MFA enrollment: generate a PENDING TOTP secret and backup codes.
+
+        Nothing takes effect until ``confirm_mfa`` proves the authenticator
+        works; an abandoned setup expires. If MFA is already enrolled, a
+        current valid TOTP or backup code is required first. The secret is
+        stored encrypted and the backup codes hashed; the plaintext values
+        are returned only in this setup response.
 
         Args:
             user_id: Portal user ID
+            current_code: Current TOTP/backup code (required when re-enrolling)
 
         Returns:
-            MFA setup info (secret, provisioning URI)
+            MFA setup info (secret, provisioning URI, backup codes), or an
+            error dict with ``status_code``
         """
         user = current_app.db.portal_users[user_id]
         if not user:
             return {"error": "User not found"}
 
+        if user.mfa_secret:
+            denied = PortalAuthService._require_current_factor(user, current_code)
+            if denied is not None:
+                return denied
+
         # Generate new TOTP secret
         secret = pyotp.random_base32()
 
-        # Generate backup codes
-        backup_codes = [secrets.token_hex(4) for _ in range(10)]
+        # Generate backup codes (plaintext shown once, hashes persisted)
+        backup_codes, hashed_backup_codes = _new_backup_codes()
 
-        # Save secret (don't enable until verified)
+        now = datetime.datetime.now(datetime.UTC)
+        ttl = datetime.timedelta(minutes=PortalAuthService.MFA_PENDING_TTL_MINUTES)
         current_app.db(current_app.db.portal_users.id == user.id).update(
-            mfa_secret=secret,
-            mfa_backup_codes=backup_codes,
-            updated_at=datetime.datetime.now(datetime.UTC),
+            mfa_pending_secret=_seal_totp_secret(user.id, secret),
+            mfa_pending_backup_codes=hashed_backup_codes,
+            mfa_pending_expires_at=now + ttl,
+            updated_at=now,
         )
         current_app.db.commit()
 
@@ -562,11 +1069,18 @@ class PortalAuthService:
             "secret": secret,
             "provisioning_uri": provisioning_uri,
             "backup_codes": backup_codes,
+            "pending": True,
+            "expires_in": int(ttl.total_seconds()),
         }
 
     @staticmethod
     def confirm_mfa(user_id: int, totp_code: str) -> dict:
         """Confirm MFA enrollment by validating a TOTP code against the user's secret.
+
+        When an enrolment is pending, a valid code promotes the pending
+        secret and backup codes to active (replacing any previous ones) and
+        records the used time step so the same code cannot then be replayed
+        at login. An expired pending enrolment is discarded.
 
         Args:
             user_id: Portal user ID
@@ -575,9 +1089,59 @@ class PortalAuthService:
         Returns:
             ``{"verified": True}`` on success, or an error dict with ``status_code``
         """
-        user = current_app.db.portal_users[user_id]
+        db = current_app.db
+        table = db.portal_users
+        user = table[user_id]
         if not user:
             return {"error": "User not found", "status_code": 404}
+
+        now = datetime.datetime.now(datetime.UTC)
+        normalized_code = str(totp_code).strip()
+        pending = getattr(user, "mfa_pending_secret", None)
+
+        if pending:
+            expires_at = _to_utc_datetime(getattr(user, "mfa_pending_expires_at", None))
+            if expires_at is None or expires_at <= now:
+                db(table.id == user.id).update(
+                    mfa_pending_secret=None,
+                    mfa_pending_backup_codes=None,
+                    mfa_pending_expires_at=None,
+                )
+                db.commit()
+                return {
+                    "error": "MFA setup expired. Start the setup again.",
+                    "status_code": 400,
+                    "expired": True,
+                }
+
+            counter = _match_totp_counter(
+                _open_totp_secret(user.id, pending), normalized_code, now
+            )
+            if counter is None:
+                return {"error": "Invalid verification code", "status_code": 400}
+
+            # Promote only if the pending secret is still the one we checked.
+            promoted = db(
+                (table.id == user.id) & (table.mfa_pending_secret == pending)
+            ).update(
+                mfa_secret=pending,
+                mfa_backup_codes=_pending_backup_codes(user),
+                mfa_pending_secret=None,
+                mfa_pending_backup_codes=None,
+                mfa_pending_expires_at=None,
+                mfa_last_totp_counter=counter,
+                mfa_failed_attempts=0,
+                mfa_locked_until=None,
+                updated_at=now,
+            )
+            db.commit()
+            if promoted != 1:
+                return {
+                    "error": "MFA setup changed. Start the setup again.",
+                    "status_code": 409,
+                }
+            logger.info("mfa_enrollment_confirmed", user_id=user.id)
+            return {"verified": True, "enrolled": True}
 
         if not user.mfa_secret:
             return {
@@ -585,20 +1149,24 @@ class PortalAuthService:
                 "status_code": 400,
             }
 
-        totp = pyotp.TOTP(user.mfa_secret)
-        if not totp.verify(str(totp_code).strip(), valid_window=1):
+        matched = _match_totp_counter(_load_totp_secret(user), normalized_code, now)
+        if matched is None:
             return {"error": "Invalid verification code", "status_code": 400}
 
         return {"verified": True}
 
     @staticmethod
-    def regenerate_backup_codes(user_id: int) -> dict:
+    def regenerate_backup_codes(user_id: int, current_code: Any = None) -> dict:
         """Generate a fresh set of 10 single-use TOTP bypass/backup codes.
 
-        Replaces any previously issued backup codes for the user.
+        Replaces any previously issued backup codes for the user. Requires a
+        current valid TOTP or backup code -- backup codes are MFA bypass
+        credentials, so a session alone must not be able to mint them. Only
+        hashes are stored; the plaintext codes exist in this response alone.
 
         Args:
             user_id: Portal user ID
+            current_code: Current TOTP or backup code
 
         Returns:
             Dict with ``backup_codes`` and ``remaining``, or an error dict
@@ -614,9 +1182,13 @@ class PortalAuthService:
                 "status_code": 400,
             }
 
-        backup_codes = [secrets.token_hex(4) for _ in range(10)]
+        denied = PortalAuthService._require_current_factor(user, current_code)
+        if denied is not None:
+            return denied
+
+        backup_codes, hashed_backup_codes = _new_backup_codes()
         current_app.db(current_app.db.portal_users.id == user.id).update(
-            mfa_backup_codes=backup_codes,
+            mfa_backup_codes=hashed_backup_codes,
             updated_at=datetime.datetime.now(datetime.UTC),
         )
         current_app.db.commit()
@@ -627,14 +1199,16 @@ class PortalAuthService:
         }
 
     @staticmethod
-    def disable_mfa(user_id: int) -> dict:
+    def disable_mfa(user_id: int, current_code: Any = None) -> dict:
         """Disable MFA for a user.
 
         Refuses with HTTP 403 if the user's tenant enforces MFA via its
-        Enterprise security policy.
+        Enterprise security policy, and otherwise requires a current valid
+        TOTP or backup code so a hijacked session cannot strip the factor.
 
         Args:
             user_id: Portal user ID
+            current_code: Current TOTP or backup code
 
         Returns:
             Success dict or error dict (with optional ``status_code``)
@@ -652,9 +1226,20 @@ class PortalAuthService:
                 "status_code": 403,
             }
 
+        if user.mfa_secret:
+            denied = PortalAuthService._require_current_factor(user, current_code)
+            if denied is not None:
+                return denied
+
         current_app.db(current_app.db.portal_users.id == user.id).update(
             mfa_secret=None,
             mfa_backup_codes=None,
+            mfa_pending_secret=None,
+            mfa_pending_backup_codes=None,
+            mfa_pending_expires_at=None,
+            mfa_last_totp_counter=None,
+            mfa_failed_attempts=0,
+            mfa_locked_until=None,
             updated_at=datetime.datetime.now(datetime.UTC),
         )
         current_app.db.commit()

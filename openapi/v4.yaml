@@ -13627,8 +13627,12 @@ paths:
   /api/v1/portal-auth/login:
     post:
       description: "\nRequest body:\n    tenant: str - Tenant slug (or use tenant_id)\n    email: str\
-        \ - Email address (validated format)\n    password: str - Password\n\nReturns:\n    Tokens on\
-        \ success, or MFA challenge\n    422: Invalid email format or validation error"
+        \ - Email address (validated format)\n    password: str - Password\n    mfaCode: str (optional)\
+        \ - TOTP or backup code, sent together with\n        the credentials to complete an MFA login\
+        \ in one request\n\nReturns:\n    Tokens on success.\n    MFA enrolled and no code sent: ``mfaRequired``\
+        \ plus an opaque,\n    short-lived ``mfaChallenge`` for POST /mfa/verify (no user id).\n    MFA\
+        \ required by policy and grace period expired:\n    ``mfaEnrollmentRequired`` plus an enrolment-scoped\
+        \ token only.\n    422: Invalid email format or validation error"
       operationId: post_login
       parameters: []
       responses: {}
@@ -13666,41 +13670,52 @@ paths:
       summary: Update current authenticated portal user info.
   /api/v1/portal-auth/mfa/backup-codes/regenerate:
     post:
-      description: "\nInvalidates all previously generated backup codes and returns 10 new single-use codes."
+      description: "\nInvalidates all previously generated backup codes and returns 10 new codes.\n\n\
+        Request body:\n    current_code: str - Current TOTP or backup code\n\nReturns:\n    JSON with\
+        \ ``backup_codes`` list and ``remaining`` count"
       operationId: post_regenerate_mfa_backup_codes
       parameters: []
       responses: {}
       summary: Regenerate single-use MFA backup/bypass codes for the authenticated user.
   /api/v1/portal-auth/mfa/confirm:
     post:
-      description: "\nRequest body:\n    totp_code: str - 6-digit TOTP code from Google\
-        \ Authenticator\n\nReturns:\n    Verification status"
+      description: "\nActivates a pending enrolment. When called with the enrolment-only\ntoken the cookies\
+        \ are cleared afterwards: the user signs in again, now\nwith password + MFA, to obtain a real\
+        \ session.\n\nRequest body:\n    totp_code: str - 6-digit TOTP code from Google Authenticator\n\
+        \nReturns:\n    ``{\"verified\": True}`` on success, or 400/401 on invalid code"
       operationId: post_confirm_mfa
       parameters: []
       responses: {}
       summary: Confirm MFA enrollment by verifying a 6-digit TOTP code.
   /api/v1/portal-auth/mfa/disable:
     post:
-      description: "\nReturns:\n    Success status"
+      description: "\nRequest body:\n    current_code: str - Current TOTP or backup code\n\nReturns:\n\
+        \    Success status, or 403 if MFA is enforced by tenant policy or the\n    current code is missing/invalid"
       operationId: post_disable_mfa
       parameters: []
       responses: {}
       summary: Disable MFA for the authenticated user.
   /api/v1/portal-auth/mfa/enable:
     post:
-      description: "\nReturns:\n    MFA setup info (secret, provisioning URI, backup codes)"
+      description: "\nThe new secret stays pending until /mfa/confirm succeeds. If MFA is\nalready enrolled,\
+        \ a current TOTP or backup code is required.\n\nRequest body (only when re-enrolling):\n    current_code:\
+        \ str - Current TOTP or backup code\n\nReturns:\n    MFA setup info (secret, provisioning URI,\
+        \ backup codes)"
       operationId: post_enable_mfa
       parameters: []
       responses: {}
-      summary: Enable MFA for the authenticated user.
+      summary: Start MFA setup for the authenticated user.
   /api/v1/portal-auth/mfa/verify:
     post:
-      description: "\nRequest body:\n    user_id: int - User ID from login response\n    totp_code: str\
-        \ - 6-digit TOTP code\n\nReturns:\n    Tokens on success"
+      description: "\nRequest body:\n    mfa_challenge: str - Opaque challenge id returned by /login\n\
+        \    totp_code: str - 6-digit TOTP code or 8-character backup code\n\nA bare user id is not accepted:\
+        \ without a challenge (which only a correct\npassword yields) nobody can reach an account's second\
+        \ factor.\n\nReturns:\n    Tokens on success; 401 on a bad code or dead challenge, 429 while the\n\
+        \    account's MFA step is locked"
       operationId: post_verify_mfa
       parameters: []
       responses: {}
-      summary: Verify MFA code after initial authentication.
+      summary: Complete a login's MFA step using the challenge from the password step.
   /api/v1/portal-auth/org-assignments:
     post:
       description: "\nRequires tenant admin or global admin.\n\nRequest body:\n    portal_user_id: int\

@@ -12,7 +12,11 @@ from pydantic import ValidationError
 from quart import Blueprint, Response, current_app, jsonify, request
 from quart_schema import document_request, document_response, validate_response
 
-from apps.api.api.v1.portal_auth import generate_tokens, portal_token_required
+from apps.api.api.v1.portal_auth import (
+    _issue_mfa_enrollment_response,
+    generate_tokens,
+    portal_token_required,
+)
 from apps.api.auth.decorators import login_required
 from apps.api.auth.portal_cookies import set_portal_auth_cookies
 from apps.api.models.pydantic.idp import (
@@ -22,6 +26,10 @@ from apps.api.models.pydantic.idp import (
     IdPConfigUpdateResponse,
     IdPErrorResponse,
     UpdateIdPConfigRequest,
+)
+from apps.api.services.portal_auth import (
+    compute_user_mfa_status,
+    user_has_mfa_enrolled,
 )
 from apps.api.services.sso import OIDCService, SAMLService, SCIMService
 from apps.api.services.sso.idp_access import (
@@ -74,6 +82,38 @@ def _attach_auth_cookies(response, tokens: dict) -> None:
 
 
 # SCIM authentication decorator
+def _load_portal_user(user_id: int):
+    """Fetch the portal user an SSO flow just authenticated or provisioned."""
+    # The id comes from the SSO service's own verified-assertion / JIT
+    # result, never from a client parameter.
+    return current_app.db.portal_users[user_id]  # tenant-scope-exempt: see above
+
+
+def _sso_mfa_locked_out(user: dict) -> bool:
+    """Whether an SSO-authenticated user's MFA enrolment grace has expired.
+
+    IdP configs carry no "IdP asserts MFA" setting, so Elder's own tenant
+    MFA policy applies to SSO sign-ins exactly as it does to password
+    logins and refreshes.
+    """
+    row = _load_portal_user(int(user["id"]))
+    if not row:
+        # Fail closed: no account row means no basis for a session.
+        raise LookupError("SSO user not found")
+    status = compute_user_mfa_status(
+        row.tenant_id,
+        mfa_enabled=user_has_mfa_enrolled(row),
+        user_created_at=getattr(row, "created_at", None),
+    )
+    if status["mfa_locked_out"]:
+        user["mfa_grace_expires_at"] = status["mfa_grace_expires_at"]
+        user.setdefault("tenant_id", row.tenant_id)
+        user.setdefault("email", row.email)
+        user.setdefault("full_name", row.full_name)
+        return True
+    return False
+
+
 def scim_auth_required(f):
     """Decorator to require SCIM bearer token authentication."""
 
@@ -580,6 +620,13 @@ async def saml_acs(tenant_id):
     if "error" in result:
         return jsonify(result), 400
 
+    try:
+        locked_out = _sso_mfa_locked_out(result)
+    except LookupError:
+        return ApiResponse.unauthorized("User not found")
+    if locked_out:
+        return await _issue_mfa_enrollment_response(result)
+
     # Generate tokens
     tokens = generate_tokens(result)
 
@@ -660,7 +707,7 @@ def oidc_authorize(idp_id):
 
 
 @bp.route("/oidc/callback", methods=["GET"])
-def oidc_callback():
+async def oidc_callback():
     """Handle OIDC callback with authorization code.
 
     Query params:
@@ -720,6 +767,13 @@ def oidc_callback():
 
         if "error" in user:
             return jsonify(user), 400
+
+        try:
+            locked_out = _sso_mfa_locked_out(user)
+        except LookupError:
+            return ApiResponse.unauthorized("User not found")
+        if locked_out:
+            return await _issue_mfa_enrollment_response(user)
 
         # Generate Elder JWT tokens
         elder_tokens = generate_tokens(user)

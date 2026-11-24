@@ -107,7 +107,11 @@ class Identity(Base, IDMixin, TimestampMixin):
 
     # Multi-factor authentication
     mfa_enabled = Column(Boolean, default=False, nullable=False)
-    mfa_secret = Column(String(255), nullable=True, comment="TOTP secret for MFA")
+    mfa_secret = Column(
+        String(255),
+        nullable=True,
+        comment="TOTP secret for MFA (encrypted envelope v1:<kid>:<nonce>:<ct>)",
+    )
 
     # Password management
     must_change_password = Column(

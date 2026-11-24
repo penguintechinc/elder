@@ -54,6 +54,13 @@ class Config:
 
     # JWT
     JWT_SECRET_KEY = config("JWT_SECRET_KEY", default=None)
+
+    # MFA at-rest encryption (apps/api/utils/mfa_crypto.py). The AES key is
+    # HKDF-derived from MFA_ENCRYPTION_KEY, falling back to SECRET_KEY when
+    # unset. MFA_ENCRYPTION_OLD_KEYS is a comma-separated list of previous
+    # master secrets kept for decryption during a rotation.
+    MFA_ENCRYPTION_KEY = config("MFA_ENCRYPTION_KEY", default=None)
+    MFA_ENCRYPTION_OLD_KEYS = config("MFA_ENCRYPTION_OLD_KEYS", default="")
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(
         hours=config("JWT_ACCESS_TOKEN_HOURS", default=4, cast=int)
     )
