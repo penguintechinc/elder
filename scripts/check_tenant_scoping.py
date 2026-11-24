@@ -20,6 +20,16 @@ Two shapes of the same bug, both counted together:
 Both caught by a bare ``db.<table>[<id>]`` or missing ``tenant_id=`` check
 are a REGRESSION if new (not a pre-existing site already in the baseline).
 
+3. A list/search query that starts from every row (``db.<table>.id > 0``,
+   including ``self.db.`` in services) inside a function that never applies
+   a tenant or organization predicate. Checks (1) and (2) only see
+   single-row lookups, so whole-table list/search/suggest queries (e.g. the
+   universal search service, ``GET /entities``) passed the gate while
+   returning every tenant's rows. This shape is counted separately
+   (``list_count=`` in the baseline) so fixing one category can never buy
+   headroom for a regression in the other. The scan also covers
+   ``apps/api/services/`` because route handlers often delegate the query.
+
 This is a ratchet, not a hard zero: fixing all pre-existing sites across
 the codebase is a separate, larger effort (gh-237 full sweep, ~339 sites).
 This script only prevents the count from GROWING -- new call sites must use
@@ -54,6 +64,21 @@ SCAN_GLOBS = [
     # here keeps them there. Add further services as they are cleaned up.
     "apps/api/services/networking/*.py",
 ]
+
+# Service modules run queries on behalf of routes -- scanned for the
+# whole-table list shape (check 3) only.
+LIST_SCAN_GLOBS = SCAN_GLOBS + [
+    "apps/api/services/*.py",
+    "apps/api/services/**/*.py",
+]
+
+# `db.<table>.id > 0` -- a query seeded with "every row" (check 3).
+ALL_ROWS_QUERY = re.compile(r"\bdb\.\w+\.id\s*>\s*0\b")
+
+# Any of these inside the enclosing function counts as a tenant predicate.
+TENANT_PREDICATE = re.compile(r"tenant|org_ids|organization_id\.belongs", re.I)
+
+FUNC_DEF = re.compile(r"^(\s*)(?:async\s+)?def\s")
 
 # `db.<table>[<expr>]` bracket lookup -- PyDAL's unscoped-by-primary-key
 # accessor. Requires the leading `db.` so it does not flag
@@ -135,6 +160,69 @@ def count_unscoped_resolver_calls(files: list[Path]) -> int:
     return total
 
 
+def _enclosing_function(lines: list[str], idx: int) -> str:
+    """Return the source of the function enclosing ``lines[idx]`` (or "" at module level)."""
+    line_indent = len(lines[idx]) - len(lines[idx].lstrip())
+    start = None
+    def_indent = 0
+    for j in range(idx, -1, -1):
+        m = FUNC_DEF.match(lines[j])
+        if m and len(m.group(1)) < line_indent:
+            start, def_indent = j, len(m.group(1))
+            break
+    if start is None:
+        return ""
+    end = len(lines)
+    for k in range(idx + 1, len(lines)):
+        text = lines[k]
+        if text.strip() and (len(text) - len(text.lstrip())) <= def_indent:
+            if not text.lstrip().startswith((")", "]", "}")):
+                end = k
+                break
+    return "\n".join(lines[start:end])
+
+
+def count_unscoped_list_queries(files: list[Path]) -> int:
+    """Count ``db.<t>.id > 0`` queries in functions with no tenant/org predicate.
+
+    Heuristic: the enclosing function's source (signature, body, comments)
+    must mention a tenant or organization-set predicate; otherwise the
+    whole-table query is counted. Global, non-tenant tables (e.g. the
+    tenants catalogue itself) carry the ``# tenant-scope-exempt`` marker.
+    """
+    total = 0
+    for f in files:
+        lines = f.read_text().splitlines()
+        for idx, line in enumerate(lines):
+            if ALLOW_MARKER in line or not ALL_ROWS_QUERY.search(line):
+                continue
+            if TENANT_PREDICATE.search(_enclosing_function(lines, idx)):
+                continue
+            total += 1
+    return total
+
+
+def list_offenders(files: list[Path]) -> list[str]:
+    """Return ``path:line`` for each check-3 offender (printed to aid fixing)."""
+    out: list[str] = []
+    for f in files:
+        lines = f.read_text().splitlines()
+        for idx, line in enumerate(lines):
+            if ALLOW_MARKER in line or not ALL_ROWS_QUERY.search(line):
+                continue
+            if not TENANT_PREDICATE.search(_enclosing_function(lines, idx)):
+                out.append(f"{f}:{idx + 1}")
+    return out
+
+
+def find_list_files(root: Path) -> list[Path]:
+    """Collect route + service files matched by LIST_SCAN_GLOBS."""
+    files: set[Path] = set()
+    for pattern in LIST_SCAN_GLOBS:
+        files.update(root.glob(pattern))
+    return sorted(f for f in files if f.is_file())
+
+
 def count_unscoped(files: list[Path]) -> int:
     """Total unscoped lookups: bracket lookups + resolver calls missing tenant_id."""
     return count_unscoped_bracket_lookups(files) + count_unscoped_resolver_calls(files)
@@ -145,6 +233,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--update", action="store_true", help="rewrite the baseline")
     parser.add_argument(
         "--root", type=Path, default=DEFAULT_ROOT, help="repo root to scan (tests only)"
+    )
+    parser.add_argument(
+        "--list", action="store_true", help="print whole-table list-query offenders"
     )
     args = parser.parse_args(argv)
 
@@ -162,11 +253,18 @@ def main(argv: list[str] | None = None) -> int:
     bracket_count = count_unscoped_bracket_lookups(files)
     resolver_count = count_unscoped_resolver_calls(files)
     current = bracket_count + resolver_count
+    list_files = find_list_files(root)
+    list_current = count_unscoped_list_queries(list_files)
     print(
         f"tenant-scoping gate: {current} unscoped lookups "
         f"({bracket_count} bracket lookups + {resolver_count} resolver calls "
-        f"missing tenant_id=) across {len(files)} files examined"
+        f"missing tenant_id=) across {len(files)} files examined; "
+        f"{list_current} whole-table list queries without a tenant/org "
+        f"predicate across {len(list_files)} route+service files examined"
     )
+    if args.list:
+        for item in list_offenders(list_files):
+            print(f"  list-query: {item.removeprefix(str(root) + '/')}")
 
     if args.update:
         baseline_file.write_text(
@@ -177,10 +275,13 @@ def main(argv: list[str] | None = None) -> int:
             "# scripts/check_tenant_scoping.py fails if this count rises.\n"
             "# Fix a bracket lookup with apps.api.utils.tenant_scoping.get_tenant_scoped(),\n"
             "# or pass tenant_id= to a resolver call.\n"
+            "# list_count = whole-table `db.<t>.id > 0` queries in functions with no\n"
+            "# tenant/org predicate (routes + services); ratcheted separately.\n"
             "# Regenerate with: scripts/check_tenant_scoping.py --update\n"
             f"count={current}\n"
+            f"list_count={list_current}\n"
         )
-        print(f"Wrote {baseline_file} (count={current})")
+        print(f"Wrote {baseline_file} (count={current}, list_count={list_current})")
         return 0
 
     if not baseline_file.exists():
@@ -191,12 +292,28 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     baseline: int | None = None
+    list_baseline: int | None = None
     for line in baseline_file.read_text().splitlines():
         if line.startswith("count="):
             baseline = int(line.split("=", 1)[1])
+        elif line.startswith("list_count="):
+            list_baseline = int(line.split("=", 1)[1])
     if baseline is None:
         print(
             f"{baseline_file} has no count= line -- refusing to compare.",
+            file=sys.stderr,
+        )
+        return 1
+    if list_baseline is None:
+        # Older baselines predate check 3: strictest reading, zero allowed.
+        list_baseline = 0
+
+    if list_current > list_baseline:
+        print(
+            f"REGRESSION: {list_current} whole-table list queries without a "
+            f"tenant/org predicate, baseline is {list_baseline}. Scope the query "
+            "to the caller's tenant (or its organizations), or mark a genuinely "
+            f"global table '{ALLOW_MARKER}'. Run with --list to see offenders.",
             file=sys.stderr,
         )
         return 1
@@ -212,9 +329,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    if current < baseline:
+    if current < baseline or list_current < list_baseline:
         print(
-            f"Tenant-scoping debt went down ({baseline} -> {current}). Lock it in: "
+            f"Tenant-scoping debt went down (lookups {baseline} -> {current}, "
+            f"list queries {list_baseline} -> {list_current}). Lock it in: "
             f"scripts/check_tenant_scoping.py --update && git add {BASELINE_NAME}"
         )
         return 0

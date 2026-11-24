@@ -20,13 +20,53 @@ from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
-from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
+from apps.api.utils.tenant_scoping import (
+    get_current_tenant_id,
+    get_tenant_org_ids,
+    get_tenant_scoped,
+)
 from apps.api.utils.validation_helpers import (
     validate_organization_and_get_tenant,
 )
 from apps.api.utils.village_id import mint_village_id
 
 bp = Blueprint("entities", __name__)
+
+
+def _caller_tenant() -> int | None:
+    """Return the caller's tenant id from verified claims, or None.
+
+    Routes map None to a 403: a token without a tenant never sees any
+    tenant's entities.
+    """
+    tid = get_current_tenant_id()
+    return tid if tid and tid > 0 else None
+
+
+async def _check_refs_in_tenant(
+    db, tenant_id: int, organization_id: int | None, parent_id: int | None
+):
+    """Verify caller-supplied organization/parent ids belong to ``tenant_id``.
+
+    Returns None when every supplied id is owned by the caller's tenant,
+    otherwise a 404 response (never 403, so other tenants' ids cannot be
+    told apart from ids that do not exist).
+    """
+    if organization_id is not None:
+        org = await run_in_threadpool(
+            lambda: get_tenant_scoped(db, db.organizations, organization_id, tenant_id)
+        )
+        if not org:
+            return ApiResponse.not_found("Organization", organization_id)
+    if parent_id is not None:
+        parent = await run_in_threadpool(
+            lambda: get_tenant_scoped(
+                db, db.entities, parent_id, tenant_id, org_fk="organization_id"
+            )
+        )
+        if not parent:
+            return ApiResponse.not_found("Entity", parent_id)
+    return None
 
 
 @bp.route("", methods=["GET"])
@@ -48,14 +88,28 @@ async def list_entities():
 
     Returns:
         200: List of entities with pagination metadata
+        403: Token carries no tenant
     """
     db = current_app.db_read
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return ApiResponse.forbidden("Tenant context required")
 
     # Get pagination params using helper
     pagination = PaginationParams.from_request()
 
-    # Build query
-    query = db.entities.id > 0
+    # Only entities owned (via their organization) by the caller's tenant.
+    org_ids = await run_in_threadpool(lambda: get_tenant_org_ids(db, tenant_id))
+    if not org_ids:
+        empty = PaginatedResponse(
+            items=[],
+            total=0,
+            page=pagination.page,
+            per_page=pagination.per_page,
+            pages=0,
+        )
+        return jsonify(asdict(empty)), 200
+    query = db.entities.organization_id.belongs(org_ids)
 
     # Apply filters
     if request.args.get("entity_type"):
@@ -131,8 +185,20 @@ async def create_entity(body: CreateEntityRequest):
     Returns:
         201: Created entity
         400: Validation error
+        403: Token carries no tenant
+        404: Organization or parent entity not found in the caller's tenant
     """
     db = current_app.db
+    caller_tenant = _caller_tenant()
+    if caller_tenant is None:
+        return ApiResponse.forbidden("Tenant context required")
+
+    # Organization and parent must both belong to the caller's tenant.
+    denied = await _check_refs_in_tenant(
+        db, caller_tenant, body.organization_id, body.parent_id
+    )
+    if denied:
+        return denied
 
     # Get organization to derive tenant_id using helper
     org, tenant_id, error = await validate_organization_and_get_tenant(
@@ -190,7 +256,9 @@ async def get_entity(id: int):
         404: Entity not found
     """
     db = current_app.db
-    tenant_id = get_current_tenant_id()
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return ApiResponse.forbidden("Tenant context required")
 
     # gh-237: scope by tenant (via organizations.tenant_id) — entities have
     # no tenant_id column of their own, only organization_id
@@ -226,7 +294,9 @@ async def update_entity(id: int, body: UpdateEntityRequest):
         404: Entity not found
     """
     db = current_app.db
-    tenant_id = get_current_tenant_id()
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return ApiResponse.forbidden("Tenant context required")
 
     # Check if entity exists and belongs to caller's tenant (gh-237)
     existing = await run_in_threadpool(
@@ -236,6 +306,13 @@ async def update_entity(id: int, body: UpdateEntityRequest):
     )
     if not existing:
         return ApiResponse.not_found("Entity", id)
+
+    # A move to another organization or parent must stay inside the tenant.
+    denied = await _check_refs_in_tenant(
+        db, tenant_id, body.organization_id, body.parent_id
+    )
+    if denied:
+        return denied
 
     # If organization is being changed, validate and get tenant
     org_tenant_id = None
@@ -294,7 +371,9 @@ async def delete_entity(id: int):
         400: Cannot delete entity with dependencies
     """
     db = current_app.db
-    tenant_id = get_current_tenant_id()
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return ApiResponse.forbidden("Tenant context required")
 
     # Check if entity exists and belongs to caller's tenant (gh-237)
     existing = await run_in_threadpool(
@@ -358,7 +437,9 @@ async def get_entity_dependencies(id: int):
         404: Entity not found
     """
     db = current_app.db
-    tenant_id = get_current_tenant_id()
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return ApiResponse.forbidden("Tenant context required")
 
     # Check if entity exists and belongs to caller's tenant (gh-237)
     entity = await run_in_threadpool(
@@ -382,6 +463,7 @@ async def get_entity_dependencies(id: int):
             outgoing = db(
                 (db.dependencies.source_type == "entity")
                 & (db.dependencies.source_id == id)
+                & (db.dependencies.tenant_id == tenant_id)
             ).select()
             result["depends_on"] = [
                 {
@@ -399,6 +481,7 @@ async def get_entity_dependencies(id: int):
             incoming = db(
                 (db.dependencies.target_type == "entity")
                 & (db.dependencies.target_id == id)
+                & (db.dependencies.tenant_id == tenant_id)
             ).select()
             result["depended_by"] = [
                 {
@@ -435,7 +518,9 @@ async def update_entity_attributes(id: int):
         404: Entity not found
     """
     db = current_app.db
-    tenant_id = get_current_tenant_id()
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return ApiResponse.forbidden("Tenant context required")
 
     # Check if entity exists and belongs to caller's tenant (gh-237)
     existing = await run_in_threadpool(
