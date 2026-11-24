@@ -549,6 +549,45 @@ print(json.dumps({"done": True}), flush=True)
             assert runner.can_execute("wasm") is False
             assert runner.can_execute("python") is True
 
+    def test_python_handler_function_is_invoked_and_captured(self) -> None:
+        runner = SandboxRunner()
+        starter_code = (
+            "def handler(input_data: dict) -> dict:\n"
+            "    name = (input_data or {}).get('name', 'world')\n"
+            "    print(f'greeting {name}')\n"
+            "    return {'message': f'Hello, {name}!'}\n"
+        )
+        res = runner.execute(
+            RunJobRequest(
+                execution_id="exec-handler-sync",
+                runtime="python",
+                code=starter_code,
+                input_data={"name": "Elder"},
+                timeout_seconds=10,
+            )
+        )
+        assert res.status == "succeeded"
+        assert res.exit_code == 0
+        assert "greeting Elder" in res.logs
+        assert "Hello, Elder!" in res.logs
+        assert res.output == {"message": "Hello, Elder!"}
+
+        async_code = (
+            "async def handler(input_data):\n"
+            "    return {'async_ok': True, 'got': input_data.get('x')}\n"
+        )
+        res_async = runner.execute(
+            RunJobRequest(
+                execution_id="exec-handler-async",
+                runtime="python",
+                code=async_code,
+                input_data={"x": 42},
+                timeout_seconds=10,
+            )
+        )
+        assert res_async.status == "succeeded"
+        assert res_async.output == {"async_ok": True, "got": 42}
+
 
 class TestPluggableRunnerAndManifestWiring:
     """Verify RUNS_RUNNER_BACKEND routing, token redaction, and K8s manifests."""
