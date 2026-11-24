@@ -97,6 +97,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for local setup, seeding mock dat
 | [API Reference](docs/API.md) | OpenAPI 3.0 REST endpoints, gRPC services, `hub-mcp`, SDKs, and CLI |
 | [Connectors & Discovery](docs/CONNECTORS.md) | Cloud (AWS, GCP, Azure), Kubernetes, Okta, LDAP, vCenter, and FleetDM sync |
 | [Development Guide](docs/DEVELOPMENT.md) | Prerequisites, local environment, Helm deployment, and Makefile targets |
+| [Demo Data & Seeding](docs/demo-data.md) | Idempotent demo data seeding (`make seed-demo`) and demo login credentials |
 | [Database & Schema](docs/DATABASE.md) | Data model, `penguin-dal` / PyDAL patterns, migrations, and MariaDB Galera / PostgreSQL |
 | [Testing Guide](docs/TESTING.md) | Unit, integration, smoke, telemetry validation, and Playwright E2E suites |
 | [Application Standards](docs/APP_STANDARDS.md) | Elder-specific architecture conventions, security posture, and module rules |

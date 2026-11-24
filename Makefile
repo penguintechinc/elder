@@ -4,7 +4,7 @@
         setup setup-env setup-python setup-lint verify-venv install-hooks verify-hooks \
         dev dev-api dev-stop test-db-up test-db-down build-test-image generate-grpc openapi-spec \
         test test-unit test-integration test-e2e test-functional test-security test-coverage \
-        smoke-test smoke-test-beta seed-mock-data seed-cloud-discovery seed-demo-unified seed-k8s-geo-demo screenshots \
+        smoke-test smoke-test-beta seed-demo seed-mock-data seed-mock-data-api seed-cloud-discovery seed-demo-unified seed-k8s-geo-demo screenshots \
         lint format format-check \
         test-ui test-ui-headed test-ui-debug test-beta \
         build docker-build docker-build-alpha docker-push docker-scan \
@@ -318,8 +318,15 @@ test-ui-headed: ## Run Playwright web UI tests with visible browser
 test-ui-debug: ## Run Playwright in step-through debug mode
 	@cd web && npm run test:e2e:debug
 
-seed-mock-data: ## Seed 3-4 realistic mock items per feature for local testing
-	@echo "$(BLUE)Seeding mock data...$(RESET)"
+seed-demo: ## Seed the coherent, idempotent "Acme Corp" demo org (3-4 items per feature; see docs/demo-data.md)
+	@echo "$(BLUE)Seeding demo data (Acme Corp)...$(RESET)"
+	@$(PYTHON) scripts/seed_demo.py
+	@echo "$(GREEN)Demo data seeded (login: see docs/demo-data.md)$(RESET)"
+
+seed-mock-data: seed-demo ## Alias of seed-demo (screenshots / local testing data)
+
+seed-mock-data-api: ## Legacy: seed Faker data through a running API over HTTP (10 per type, no village_id)
+	@echo "$(BLUE)Seeding mock data via the HTTP API...$(RESET)"
 	@$(PYTHON) scripts/seed_mock_data.py
 	@echo "$(GREEN)Mock data seeded$(RESET)"
 
@@ -338,7 +345,7 @@ seed-k8s-geo-demo: ## Seed demo K8s cluster hierarchy (parent_id-linked) + geo-l
 	@$(PYTHON) scripts/seed_k8s_geo_demo.py
 	@echo "$(GREEN)K8s/geo demo data seeded$(RESET)"
 
-screenshots: ## Capture screenshots with mock data (requires seed-mock-data first)
+screenshots: ## Capture screenshots with demo data (requires seed-demo first)
 	@node scripts/capture-screenshots.cjs --prune
 
 pre-commit: ## Run full pre-commit sequence (lint + security + tests + smoke-test)

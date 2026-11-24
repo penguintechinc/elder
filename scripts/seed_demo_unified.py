@@ -11,7 +11,6 @@ Usage:
 
 import json
 import os
-import secrets
 import sys
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, Optional
@@ -23,14 +22,20 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from werkzeug.security import generate_password_hash  # noqa: E402
 
 from apps.api.main import create_app  # noqa: E402
-from shared.utils.village_id import generate_village_id  # noqa: E402
 
 # Demo tenant/org/admin identity — shared with seed_cloud_discovery.py
-DEMO_TENANT_SLUG = os.environ.get("DEMO_TENANT_SLUG", "demo-cloud-discovery")
-DEMO_TENANT_NAME = os.environ.get("DEMO_TENANT_NAME", "Demo Cloud Discovery")
-DEMO_ORG_NAME = os.environ.get("DEMO_ORG_NAME", "Demo Cloud Discovery Org")
-DEMO_ADMIN_USERNAME = os.environ.get("DEMO_ADMIN_USERNAME", "demo-admin@elderrms.app")
-DEMO_ADMIN_PASSWORD = os.environ.get("DEMO_ADMIN_PASSWORD") or secrets.token_urlsafe(12)
+# Demo tenant/org/admin identity — defined once in scripts/demo_seed/common.py
+# (env-overridable; documented in docs/demo-data.md).
+from scripts.demo_seed.common import (  # noqa: E402
+    DEMO_ADMIN_EMAIL as DEMO_ADMIN_USERNAME,
+)
+from scripts.demo_seed.common import (  # noqa: E402
+    DEMO_ADMIN_PASSWORD,
+    DEMO_ORG_NAME,
+    DEMO_TENANT_NAME,
+    DEMO_TENANT_SLUG,
+)
+from shared.utils.village_id import generate_village_id  # noqa: E402
 
 
 def _resolve_or_create_demo_tenant(db: Any) -> int:
@@ -276,7 +281,7 @@ def seed_support_bot(db: Any, tenant_id: int, redis_client: Any | None) -> int:
     now = datetime.now(UTC)
     bot_id = db.identities.insert(
         username=bot_username,
-        email="support-bot@elderrms.app",
+        email="support-bot@example.org",
         identity_type="service_account",
         auth_provider="local",
         is_active=True,
@@ -337,34 +342,6 @@ def seed_support_issues(
             "assignee_id": org_units["Support Team"],
         },
         {
-            "title": "Database connection pool exhaustion under load",
-            "description": "After ~500 concurrent users, queries start timing out. Max pool size is 10 (default). Need guidance on scaling.",
-            "issue_type": "SUPPORT",
-            "status": "OPEN",
-            "priority": "HIGH",
-            "channel": "email",
-            "category": "technical",
-            "requester_id": admin_id,
-            "resource_type": "organization",
-            "resource_id": org_units["Globex Industries"],
-            "assignee_type": "identity",
-            "assignee_id": bot_id,
-        },
-        {
-            "title": "Feature request: Bulk user import via CSV",
-            "description": "Currently we manually create users one by one. A bulk import would save hours during onboarding.",
-            "issue_type": "SUPPORT",
-            "status": "OPEN",
-            "priority": "MEDIUM",
-            "channel": "web",
-            "category": "feature",
-            "requester_id": admin_id,
-            "resource_type": "organization",
-            "resource_id": org_units["Globex Industries"],
-            "assignee_type": None,
-            "assignee_id": None,
-        },
-        {
             "title": "XSS vulnerability in user-profile template",
             "description": "Custom fields on user profile are not escaped; injecting <img onerror=alert(1)> renders in the UI.",
             "issue_type": "SUPPORT",
@@ -379,20 +356,6 @@ def seed_support_issues(
             "assignee_id": bot_id,
         },
         # Non-support issues
-        {
-            "title": "Refactor authentication middleware",
-            "description": "Auth middleware is too tightly coupled to Flask; extract to decorator for reuse in gRPC.",
-            "issue_type": "CODE",
-            "status": "OPEN",
-            "priority": "MEDIUM",
-            "channel": None,
-            "category": None,
-            "requester_id": admin_id,
-            "resource_type": "organization",
-            "resource_id": org_units["Demo Cloud Discovery Org"],
-            "assignee_type": None,
-            "assignee_id": None,
-        },
         {
             "title": "Upgrade to Python 3.13",
             "description": "Current version is 3.12. Upgrade for async improvements and performance.",
@@ -549,6 +512,12 @@ def seed_streams(
             "trigger_type": "manual",
             "is_template": True,
         },
+        {
+            "name": "Nightly Backup Verification",
+            "description": "Restores last night's backup into a scratch DB and checks row counts",
+            "trigger_type": "manual",
+            "is_template": False,
+        },
     ]
 
     for stream_data in streams:
@@ -655,6 +624,15 @@ def seed_webhooks(
             "filter_assignee_type": "org_unit",
             "filter_assignee_id": org_units["Support Team"],
         },
+        {
+            "name": "Critical Issue Alert",
+            "url": "https://example.com/webhook/critical-issue",
+            "is_active": True,
+            "events": json.dumps(["issue.created"]),
+            "filter_issue_type": None,
+            "filter_assignee_type": None,
+            "filter_assignee_id": None,
+        },
     ]
 
     for webhook_data in webhooks:
@@ -689,11 +667,11 @@ def seed_webhooks(
         print(f"  {webhook_data['name']}: {webhook_id} (created)")
 
 
-def seed_demo_unified() -> None:
+def seed_demo_unified(app: Any | None = None) -> None:
     """Seed the complete unified demo data."""
     print("Seeding demo support/CRM experience (unified native model)...\n")
 
-    app = create_app()
+    app = app if app is not None else create_app()
     db = app.db
     redis_client = app.redis_client
 
@@ -751,7 +729,7 @@ def seed_demo_unified() -> None:
     print("=" * 72)
     print(f"  tenant_id       : {tenant_id}")
     print(f"  login email     : {DEMO_ADMIN_USERNAME}")
-    print(f"  password        : {DEMO_ADMIN_PASSWORD}")
+    print("  password        : $DEMO_ADMIN_PASSWORD (see docs/demo-data.md)")
     print(f"  support issues  : {sum(1 for iid in issue_ids)}")
     print(f"  customer_contacts : {len(customer_contacts)}")
     print(f"  org_units       : {len(org_units)}")

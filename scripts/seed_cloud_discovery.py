@@ -21,7 +21,6 @@ Usage:
 """
 
 import os
-import secrets
 import sys
 from datetime import UTC, datetime, timezone
 from typing import Any, Dict
@@ -34,18 +33,17 @@ from werkzeug.security import generate_password_hash  # noqa: E402
 from apps.api.main import create_app  # noqa: E402
 from apps.worker.discovery.service import DiscoveryService  # noqa: E402
 
-# Demo tenant/org/admin identity — overridable via env (committed defaults are
-# not secrets). Lets the seed target a differently-named tenant/admin without
-# code edits (e.g. from `docker run -e ...` or a k8s Job's env).
-DEMO_TENANT_SLUG = os.environ.get("DEMO_TENANT_SLUG", "demo-cloud-discovery")
-DEMO_TENANT_NAME = os.environ.get("DEMO_TENANT_NAME", "Demo Cloud Discovery")
-DEMO_ORG_NAME = os.environ.get("DEMO_ORG_NAME", "Demo Cloud Discovery Org")
-DEMO_ADMIN_USERNAME = os.environ.get("DEMO_ADMIN_USERNAME", "demo-admin@elderrms.app")
-# Demo-only credential — read from the environment so no secret literal is
-# committed (satisfies secret scanning + the no-hardcoded-credentials rule).
-# If DEMO_ADMIN_PASSWORD is unset a random one is generated and printed at the
-# end of the run; set it to pin a stable password across re-runs / redeploys.
-DEMO_ADMIN_PASSWORD = os.environ.get("DEMO_ADMIN_PASSWORD") or secrets.token_urlsafe(12)
+# Demo tenant/org/admin identity — defined once in scripts/demo_seed/common.py
+# (env-overridable; documented in docs/demo-data.md).
+from scripts.demo_seed.common import (  # noqa: E402
+    DEMO_ADMIN_EMAIL as DEMO_ADMIN_USERNAME,
+)
+from scripts.demo_seed.common import (  # noqa: E402
+    DEMO_ADMIN_PASSWORD,
+    DEMO_ORG_NAME,
+    DEMO_TENANT_NAME,
+    DEMO_TENANT_SLUG,
+)
 
 # AWS identity for the synthetic topology — overridable so the demo can mirror a
 # real account/region. The ARNs below derive from these two automatically.
@@ -566,7 +564,7 @@ def _summarize_by_resource_type(discovery_results: dict[str, Any]) -> dict[str, 
     return counts
 
 
-def seed_cloud_discovery() -> None:
+def seed_cloud_discovery(app: Any | None = None) -> None:
     """Seed the demo cloud-discovery topology via the real DiscoveryService linker."""
     print("Seeding demo cloud-discovery topology (real linker, no live AWS)...")
 
@@ -575,7 +573,7 @@ def seed_cloud_discovery() -> None:
     # raises TypeError at runtime. app.db is populated at create_app() time
     # and is safe to use directly outside of any request/app context, same
     # as the pytest `app` fixture (tests/conftest.py) already does.
-    app = create_app()
+    app = app if app is not None else create_app()
     db = app.db
 
     tenant_id = _resolve_or_create_demo_tenant(db)
@@ -605,7 +603,7 @@ def seed_cloud_discovery() -> None:
     print(f"  tenant_id    : {tenant_id}")
     print(f"  org_id       : {org_id}")
     print(f"  login email  : {DEMO_ADMIN_USERNAME}")
-    print(f"  password     : {DEMO_ADMIN_PASSWORD}")
+    print("  password     : $DEMO_ADMIN_PASSWORD (see docs/demo-data.md)")
     print(
         "  Any other login will see an EMPTY graph — this data lives "
         "only in this tenant."
