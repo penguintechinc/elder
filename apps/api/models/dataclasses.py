@@ -893,6 +893,10 @@ class VulnerabilityDTO:
     is_active: bool
     created_at: datetime
     updated_at: datetime | None
+    owner_organization_id: int | None = None
+    owner_entity_id: int | None = None
+    adjusted_risk_score: str | None = None
+    remediation_issue_id: int | None = None
 
 
 # ==================== Component Vulnerabilities ====================

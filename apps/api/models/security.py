@@ -39,6 +39,25 @@ class Vulnerability(Base, IDMixin, TimestampMixin):
     is_active = Column(Boolean, nullable=False)
     nvd_last_sync = Column(DateTime(timezone=True), nullable=True)
     village_id = Column(String(32), unique=True, nullable=True)
+    owner_organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    owner_entity_id = Column(
+        Integer,
+        ForeignKey("entities.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    adjusted_risk_score = Column(String(64), nullable=True)
+    remediation_issue_id = Column(
+        Integer,
+        ForeignKey("issues.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
 
 class ComponentVulnerability(Base, IDMixin, TimestampMixin):

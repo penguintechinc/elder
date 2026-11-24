@@ -3183,6 +3183,8 @@ class ApiClient {
     search?: string;
     severity?: string;
     status?: string;
+    owner_organization_id?: number;
+    owner_entity_id?: number;
   }) {
     const response = await this.client.get("/vulnerabilities", { params });
     return response.data;
@@ -3197,12 +3199,50 @@ class ApiClient {
     cve_id: string;
     title: string;
     severity: string;
-    cvss_score?: number;
+    cvss_score?: number | null;
+    adjusted_risk_score?: string | null;
+    owner_organization_id?: number | null;
+    owner_entity_id?: number | null;
+    remediation_issue_id?: number | null;
     description?: string;
     published_at?: string;
     source?: string;
   }) {
     const response = await this.client.post("/vulnerabilities", data);
+    return response.data;
+  }
+
+  async updateVulnerability(
+    id: number,
+    data: {
+      title?: string;
+      severity?: string;
+      description?: string | null;
+      cvss_score?: number | null;
+      adjusted_risk_score?: string | null;
+      owner_organization_id?: number | null;
+      owner_entity_id?: number | null;
+      remediation_issue_id?: number | null;
+      published_at?: string | null;
+    },
+  ) {
+    const response = await this.client.patch(`/vulnerabilities/${id}`, data);
+    return response.data;
+  }
+
+  async createVulnerabilityIssue(
+    vulnId: number,
+    data?: {
+      organization_id?: number;
+      title?: string;
+      description?: string;
+      priority?: string;
+    },
+  ) {
+    const response = await this.client.post(
+      `/vulnerabilities/${vulnId}/create-issue`,
+      data || {},
+    );
     return response.data;
   }
 
