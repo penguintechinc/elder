@@ -148,11 +148,8 @@ hub-webui:
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 2
-  # Container is nginx-unprivileged (web/Dockerfile), which listens on 8080,
-  # not 3000 — port/targetPort must match or the Service silently sends
-  # traffic nowhere. See web/nginx.conf `listen 8080` and alpha.yml, which
-  # already had this right; values.yaml/values-beta.yaml did not (release
-  # audit finding).
+  # Container runs rootless Express on Node 24 (web/Dockerfile, web/server.ts),
+  # listening on port 8080 (non-root).
   service:
     type: ClusterIP
     port: 8080
@@ -168,10 +165,7 @@ hub-webui:
       cpu: "500m"
   healthcheck:
     enabled: true
-    # readiness path: proxied through nginx to hub-api's /healthz (see
-    # web/nginx.conf `location /healthz`), so readiness correctly reflects
-    # the API dependency's availability and pulls this pod out of the
-    # Service when the API is down.
+    # readiness path: Express /healthz endpoint (web/server.ts).
     path: /healthz
     initialDelaySeconds: 30
     periodSeconds: 30

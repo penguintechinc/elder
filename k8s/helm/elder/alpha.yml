@@ -89,14 +89,10 @@ redis:
 # the squawk product (dns-server/dhcp-server NodePorts) — shifted to
 # 30090/30091 to avoid "provided port is already allocated" on install.
 #
-# SAME-ORIGIN: the container is a rootless nginx (web/Dockerfile,
-# web/nginx.conf) that serves the SPA AND reverse-proxies /api/* to the
-# hub-api Service (http://hub-api:5000) server-side. The browser only
-# ever talks to :30090 — this is what makes login work from a REMOTE
-# browser, not just one on the cluster host: the old setup baked an
-# absolute http://localhost:30091 API URL into the SPA, which only
-# resolved for a browser on the cluster host itself. nginx listens on 8080
-# (nginx-unprivileged default, non-root).
+# SAME-ORIGIN: the container runs rootless Express on Node 24 (web/Dockerfile,
+# web/server.ts) on port 8080, serving the SPA and proxying /api/* to the
+# hub-api Service (http://hub-api:5000) when accessed directly (in-cluster
+# traffic routes /api directly via Envoy Gateway API HTTPRoute).
 hub-webui:
   enabled: true
   replicaCount: 1

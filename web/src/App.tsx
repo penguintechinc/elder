@@ -104,7 +104,7 @@ export default function App() {
         webuiEmoji="🏛️"
         metadata={{
           "API URL":
-            import.meta.env.VITE_API_URL || "(relative - using nginx proxy)",
+            import.meta.env.VITE_API_URL || "(relative - using Express proxy)",
         }}
       />
       <Routes>

@@ -42,9 +42,8 @@ spec:
       request: {{ .Values.gateway.timeouts.request | default "300s" }}
     backendRefs:
     - name: hub-webui
-      # Must match hub-webui.service.port (values.yaml) — container is
-      # nginx-unprivileged listening on 8080, not the old 3000.
-      # Release audit finding #7.
+      # Must match hub-webui.service.port (values.yaml) — Express container
+      # listens on 8080 (non-root).
       port: {{ (index .Values "hub-webui").service.port }}
 ---
 apiVersion: gateway.networking.k8s.io/v1

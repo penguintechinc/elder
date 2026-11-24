@@ -2,9 +2,8 @@
 Tetragon runtime-execution allowlist (enforced Sigkill, not observe-only) —
 release audit finding #3. Scoped per pod/service, not one global policy
 (devops-kubernetes.md Cluster Security Baseline) — hub-api/svc-worker run
-python3, hub-webui runs nginx (NOT node: web/Dockerfile's runtime stage is
-nginxinc/nginx-unprivileged; node only exists in the discarded npm-build
-stage), svc-scanner runs the compiled Rust binary plus git
+python3, hub-webui runs Express on Node 24 (/usr/local/bin/node),
+svc-scanner runs the compiled Rust binary plus git
 and Chromium headless binaries without any shell wrapper, and
 svc-integrations runs strictly the compiled Rust binary without any shell wrapper.
 
@@ -117,7 +116,7 @@ spec:
             - index: 0
               operator: "NotEquals"
               values:
-                - "/usr/sbin/nginx"
+                - "/usr/local/bin/node"
           matchActions:
             - action: Sigkill
 {{- end }}
