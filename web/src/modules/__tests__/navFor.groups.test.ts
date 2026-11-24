@@ -212,4 +212,18 @@ describe("navFor — one section per WIRED pillar", () => {
     expect(infra!.items.map((i) => i.href)).toContain("/networking");
     expect(infra!.items.map((i) => i.href)).not.toContain("/ipam");
   });
+
+  it("consolidates Service Endpoints into Services without a standalone /service-endpoints sidebar item", () => {
+    const nav = navFor(new Set(["services_oncall"]));
+    const software = nav.find((c) => c.header === "Software");
+
+    expect(software).toBeDefined();
+    expect(software!.items.map((i) => i.href)).toContain("/services");
+    expect(software!.items.map((i) => i.href)).not.toContain(
+      "/service-endpoints",
+    );
+    expect(software!.items.map((i) => i.name)).not.toContain(
+      "Service Endpoints",
+    );
+  });
 });
