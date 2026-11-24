@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Elder Platform Merge** — consolidates several separate PenguinTech products into Elder as toggleable modules, moving Elder to a modular-monolith architecture backed by a 6-image Kubernetes deployment (`hub-webui`, `hub-mcp`, `hub-api`, `svc-worker`, `svc-scanner`, `svc-runworker`).
 
+### 🔒 CodeRuns Worker Isolation (upgrade action required)
+
+- **`svc-runworker` no longer receives the platform signing key.** It authenticates only with a provisioned worker token from a Secret (`svc-runworker.internalTokenSecret.name`, now required) and refuses to start if `JWT_SECRET_KEY`/`SECRET_KEY` is in its environment. Onboard the in-cluster worker via `POST /api/v1/admin/workers` before upgrading.
+- **Default runner backend is now `k8s_job`** (was `auto`): each execution runs in its own pod under `runtimeClassName: kata` with a token-less, RBAC-less ServiceAccount. The in-pod `sandbox` backend is opt-in and requires a Kata worker pod; unsupported combinations fail at `helm template` and at worker start-up unless a `kataException` flag is recorded.
+- **Network policy tightened:** the worker has no open internet egress (declare hosts in `networkPolicy.egressFQDNs`); execution pods reach only their per-execution restriction gateway. Controller RBAC reduced to the minimum verbs.
+- **Runtime class must be a listed sandboxed class:** `runtimeClassName` is checked for membership in `sandboxedRuntimeClasses` by the chart and the worker; `runc` or a misspelt class is refused unless the recorded Kata exception is set.
+- **Gateway token moved to a per-execution Secret:** the controller Role gains `secrets` create/delete (no read verbs); the token no longer appears in Job or Pod specs.
+- **Claim anomaly signal:** `run_claim_anomaly` warning and `elder.runs.claim_anomalies` counter when a worker claims for a tenant it has not served before or exceeds `RUNS_CLAIM_RATE_WARN_THRESHOLD` claims per minute.
+- **Execution namespace:** with `createExecutionNamespace=false` the chart requires `executionNamespacePodSecurityVerified=true`.
+- See `docs/deployment/runworker-isolation.md` for the model and upgrade steps; `make test-helm` asserts the rendered guarantees.
+
 ### 🚀 6-Image Architecture, CodeRuns & Remote Workers Fleet
 
 - **6-Image Kubernetes Architecture**: Standardized service images (`hub-webui`, `hub-mcp`, `hub-api`, `svc-worker`, `svc-scanner`, `svc-runworker`). Removed the standalone `svc-csv-importer` CronJob and gated the legacy `svc-scanner` CronJob strictly on `mode=cronjob`.
