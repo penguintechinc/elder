@@ -144,17 +144,31 @@ def user_has_mfa_enrolled(user: Any, db: Any = None) -> bool:
         except RuntimeError:
             return False
 
+    tables = getattr(database, "tables", None)
     for table_name in ("passkeys", "webauthn_credentials"):
-        table = getattr(database, table_name, None)
+        if tables is not None and table_name not in tables:
+            continue
+        try:
+            table = getattr(database, table_name, None)
+        except (AttributeError, KeyError):
+            continue
         if table is None:
             continue
-        user_col = getattr(table, "portal_user_id", None) or getattr(
-            table, "user_id", None
-        )
+        user_col = None
+        for col_name in ("portal_user_id", "user_id"):
+            try:
+                user_col = getattr(table, col_name, None)
+            except (AttributeError, KeyError):
+                user_col = None
+            if user_col is not None:
+                break
         if user_col is None:
             continue
         query = user_col == user_id
-        is_active_col = getattr(table, "is_active", None)
+        try:
+            is_active_col = getattr(table, "is_active", None)
+        except (AttributeError, KeyError):
+            is_active_col = None
         if is_active_col is not None:
             query = query & (is_active_col == True)  # noqa: E712
         try:
