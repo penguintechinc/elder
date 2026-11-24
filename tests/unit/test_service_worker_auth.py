@@ -509,6 +509,7 @@ class TestServiceWorkerRoutesCrossTenantAndIsolation:
         forged_human = jwt.encode(
             {
                 "sub": "1",
+                "type": "access",
                 "tenant": "system",
                 "scope": ["discovery:read", "sbom:read"],
                 "roles": ["admin"],

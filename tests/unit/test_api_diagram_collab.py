@@ -360,6 +360,7 @@ def _token(app, identity_id: int, tenant_id: int) -> str:
     now = datetime.now(UTC)
     payload = {
         "sub": str(identity_id),
+        "type": "access",
         "iat": now,
         "exp": now + timedelta(hours=1),
         "scope": ["diagrams:read", "diagrams:write"],

@@ -678,7 +678,7 @@ def verify_token(
         secret = (
             current_app.config["JWT_SECRET_KEY"] or current_app.config["SECRET_KEY"]
         )
-        algorithm = current_app.config["JWT_ALGORITHM"]
+        algorithm = current_app.config.get("JWT_ALGORITHM", "HS256")
 
         # Never log the signing secret or token contents, at any level --
         # both are credential material (gh security review finding #4).
