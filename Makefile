@@ -517,8 +517,9 @@ deploy-prod: ## Deploy to production cluster via Helm (context: $(PROJECT_NAME)-
 helm-lint: ## Lint the Helm chart
 	@helm lint $(HELM_DIR)
 
-test-helm: helm-lint ## Assert svc-runworker isolation guarantees on rendered Helm templates
+test-helm: helm-lint ## Assert runworker isolation + secret/hardening guarantees on rendered Helm templates
 	@python3 tests/helm/check_runworker_chart.py
+	@python3 tests/helm/check_secrets_chart.py
 
 helm-template: ## Render Helm templates with alpha values (dry-run review)
 	@helm template $(PROJECT_NAME) $(HELM_DIR) --values $(HELM_DIR)/alpha.yml
