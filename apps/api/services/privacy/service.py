@@ -32,7 +32,9 @@ Synchronous by design (penguin-dal sync DAL) -- call every method here via
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import secrets
 import time
 import uuid
@@ -87,7 +89,38 @@ _PII_DETAIL_KEYS = frozenset(
     {"email", "username", "full_name", "name", "ip", "ip_address", "user_agent"}
 )
 # audit_logs.resource_type values whose resource_id is an identities.id.
-_IDENTITY_RESOURCE_TYPES = ("identity", "identities", "user")
+_IDENTITY_RESOURCE_TYPES = ("identity", "identities")
+
+# Aliases shorter than this, or in the deny-list, are never used to search
+# free text: they would match records about other people.
+MIN_ALIAS_LENGTH = 4
+_ALIAS_DENY_LIST = frozenset(
+    {
+        "admin",
+        "administrator",
+        "anonymous",
+        "default",
+        "demo",
+        "elder",
+        "false",
+        "guest",
+        "info",
+        "none",
+        "null",
+        "operator",
+        "owner",
+        "root",
+        "service",
+        "support",
+        "system",
+        "test",
+        "tester",
+        "true",
+        "unknown",
+        "user",
+        "users",
+    }
+)
 
 
 class LegalHoldError(Exception):
@@ -221,37 +254,113 @@ def _is_erased(subject: Any, subject_type: SubjectType) -> bool:
     return getattr(subject, "anonymized_at", None) is not None
 
 
-def _aliases(subject: Any) -> dict[str, str]:
-    """The subject's free-text identifiers, used only to find and redact copies."""
+def _usable_alias(value: Any) -> str | None:
+    """Return `value` if it is specific enough to search-and-redact with.
+
+    Short or generic strings ("admin", "test", a two-letter username) would
+    match text that has nothing to do with the subject, so they are never
+    used for free-text matching at all.
+    """
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    if len(cleaned) < MIN_ALIAS_LENGTH or cleaned.lower() in _ALIAS_DENY_LIST:
+        return None
+    return cleaned
+
+
+def _aliases(
+    db: Any, subject: Any, tenant_id: int, subject_type: SubjectType
+) -> dict[str, str]:
+    """The subject's own identifiers, captured once when the erasure starts.
+
+    Used only to find and redact copies of them. E-mail and username are
+    the subject's stored identifiers; the display name is included only
+    when no other subject in the tenant shares it, because redacting a
+    shared name would alter records about a different person.
+    """
     found: dict[str, str] = {}
-    for key in ("username", "email", "full_name"):
-        value = getattr(subject, key, None)
-        if isinstance(value, str) and len(value) >= 3:
-            found[key] = value
+    for key in ("username", "email"):
+        alias = _usable_alias(getattr(subject, key, None))
+        if alias:
+            found[key] = alias
+    name = _usable_alias(getattr(subject, "full_name", None))
+    if name:
+        table = _subject_table(db, subject_type)
+        same_name = db(
+            (table.tenant_id == tenant_id) & (table.full_name == name)
+        ).count()
+        if same_name == 1:
+            found["full_name"] = name
     return found
 
 
-def _redact(value: Any, needles: list[str]) -> Any:
-    """Recursively replace PII-keyed values and alias-bearing strings.
+def _alias_pattern(aliases: dict[str, str]) -> re.Pattern[str] | None:
+    """Case-insensitive whole-token matcher for the subject's aliases.
 
-    Applied to audit ``details`` JSON so the event survives without the
-    subject's identifiers.
+    An alias matches only when it is not part of a longer word or dotted /
+    hyphenated / e-mail token: "bob" matches "login by bob." but not
+    "bobcat", "bob-smith" or "bob@example.com". Longest alias first so an
+    e-mail wins over the username it contains.
+    """
+    values = sorted(set(aliases.values()), key=len, reverse=True)
+    if not values:
+        return None
+    body = "|".join(re.escape(v) for v in values)
+    return re.compile(
+        r"(?<![A-Za-z0-9_])(?<![A-Za-z0-9][.\-@+])"
+        rf"(?:{body})"
+        r"(?![A-Za-z0-9_])(?![.\-@+][A-Za-z0-9])",
+        re.IGNORECASE,
+    )
+
+
+def _sha256(value: Any) -> str:
+    """SHA-256 hex digest of a redacted original value (for the receipt)."""
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+
+
+def _redact(
+    value: Any,
+    pattern: re.Pattern[str] | None,
+    hashes: dict[str, int],
+    redact_keys: bool,
+) -> Any:
+    """Recursively remove the subject's identifiers from a JSON value.
+
+    Every occurrence of an alias (whole-token match) is replaced in place,
+    leaving the rest of the string intact. When `redact_keys` is True --
+    only for events the subject performed themselves -- values under
+    PII-named keys are replaced outright; on events performed by someone
+    else those keys describe the other actor and are left alone. Each
+    redacted original is tallied in `hashes` by SHA-256, never in plaintext.
     """
     if isinstance(value, dict):
-        return {
-            k: (
-                REDACTED
-                if str(k).lower() in _PII_DETAIL_KEYS and v is not None
-                else _redact(v, needles)
-            )
-            for k, v in value.items()
-        }
+        cleaned: dict[Any, Any] = {}
+        for key, item in value.items():
+            if (
+                redact_keys
+                and str(key).lower() in _PII_DETAIL_KEYS
+                and isinstance(item, (str, int, float))
+                and not isinstance(item, bool)
+                and item != REDACTED
+            ):
+                digest = _sha256(item)
+                hashes[digest] = hashes.get(digest, 0) + 1
+                cleaned[key] = REDACTED
+            else:
+                cleaned[key] = _redact(item, pattern, hashes, redact_keys)
+        return cleaned
     if isinstance(value, list):
-        return [_redact(v, needles) for v in value]
-    if isinstance(value, str):
-        lowered = value.lower()
-        if any(n in lowered for n in needles):
+        return [_redact(item, pattern, hashes, redact_keys) for item in value]
+    if isinstance(value, str) and pattern is not None:
+
+        def _swap(match: re.Match[str]) -> str:
+            digest = _sha256(match.group(0).lower())
+            hashes[digest] = hashes.get(digest, 0) + 1
             return REDACTED
+
+        return pattern.sub(_swap, value)
     return value
 
 
@@ -777,25 +886,42 @@ class PrivacyService:
         elif entry.action is Action.SCRUB_MATCH:
             # Free-text match, so it MUST stay inside the subject's tenant:
             # the same e-mail may legitimately exist in another tenant.
+            # Exact (whole-value) match only, with the same alias rules as
+            # audit redaction: never a short or generic token.
             total = 0
+            redactions = []
             for key in ("username", "email"):
                 alias = aliases.get(key)
                 if alias:
-                    total += db(
+                    count = db(
                         (field == alias) & (table.tenant_id == tenant_id)
                     ).update(**{entry.column: None})
+                    total += count
+                    if count:
+                        redactions.append({"sha256": _sha256(alias), "count": count})
             line["rows"] = total
+            line["redactions"] = redactions
         return line
 
     @staticmethod
     def _redact_audit_details(
-        db: Any, subject_id: int, aliases: dict[str, str]
+        db: Any, subject_id: int, tenant_id: int, aliases: dict[str, str]
     ) -> dict[str, Any]:
         """Strip the subject's identifiers out of audit ``details`` JSON.
 
-        Covers events the subject performed and events other actors performed
-        on the subject's identity. Must run before the audit rows are
-        unlinked. The event itself (action, resource, time, outcome) stays.
+        Two row sets, both confined to the subject's tenant (audit_logs has
+        no tenant column, so the tenant is enforced through the actor):
+
+        * events the subject performed (``identity_id`` = the tenant-verified
+          subject) -- alias occurrences and PII-keyed values are redacted;
+        * events another identity OF THE SAME TENANT performed on the
+          subject's identity -- only whole-token alias occurrences are
+          redacted; keys naming the actor are never touched. Rows whose
+          actor is unknown or belongs to another tenant are skipped.
+
+        Must run before the audit rows are unlinked. The event itself
+        (action, resource, time, outcome) stays. The receipt line carries a
+        count and SHA-256 per redacted original value, never plaintext.
         """
         line: dict[str, Any] = {
             "table": "audit_logs",
@@ -805,35 +931,67 @@ class PrivacyService:
             "scrubbed_columns": ["details"],
             "legal_basis": LEGAL_BASIS["security_audit"],
             "rows": 0,
+            "redacted_values": 0,
+            "redactions": [],
         }
         if not _has_table(db, "audit_logs"):
             line["skipped"] = "table_absent"
             return line
 
         table = db.audit_logs
-        needles = [a.lower() for a in aliases.values()]
-        rows = list(
-            db(
-                (table.identity_id == subject_id)
-                | (
-                    table.resource_type.belongs(_IDENTITY_RESOURCE_TYPES)
-                    & (table.resource_id == subject_id)
-                )
-            ).select(table.id, table.details)
+        pattern = _alias_pattern(aliases)
+        hashes: dict[str, int] = {}
+
+        own_rows = list(
+            db(table.identity_id == subject_id).select(table.id, table.details)
         )
-        for row in rows:
-            details = row.get("details")
+        about_rows = list(
+            db(
+                table.resource_type.belongs(_IDENTITY_RESOURCE_TYPES)
+                & (table.resource_id == subject_id)
+                & (table.identity_id != subject_id)
+            ).select(table.id, table.identity_id, table.details)
+        )
+        actor_ids = sorted(
+            {r.get("identity_id") for r in about_rows if r.get("identity_id")}
+        )
+        same_tenant_actors: set[int] = set()
+        if actor_ids:
+            same_tenant_actors = {
+                r.get("id")
+                for r in db(
+                    db.identities.id.belongs(actor_ids)
+                    & (db.identities.tenant_id == tenant_id)
+                ).select(db.identities.id)
+            }
+
+        work = [(row, subject_id, True) for row in own_rows] + [
+            (row, row.get("identity_id"), False)
+            for row in about_rows
+            if row.get("identity_id") in same_tenant_actors
+        ]
+        for row, actor_id, redact_keys in work:
+            original = row.get("details")
+            details = original
             if isinstance(details, str):
                 try:
                     details = json.loads(details)
                 except ValueError:
-                    details = {"redacted": REDACTED}
+                    details = None
             if details is None:
                 continue
-            cleaned = _redact(details, needles)
-            if cleaned != row.get("details"):
-                db(table.id == row.get("id")).update(details=cleaned)
-                line["rows"] += 1
+            cleaned = _redact(details, pattern, hashes, redact_keys)
+            if cleaned != details:
+                # The actor filter keeps the UPDATE inside the tenant-verified
+                # row set even if ids were reused concurrently.
+                line["rows"] += db(
+                    (table.id == row.get("id")) & (table.identity_id == actor_id)
+                ).update(details=cleaned)
+        line["redactions"] = [
+            {"sha256": digest, "count": count}
+            for digest, count in sorted(hashes.items())
+        ]
+        line["redacted_values"] = sum(hashes.values())
         return line
 
     @staticmethod
@@ -981,11 +1139,13 @@ class PrivacyService:
             #    request, so access/refresh tokens and API keys die here.
             db(subject_query).update(is_active=False)
 
-            aliases = _aliases(subject)
+            aliases = _aliases(db, subject, tenant_id, subject_type)
             lines: list[dict[str, Any]] = []
             if subject_type is SubjectType.IDENTITY:
                 lines.append(
-                    PrivacyService._redact_audit_details(db, identity_id, aliases)
+                    PrivacyService._redact_audit_details(
+                        db, identity_id, tenant_id, aliases
+                    )
                 )
             for entry in inventory_for(subject_type):
                 lines.append(

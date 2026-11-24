@@ -68,7 +68,7 @@ RATE_LIMITS: dict[str, int] = {"export": 10, "erase": 5, "consent": 30, "withdra
 def _token_claims() -> dict[str, Any]:
     """Verified claims of the bearer token on this request ({} if none).
 
-    `g.claims` is a reduced view without `type`/`iat`, so the token is
+    `g.claims` is a reduced view without `type`/`auth_time`, so the token is
     re-verified here to read them; it was already accepted by
     @login_required, so this adds no new trust.
     """
@@ -164,8 +164,8 @@ async def _reauthenticated(
     A subject with a local credential supplies the current password or (if
     MFA is enrolled) a TOTP code -- one factor, the same effort as signing
     in. A subject with no local credential (SSO/SCIM) must instead have
-    signed in within RECENT_LOGIN_SECONDS. Tokens carry no `auth_time`, so
-    `iat` is the best available signal for that fallback only.
+    signed in within RECENT_LOGIN_SECONDS, judged by the token's `auth_time`
+    claim -- never `iat`, which every refresh renews.
     """
     password = body.get("password")
     mfa_code = body.get("mfa_code")
@@ -191,13 +191,15 @@ async def _reauthenticated(
             reauthentication_required=True,
         )
 
-    issued_at = _token_claims().get("iat")
-    if hasattr(issued_at, "timestamp"):
-        issued_at = issued_at.timestamp()
+    # `auth_time` is stamped only by an interactive login and is carried
+    # unchanged through refresh, so a refreshed (or stolen-refresh) token
+    # can never look fresh. A token without it (issued before this claim
+    # existed) is treated as NOT recent: the user signs in again.
+    auth_time = _token_claims().get("auth_time")
     if (
-        isinstance(issued_at, (int, float))
-        and not isinstance(issued_at, bool)
-        and 0 <= time.time() - issued_at <= RECENT_LOGIN_SECONDS
+        isinstance(auth_time, int)
+        and not isinstance(auth_time, bool)
+        and 0 <= time.time() - auth_time <= RECENT_LOGIN_SECONDS
     ):
         return None
     return ApiResponse.error(

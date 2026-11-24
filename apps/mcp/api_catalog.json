@@ -6029,12 +6029,34 @@
   },
   {
     "service": "privacy",
+    "operation": "get_my_consent",
+    "method": "GET",
+    "path": "/api/v1/privacy/me/consent",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Return the caller's current consent state and consent-ledger history.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "privacy",
     "operation": "set_my_consent",
     "method": "POST",
     "path": "/api/v1/privacy/me/consent",
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "CCPA/CPRA \"Do Not Sell or Share\" opt-out + consent withdrawal (per-user flag).",
+    "has_body": true,
+    "destructive": false
+  },
+  {
+    "service": "privacy",
+    "operation": "withdraw_my_consent",
+    "method": "POST",
+    "path": "/api/v1/privacy/me/consent/withdraw",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "GDPR Art. 7(3): withdraw consent for every purpose and opt out of sale/sharing.",
     "has_body": true,
     "destructive": false
   },

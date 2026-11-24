@@ -17,24 +17,33 @@ These pace or defer an irreversible action; none of them gates the right by tier
 |---|---|---|
 | Confirmation | `POST /me/erase` needs `{"confirm": "ERASE"}`; otherwise 403 naming the exact body to send | One extra field |
 | Re-authentication | Current password in `password`, or an authenticator code in `mfa_code` when MFA is enrolled — one factor. Portal users use their own credential | Same effort as signing in |
-| Subjects with no local credential (SSO/SCIM) | No password is demanded; the token must be at most 5 minutes old (sign in again, then erase) | A password they do not have is never required |
+| Subjects with no local credential (SSO/SCIM) | No password is demanded; the token's `auth_time` must be at most 5 minutes old (sign in again, then erase) | A password they do not have is never required |
 | Last tenant administrator | 409 while the subject is the tenant's only active admin (identity `portal_role` admin or superuser, or portal user with an admin role) | Deferred, not denied: proceeds as soon as another active admin exists |
 | Rate limit (per subject, per minute) | export 10, erase 5, consent 30, withdraw-all 10; 429 with `Retry-After`. The limiter fails open if its store is down | Far above human use; a cache outage cannot block a right |
 | Token type | Only interactive user tokens; refresh and machine (worker, code-run, researcher) tokens get 403 | Machines are not data subjects |
 
-Tokens carry no `auth_time`; `iat` is renewed by a token refresh, so it is used only for the SSO fallback above and never instead of a password where one exists.
+`auth_time` is stamped only by an interactive login (password, MFA completion, SAML/OIDC callback, registration) and is copied unchanged by token refresh, so a refreshed token never looks recent. `iat` is not used. A token issued before this claim existed has no `auth_time` and is treated as not recent: the user signs in again.
 
 ## Erasure Sequence
 
 1. Replay the stored receipt unchanged if a completed one exists. Otherwise refuse (HTTP 409, nothing changed) while the tenant has `tenants.legal_hold` set or the subject is its last active administrator.
 2. Open an in-progress row in `privacy_erasure_receipts` (or reuse the one an interrupted run left).
 3. Deactivate the subject. Authentication rejects an inactive subject on every request, so every issued access/refresh token stops working; API keys are deleted in step 5.
-4. Redact the subject's identifiers from `audit_logs.details` (events they performed and events performed on their identity).
+4. Redact the subject's identifiers from `audit_logs.details` — see "Free-Text Redaction Rules".
 5. Walk the inventory below: delete, unlink, or retain with a legal basis.
 6. Overwrite the subject's own row into an anonymised tombstone (the row and numeric id survive so retained records keep a valid foreign key; no column identifies a person).
 7. Complete the receipt: tables, columns, row counts, action, legal basis, and the list under "Not Erased Synchronously". The receipt contains no personal data.
 
 penguin-dal commits each statement, so the run is not one database transaction. It is ordered and repeatable instead: an interrupted run leaves the receipt in progress and is finished by calling erase again; a second call on an erased subject changes nothing and returns the stored receipt.
+
+## Free-Text Redaction Rules
+
+- **Aliases** are the subject's stored e-mail and username, plus the display name only when no other subject in the tenant has the same one. An alias shorter than 4 characters or on the generic deny-list (`admin`, `root`, `user`, `test`, `system`, …) is never searched for.
+- **Matching** is case-insensitive and whole-token: `bob` matches `login by bob.` but not `bobcat`, `bob-smith` or `bob@example.com`. Only the matched text is replaced with `[erased]`.
+- **Scope:** events the subject performed, and events about the subject's identity performed by another identity of the same tenant. Events with no actor or an actor from another tenant are not modified. In events performed by someone else, fields naming that actor (`username`, `name`, `email` keys) are left alone; those keys are cleared only in the subject's own events.
+- **Free-text columns** (`references.created_by`, `stream_executions.triggered_by`) are cleared only on an exact whole-value match inside the subject's tenant.
+- **Receipt:** each redacted original value is recorded as a SHA-256 digest with a count, never in plaintext.
+- Consequence: a subject whose only identifiers are short or generic leaves those words in other people's event text; the tenant administrator reviews such records manually.
 
 ## Identity Row (`identities`)
 

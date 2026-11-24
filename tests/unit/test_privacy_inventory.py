@@ -15,6 +15,7 @@ seeded rows can never pollute the shared unit-test database.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import os
@@ -44,9 +45,13 @@ from apps.api.services.privacy.inventory import (
 )
 from apps.api.services.privacy.service import (
     ANONYMIZED_EMAIL_DOMAIN,
+    MIN_ALIAS_LENGTH,
     LastAdminError,
     LegalHoldError,
     PrivacyService,
+    _alias_pattern,
+    _redact,
+    _usable_alias,
 )
 
 # Distinctive, greppable personal data for the subject under erasure...
@@ -614,7 +619,8 @@ class TestErasureAcrossInventory:
         assert own["ip_address"] is None
         assert own["user_agent"] is None
         assert own["details"]["email"] == "[erased]"
-        assert own["details"]["note"] == "[erased]"
+        # Only the alias is replaced; the rest of the sentence survives.
+        assert own["details"]["note"] == "login by [erased]"
         assert own["details"]["nested"][0]["who"] == "[erased]"
         assert own["details"]["nested"][0]["kept"] == "resource-state"
 
@@ -1206,3 +1212,247 @@ class TestReauthentication:
             )
         with pytest.raises(LookupError):
             PrivacyService.has_local_credential(dal, portal, other_tenant, kind)
+
+
+class TestAliasMatchingRules:
+    """security review #2: aliases match whole tokens only, never substrings."""
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("bob", "[erased]"),
+            ("login by bob.", "login by [erased]."),
+            ("BOB logged in", "[erased] logged in"),
+            ("(bob) user=bob, done", "([erased]) user=[erased], done"),
+            ("bobcat", "bobcat"),
+            ("kabob", "kabob"),
+            ("bob_admin", "bob_admin"),
+            ("bob-smith", "bob-smith"),
+            ("bob.smith", "bob.smith"),
+            ("bob@example.com", "bob@example.com"),  # someone else's address
+            ("mail kate+bob@example.com", "mail kate+bob@example.com"),
+        ],
+    )
+    def test_whole_token_matching(self, text, expected):
+        hashes: dict[str, int] = {}
+        pattern = _alias_pattern({"username": "bob"})
+        assert _redact(text, pattern, hashes, False) == expected
+        if text == expected:
+            assert hashes == {}
+
+    def test_regex_metacharacters_in_an_alias_are_escaped(self):
+        pattern = _alias_pattern({"username": "a.b(c)+"})
+        hashes: dict[str, int] = {}
+        assert _redact("x a.b(c)+ y", pattern, hashes, False) == "x [erased] y"
+        assert _redact("x aXb(c)+ y axbc", pattern, hashes, False) == "x aXb(c)+ y axbc"
+
+    def test_longest_alias_wins(self):
+        pattern = _alias_pattern({"username": "dana", "email": "dana@corp.example"})
+        hashes: dict[str, int] = {}
+        out = _redact("dana <dana@corp.example>", pattern, hashes, False)
+        assert out == "[erased] <[erased]>"
+        assert sorted(hashes.values()) == [1, 1]
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "a",
+            "ab",
+            "bob",
+            "admin",
+            "Admin",
+            " ROOT ",
+            "user",
+            "test",
+            "system",
+            "",
+            None,
+            7,
+        ],
+    )
+    def test_short_or_generic_aliases_are_never_used(self, value):
+        assert MIN_ALIAS_LENGTH == 4
+        assert _usable_alias(value) is None
+
+    def test_no_usable_alias_means_no_pattern(self):
+        assert _alias_pattern({}) is None
+        assert _redact("admin did a thing", None, {}, False) == "admin did a thing"
+
+    def test_pii_keys_are_only_redacted_on_the_subjects_own_events(self):
+        details = {
+            "username": "carol",
+            "name": "Carol",
+            "nested": [{"email": "c@x.io"}],
+        }
+        other_hashes: dict[str, int] = {}
+        assert _redact(details, None, other_hashes, False) == details
+        assert other_hashes == {}
+        own_hashes: dict[str, int] = {}
+        assert _redact(details, None, own_hashes, True) == {
+            "username": "[erased]",
+            "name": "[erased]",
+            "nested": [{"email": "[erased]"}],
+        }
+        assert own_hashes == {
+            hashlib.sha256(v.encode()).hexdigest(): 1
+            for v in ("carol", "Carol", "c@x.io")
+        }
+
+
+@needs_postgres
+class TestAliasScrubbingIsScopedAndPrecise:
+    """security review #2 on real Postgres: other people's records stay intact."""
+
+    EMAIL = "sam.generic@pii.example"
+
+    @pytest.fixture(scope="class")
+    def scene(self, private_db):
+        """A subject with generic aliases, plus rows that must NOT be touched."""
+        engine, dal = private_db
+        seeder, tenant = _new_tenant(engine)
+        peer = seeder.memo["identities"]
+        other_seeder, other_tenant = _new_tenant(engine)
+        foreign_actor = other_seeder.memo["identities"]
+        # username on the deny-list, 3-letter display name shared with a peer
+        subject = seeder.insert(
+            "identities",
+            tenant_id=tenant,
+            is_active=True,
+            username="admin",
+            email=self.EMAIL,
+            full_name="Jordan Smith",
+        )
+        with engine.begin() as conn:
+            conn.execute(
+                TABLES["identities"]
+                .update()
+                .where(TABLES["identities"].c.id == peer)
+                .values(full_name="Jordan Smith")
+            )
+        note = f"admin reset MFA for Jordan Smith; mail {self.EMAIL}; login admin"
+        rows = {
+            # same-tenant actor, event ABOUT the subject
+            "about": seeder.insert(
+                "audit_logs",
+                identity_id=peer,
+                action_name="update",
+                resource_type="identity",
+                resource_id=subject,
+                details={"username": "carol-actor", "name": "Carol", "note": note},
+            ),
+            # same-tenant actor, unrelated event that merely mentions the aliases
+            "unrelated": seeder.insert(
+                "audit_logs",
+                identity_id=peer,
+                action_name="update",
+                resource_type="entity",
+                resource_id=subject,
+                details={"note": note},
+            ),
+            # actor from ANOTHER tenant, same resource id
+            "foreign": other_seeder.insert(
+                "audit_logs",
+                identity_id=foreign_actor,
+                action_name="update",
+                resource_type="identity",
+                resource_id=subject,
+                details={"note": note},
+            ),
+            # no actor at all
+            "anonymous": seeder.insert(
+                "audit_logs",
+                action_name="update",
+                resource_type="identity",
+                resource_id=subject,
+                details={"note": note},
+            ),
+            # the retired, ambiguous "user" resource type (portal-user ids)
+            "user_type": seeder.insert(
+                "audit_logs",
+                identity_id=peer,
+                action_name="update",
+                resource_type="user",
+                resource_id=subject,
+                details={"note": note},
+            ),
+            "own": seeder.insert(
+                "audit_logs",
+                identity_id=subject,
+                action_name="login",
+                details={"username": "admin", "note": note},
+            ),
+        }
+        ref_same = seeder.insert("references", tenant_id=tenant, created_by="admin")
+        ref_email = seeder.insert("references", tenant_id=tenant, created_by=self.EMAIL)
+        ref_foreign = other_seeder.insert(
+            "references", tenant_id=other_tenant, created_by=self.EMAIL
+        )
+        result = PrivacyService.erase_identity(dal, subject, tenant, False)
+        return {
+            "engine": engine,
+            "rows": rows,
+            "note": note,
+            "peer": peer,
+            "refs": (ref_same, ref_email, ref_foreign),
+            "receipt": result["receipt"],
+        }
+
+    @pytest.mark.parametrize("name", ["unrelated", "foreign", "anonymous", "user_type"])
+    def test_rows_outside_the_subjects_scope_are_byte_for_byte_untouched(
+        self, scene, name
+    ):
+        row = _fetch(scene["engine"], "audit_logs", scene["rows"][name])
+        assert row["details"] == {"note": scene["note"]}
+
+    def test_event_by_another_actor_keeps_actor_fields_and_generic_words(self, scene):
+        row = _fetch(scene["engine"], "audit_logs", scene["rows"]["about"])
+        assert row["identity_id"] == scene["peer"]
+        assert row["details"]["username"] == "carol-actor"  # the ACTOR, not the subject
+        assert row["details"]["name"] == "Carol"
+        note = row["details"]["note"]
+        assert note.startswith(
+            "admin reset MFA for Jordan Smith;"
+        )  # generic + shared name
+        assert note == "admin reset MFA for Jordan Smith; mail [erased]; login admin"
+
+    def test_subjects_own_event_is_redacted_including_pii_keys(self, scene):
+        row = _fetch(scene["engine"], "audit_logs", scene["rows"]["own"])
+        assert row["identity_id"] is None
+        assert row["details"]["username"] == "[erased]"  # own row: PII key
+        # generic username + shared display name are never searched for
+        assert row["details"]["note"] == (
+            "admin reset MFA for Jordan Smith; mail [erased]; login admin"
+        )
+
+    def test_peer_with_the_same_display_name_is_untouched(self, scene):
+        peer = _fetch(scene["engine"], "identities", scene["peer"])
+        assert peer["full_name"] == "Jordan Smith"
+        assert peer["anonymized_at"] is None
+
+    def test_free_text_columns_only_scrub_exact_own_tenant_matches(self, scene):
+        ref_same, ref_email, ref_foreign = scene["refs"]
+        assert _fetch(scene["engine"], "references", ref_same)["created_by"] == "admin"
+        assert _fetch(scene["engine"], "references", ref_email)["created_by"] is None
+        assert (
+            _fetch(scene["engine"], "references", ref_foreign)["created_by"]
+            == self.EMAIL
+        )
+
+    def test_receipt_records_hashes_and_counts_never_plaintext(self, scene):
+        blob = json.dumps(scene["receipt"])
+        assert self.EMAIL not in blob
+        assert "Jordan Smith" not in blob
+        lines = {(ln["table"], ln["column"]): ln for ln in scene["receipt"]["tables"]}
+        audit = lines[("audit_logs", "details")]
+        assert audit["rows"] == 2  # "about" + "own" only
+        counts = {r["sha256"]: r["count"] for r in audit["redactions"]}
+        email_hash = hashlib.sha256(self.EMAIL.lower().encode()).hexdigest()
+        key_hash = hashlib.sha256(b"admin").hexdigest()
+        assert counts == {email_hash: 2, key_hash: 1}  # 2 notes + own "username" key
+        assert audit["redacted_values"] == sum(counts.values())
+        assert all(len(r["sha256"]) == 64 for r in audit["redactions"])
+        ref_line = lines[("references", "created_by")]
+        assert ref_line["rows"] == 1
+        assert ref_line["redactions"] == [
+            {"sha256": hashlib.sha256(self.EMAIL.encode()).hexdigest(), "count": 1}
+        ]

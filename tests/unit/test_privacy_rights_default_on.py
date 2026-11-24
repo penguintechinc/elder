@@ -648,26 +648,58 @@ class TestEraseConfirmationAndReauth:
         """No local credential exists, so demanding one would deny the right."""
         import time
 
+        now = int(time.time())
         status, _, erase, verify = await _erase(
             app,
             {"confirm": "ERASE"},
             has_credential=False,
-            token_claims={"iat": time.time() - age_seconds, "type": "access"},
+            token_claims={
+                "auth_time": now - age_seconds,
+                "iat": now - age_seconds,
+                "type": "access",
+            },
         )
         assert status == 200
         assert erase.call_count == 1
         assert verify.call_count == 0
 
-    @pytest.mark.parametrize("iat", ["stale", "future", None, "abc", True])
-    async def test_sso_subject_with_stale_login_is_403(self, app, iat):
+    @pytest.mark.parametrize(
+        "claims",
+        [
+            # refreshed token: brand-new iat, but the login was >5 min ago
+            {"iat": "now", "auth_time": "stale"},
+            # token issued before the auth_time claim existed
+            {"iat": "now"},
+            {"iat": "now", "auth_time": None},
+            {"iat": "now", "auth_time": "future"},
+            {"iat": "now", "auth_time": "abc"},
+            {"iat": "now", "auth_time": True},
+            {"iat": "now", "auth_time": 1.5},
+            {},
+        ],
+        ids=[
+            "refreshed-after-5min",
+            "pre-deploy-token",
+            "null",
+            "future",
+            "string",
+            "bool",
+            "float",
+            "no-claims",
+        ],
+    )
+    async def test_fresh_iat_never_counts_without_a_recent_auth_time(self, app, claims):
+        """security review #1: refresh resets iat, so iat must not prove recency."""
         import time
 
-        value = {"stale": time.time() - 301, "future": time.time() + 120}.get(iat, iat)
+        now = int(time.time())
+        swap = {"now": now, "stale": now - 301, "future": now + 120}
+        resolved = {
+            k: swap.get(v, v) if isinstance(v, str) else v for k, v in claims.items()
+        }
+        resolved["type"] = "access"
         status, payload, erase, _ = await _erase(
-            app,
-            {"confirm": "ERASE"},
-            has_credential=False,
-            token_claims={"iat": value, "type": "access"},
+            app, {"confirm": "ERASE"}, has_credential=False, token_claims=resolved
         )
         assert status == 403
         assert payload["recent_login_required"] is True

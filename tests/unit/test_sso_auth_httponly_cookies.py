@@ -156,7 +156,9 @@ class TestAuthLoginSetsHttpOnlyCookies:
             ),
             patch(
                 "apps.api.api.v1.auth.generate_token",
-                side_effect=lambda _identity, token_type="access": f"{token_type}-tok",
+                side_effect=lambda _identity, token_type="access", **_kw: (
+                    f"{token_type}-tok"
+                ),
             ),
         ):
             resp = await async_client.post(
