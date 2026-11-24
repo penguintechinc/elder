@@ -173,7 +173,9 @@ def seeded():
         before = _counts(engine)
         second = _run([sys.executable, "scripts/seed_demo.py"], env)
         after = _counts(engine)
-        probe = _run([sys.executable, "-I", "-c", _PROBE, str(ROOT)], env)
+        # -P (not -I): keep the cwd off sys.path without dropping the user
+        # site-packages, where tests/Dockerfile installs every dependency.
+        probe = _run([sys.executable, "-P", "-c", _PROBE, str(ROOT)], env)
         yield {
             "engine": engine,
             "first": first,
