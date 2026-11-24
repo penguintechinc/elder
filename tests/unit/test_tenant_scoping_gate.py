@@ -236,6 +236,84 @@ class TestTenantScopingGateCatchesRegressions:
         assert result.returncode == 0, result.stdout + result.stderr
 
 
+class TestTenantScopingGateCatchesWholeTableListQueries:
+    """Check 3: a list/search query seeded with ``db.<t>.id > 0`` in a
+    function that never applies a tenant/org predicate. The original gate
+    only saw single-row lookups, so ``GET /search*`` and ``GET /entities``
+    returned every tenant's rows while the gate reported 0 unscoped sites.
+    """
+
+    def _write(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    @pytest.mark.parametrize(
+        "rel_path,prefix",
+        [
+            ("apps/api/modules/fake/routes/listing.py", "db"),
+            ("apps/api/services/fake/service.py", "self.db"),
+        ],
+    )
+    def test_fails_on_unscoped_list_then_passes_once_scoped(
+        self, tmp_path, rel_path, prefix
+    ):
+        (tmp_path / ".tenant-scoping-baseline").write_text("count=0\nlist_count=0\n")
+        # A clean route file so the lookup scan always has a denominator.
+        self._write(tmp_path / "apps/api/api/v1/clean.py", "def ok():\n    return 1\n")
+        target = tmp_path / rel_path
+        self._write(
+            target,
+            "def list_things():\n"
+            f"    query = {prefix}.things.id > 0\n"
+            f"    return {prefix}(query).select()\n",
+        )
+        failing = _run_scanner(tmp_path)
+        assert failing.returncode == 1, failing.stdout + failing.stderr
+        assert "whole-table list queries" in failing.stderr
+
+        self._write(
+            target,
+            "def list_things(tenant_id):\n"
+            f"    query = {prefix}.things.id > 0\n"
+            f"    query &= {prefix}.things.tenant_id == tenant_id\n"
+            f"    return {prefix}(query).select()\n",
+        )
+        passing = _run_scanner(tmp_path)
+        assert passing.returncode == 0, passing.stdout + passing.stderr
+
+    def test_exempt_marker_skips_global_table(self, tmp_path):
+        (tmp_path / ".tenant-scoping-baseline").write_text("count=0\nlist_count=0\n")
+        self._write(
+            tmp_path / "apps/api/api/v1/fake_global.py",
+            "def list_tenants():\n"
+            "    return db(db.tenants.id > 0).select()  # tenant-scope-exempt: global\n",
+        )
+        result = _run_scanner(tmp_path)
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    def test_real_repo_reports_list_denominator(self):
+        result = _run_scanner(REPO_ROOT)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "route+service files examined" in result.stdout
+        assert "(0 route+service files examined)" not in result.stdout
+
+    def test_search_and_entity_list_sites_are_scoped(self):
+        """regression: the sites this check was added for stay off the list."""
+        result = subprocess.run(
+            [sys.executable, str(SCANNER), "--root", str(REPO_ROOT), "--list"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "list-query:" in result.stdout, "offender listing produced nothing"
+        for path in (
+            "apps/api/services/search/service.py",
+            "apps/api/modules/infrastructure/routes/entities.py",
+            "apps/api/modules/infrastructure/routes/dependencies.py",
+        ):
+            assert path not in result.stdout, result.stdout
+
+
 class TestGh237ReportedSitesFixed:
     """The two sites originally reported in gh-237 must no longer use a
     bare bracket lookup. Checks non-comment lines for the exact original
