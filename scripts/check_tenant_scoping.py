@@ -50,6 +50,9 @@ SCAN_GLOBS = [
     "apps/api/modules/*/routes/*.py",
     "apps/api/modules/*/routes/**/*.py",
     "apps/api/api/v1/*.py",
+    # Service modules already brought to zero unscoped lookups; listing them
+    # here keeps them there. Add further services as they are cleaned up.
+    "apps/api/services/networking/*.py",
 ]
 
 # `db.<table>[<expr>]` bracket lookup -- PyDAL's unscoped-by-primary-key
