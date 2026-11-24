@@ -62,8 +62,8 @@ const PAGES = [
   // Workstreams & Automation (CodeRuns, Playbooks, Executions, Approvals, CSV, Webhooks, Backups)
   { name: 'runs', path: '/runs' },
   { name: 'streams', path: '/streams' },
-  { name: 'streams-executions', path: '/streams/executions' },
-  { name: 'streams-approvals', path: '/streams/approvals' },
+  { name: 'streams-executions', path: '/executions' },
+  { name: 'streams-approvals', path: '/approvals' },
   { name: 'csv-templates', path: '/csv-templates' },
   { name: 'webhooks', path: '/webhooks' },
   { name: 'backups', path: '/backups' },

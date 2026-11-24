@@ -305,6 +305,73 @@ class SandboxRunner:
 
         return env
 
+    _PYTHON_BOOTSTRAP = """import asyncio, inspect, json, os, runpy, sys
+
+script_path = sys.argv[1]
+ns = runpy.run_path(script_path, run_name="__main__")
+fn = ns.get("handler")
+if callable(fn):
+    raw_input = os.environ.get("ELDER_RUN_INPUT", "{}")
+    try:
+        input_data = json.loads(raw_input) if raw_input else {}
+    except Exception:
+        input_data = {}
+    sig = inspect.signature(fn)
+    params = [
+        p
+        for p in sig.parameters.values()
+        if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    ]
+    res = fn() if len(params) == 0 else fn(input_data)
+    if inspect.isawaitable(res):
+        res = asyncio.run(res)
+    if res is not None:
+        print(json.dumps(res, default=str), flush=True)
+"""
+
+    _NODE_BOOTSTRAP = """import { pathToFileURL } from "node:url";
+
+const scriptPath = process.argv[2];
+const mod = await import(pathToFileURL(scriptPath).href);
+const fn =
+  typeof mod.handler === "function"
+    ? mod.handler
+    : typeof mod.default === "function"
+      ? mod.default
+      : null;
+if (fn) {
+  let inputData = {};
+  try {
+    inputData = process.env.ELDER_RUN_INPUT
+      ? JSON.parse(process.env.ELDER_RUN_INPUT)
+      : {};
+  } catch {
+    inputData = {};
+  }
+  const res = await fn(inputData);
+  if (res !== undefined) {
+    console.log(JSON.stringify(res));
+  }
+}
+"""
+
+    _RUBY_BOOTSTRAP = """require "json"
+
+script_path = ARGV[0]
+load script_path
+if defined?(handler) == "method"
+  raw = ENV.fetch("ELDER_RUN_INPUT", "{}")
+  input_data = begin
+    raw.empty? ? {} : JSON.parse(raw)
+  rescue StandardError
+    {}
+  end
+  m = method(:handler)
+  res = m.arity == 0 ? handler : handler(input_data)
+  puts JSON.generate(res) unless res.nil?
+end
+"""
+
     def _build_command(
         self,
         *,
@@ -316,11 +383,17 @@ class SandboxRunner:
         env: dict[str, str],
     ) -> list[str]:
         if canonical_runtime == "python":
-            return [binary_path, "-B", str(script_path)]
+            bootstrap = tmp_dir / "_elder_bootstrap.py"
+            bootstrap.write_text(self._PYTHON_BOOTSTRAP, encoding="utf-8")
+            return [binary_path, "-u", "-B", str(bootstrap), str(script_path)]
         if canonical_runtime == "nodejs":
-            return [binary_path, str(script_path)]
+            bootstrap = tmp_dir / "_elder_bootstrap.mjs"
+            bootstrap.write_text(self._NODE_BOOTSTRAP, encoding="utf-8")
+            return [binary_path, str(bootstrap), str(script_path)]
         if canonical_runtime == "ruby":
-            return [binary_path, "-I", str(workspace), str(script_path)]
+            bootstrap = tmp_dir / "_elder_bootstrap.rb"
+            bootstrap.write_text(self._RUBY_BOOTSTRAP, encoding="utf-8")
+            return [binary_path, "-I", str(workspace), str(bootstrap), str(script_path)]
         if canonical_runtime == "golang":
             return [binary_path, "run", str(script_path)]
         if canonical_runtime == "rust":
