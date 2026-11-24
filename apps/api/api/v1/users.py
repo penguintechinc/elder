@@ -116,6 +116,27 @@ async def create_user():
     if "password" not in data or not data["password"].strip():
         return ApiResponse.bad_request("Password is required")
 
+    # Privilege fields: role_required("admin") admits a tenant-scoped
+    # portal_role=="admin" (gh-237), so only a verified superuser may create a
+    # superuser or place the new user in another tenant. Regression: a tenant
+    # admin could POST is_superuser=true / tenant_id=<system> and mint a
+    # global admin.
+    caller = get_current_user()
+    caller_is_superuser = bool(getattr(caller, "is_superuser", False))
+    requested_superuser = data.get("is_superuser", False)
+    if not isinstance(requested_superuser, bool):
+        return ApiResponse.bad_request("is_superuser must be a boolean")
+    if requested_superuser and not caller_is_superuser:
+        return ApiResponse.forbidden("Only a superuser can create a superuser")
+    requested_tenant = data.get("tenant_id")
+    caller_tenant = getattr(caller, "tenant_id", None)
+    if not caller_is_superuser:
+        if caller_tenant is None:
+            return ApiResponse.forbidden("Tenant context required")
+        if requested_tenant is not None and requested_tenant != caller_tenant:
+            return ApiResponse.forbidden("Cannot create a user in another tenant")
+        requested_tenant = caller_tenant
+
     # Prepare insert data
     username = data["username"].strip()
     insert_data = {
@@ -128,12 +149,13 @@ async def create_user():
         "organization_id": data.get("organization_id"),
         "portal_role": data.get("portal_role", "observer"),
         "is_active": data.get("is_active", True),
-        "is_superuser": data.get("is_superuser", False),
+        "is_superuser": requested_superuser,
         "mfa_enabled": data.get("mfa_enabled", False),
         # NOT NULL column with no DB-level server_default (penguin-dal
         # omits SQLAlchemy Column(default=...) when kwargs are absent).
         "must_change_password": bool(data.get("must_change_password", False)),
-        "tenant_id": data.get("tenant_id"),  # Optional from request body
+        # Superusers may target any tenant; everyone else is pinned above.
+        "tenant_id": requested_tenant,
     }
 
     # Build queries outside threadpool function (db is thread-local)

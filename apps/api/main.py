@@ -93,6 +93,13 @@ def create_app(config_name: str = None) -> Quart:
     app.config.from_object(config)
     config.init_app(app)
     app.config["APP_VERSION"] = _resolve_app_version(app.config.get("APP_VERSION"))
+    if app.config.get("PLATFORM_TENANT_ALLOW_DEFAULT_FALLBACK"):
+        logger.warning(
+            "platform_tenant_default_fallback_enabled",
+            platform_tenant_slug=app.config.get("PLATFORM_TENANT_SLUG", "system"),
+            detail="superusers of the 'default' tenant act as super-admins when "
+            "the platform tenant is missing; pin ELDER_PLATFORM_TENANT_SLUG instead",
+        )
 
     # Initialize OpenTelemetry (Phase 0.5) — must be before logging/DB init
     otel = init_telemetry(app.config.get("OTEL_SERVICE_NAME", "hub-api"))
