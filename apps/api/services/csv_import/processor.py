@@ -254,7 +254,7 @@ CSV_TEMPLATES: dict[str, dict[str, Any]] = {
             "organization_id": "Required integer Organization ID",
             "provider": "Required (e.g. openai, anthropic, google, local)",
             "model_name": "Optional model name (e.g. gpt-4o)",
-            "resource_type": "Required (e.g. llm, embedding, agent, vector_db)",
+            "resource_type": "Required (llm, ai_gateway, mcp_server, code_mode_server, utcp_server)",
             "endpoint_url": "Optional valid http/https URL",
             "status": "Optional: active or inactive (default: active)",
             "description": "Optional description",

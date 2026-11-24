@@ -22,7 +22,7 @@ from apps.api.models.base import (
 
 
 class AIResource(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
-    """AI resource inventory (LLMs, AI Gateways, MCP Servers)."""
+    """AI resource inventory (LLMs, AI Gateways, MCP, Code Mode, and UTCP Servers)."""
 
     __tablename__ = "ai_resources"
 

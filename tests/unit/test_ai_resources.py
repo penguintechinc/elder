@@ -3,14 +3,20 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
+from typing import get_args
+
+import pytest
+from pydantic import ValidationError
 
 from apps.api.models.pydantic.ai import (
     AIResourceDTO,
     AIResourceListResponse,
+    AIResourceType,
     CreateAIResourceRequest,
     UpdateAIResourceRequest,
 )
 from apps.api.modules.ai.routes import _row_to_dto
+from apps.api.services.csv_import.processor import CSV_TEMPLATES
 
 
 class TestAIResourceDTOFieldSet:
@@ -123,3 +129,82 @@ class TestAIResourceMappingAndValidation:
         upd = UpdateAIResourceRequest(status="allowed", seats=100)
         assert upd.status == "allowed"
         assert upd.seats == 100
+
+    def test_resource_type_literal_includes_code_mode_and_utcp(self):
+        assert set(get_args(AIResourceType)) == {
+            "llm",
+            "ai_gateway",
+            "mcp_server",
+            "code_mode_server",
+            "utcp_server",
+        }
+
+    @pytest.mark.parametrize("resource_type", ["code_mode_server", "utcp_server"])
+    def test_create_update_and_dto_support_code_mode_and_utcp(self, resource_type: str):
+        req = CreateAIResourceRequest(
+            name=f"Internal {resource_type}",
+            organization_id=1,
+            resource_type=resource_type,
+            endpoint_url="https://tools.internal/api",
+            status="allowed",
+            description="Tool server",
+            metadata={"transport": "streamable-http", "auth_type": "bearer"},
+        )
+        assert req.resource_type == resource_type
+        assert req.metadata == {"transport": "streamable-http", "auth_type": "bearer"}
+
+        upd = UpdateAIResourceRequest(
+            resource_type=resource_type,
+            endpoint_url="https://tools.internal/v2",
+            metadata={"transport": "http", "auth_type": "oauth2"},
+        )
+        assert upd.resource_type == resource_type
+
+        now = datetime.now(UTC)
+        row = SimpleNamespace(
+            id=42,
+            tenant_id=10,
+            name=req.name,
+            description=req.description,
+            organization_id=1,
+            resource_type=resource_type,
+            provider="Internal",
+            model_name=None,
+            endpoint_url=req.endpoint_url,
+            status="allowed",
+            agreement_level="enterprise",
+            plan_info=None,
+            budget_monthly=None,
+            cost_per_10m_tokens=None,
+            seats=None,
+            parent_system_id=None,
+            owner_id=None,
+            notes=None,
+            tags=["tools"],
+            extra_metadata={"transport": "streamable-http", "auth_type": "bearer"},
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+            village_id="10-41-42",
+        )
+        dto = _row_to_dto(row)
+        assert dto.resource_type == resource_type
+        assert dto.metadata == {"transport": "streamable-http", "auth_type": "bearer"}
+
+    def test_invalid_resource_type_rejected(self):
+        with pytest.raises(ValidationError):
+            CreateAIResourceRequest(
+                name="Bad Type",
+                organization_id=1,
+                resource_type="unsupported_server",  # type: ignore[arg-type]
+            )
+
+        with pytest.raises(ValidationError):
+            UpdateAIResourceRequest(
+                resource_type="unsupported_server",  # type: ignore[arg-type]
+            )
+
+    def test_csv_template_documents_code_mode_and_utcp(self):
+        rule = CSV_TEMPLATES["ai_resources"]["rules"]["resource_type"]
+        assert "code_mode_server" in rule
+        assert "utcp_server" in rule

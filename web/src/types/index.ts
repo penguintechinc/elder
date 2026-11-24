@@ -404,7 +404,12 @@ export interface ComplianceReport {
   generated_at: string;
 }
 
-export type AIResourceType = "llm" | "ai_gateway" | "mcp_server";
+export type AIResourceType =
+  | "llm"
+  | "ai_gateway"
+  | "mcp_server"
+  | "code_mode_server"
+  | "utcp_server";
 export type AIResourceStatus =
   | "pending_review"
   | "allowed"

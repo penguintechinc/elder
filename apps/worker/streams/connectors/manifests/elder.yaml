@@ -1790,7 +1790,7 @@ connector:
         - field: resource_type
           type: select
           label: Resource Type
-          options: ["", llm, ai_gateway, mcp_server]
+          options: ["", llm, ai_gateway, mcp_server, code_mode_server, utcp_server]
         - field: status
           type: select
           label: Status
@@ -3356,7 +3356,7 @@ connector:
         - field: resource_type
           type: select
           label: Resource Type
-          options: [llm, ai_gateway, mcp_server]
+          options: [llm, ai_gateway, mcp_server, code_mode_server, utcp_server]
           required: true
           default: llm
         - field: provider
