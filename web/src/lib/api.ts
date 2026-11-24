@@ -2457,6 +2457,16 @@ class ApiClient {
     return response.data;
   }
 
+  async regenerateMfaBackupCodes(): Promise<{
+    backup_codes: string[];
+    remaining: number;
+  }> {
+    const response = await this.client.post(
+      "/portal-auth/mfa/backup-codes/regenerate",
+    );
+    return response.data;
+  }
+
   // v2.2.0 Enterprise Edition - Tenant Management
   async getTenants(params?: {
     is_active?: boolean;

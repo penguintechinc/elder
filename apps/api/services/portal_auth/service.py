@@ -490,9 +490,32 @@ class PortalAuthService:
         if not user.mfa_secret:
             return {"error": "MFA not enabled for this user"}
 
+        normalized_code = str(totp_code).strip()
         totp = pyotp.TOTP(user.mfa_secret)
-        if not totp.verify(totp_code):
-            return {"error": "Invalid MFA code"}
+        if not totp.verify(normalized_code, valid_window=1):
+            raw_codes = getattr(user, "mfa_backup_codes", None)
+            if isinstance(raw_codes, str):
+                try:
+                    raw_codes = json.loads(raw_codes)
+                except ValueError:
+                    raw_codes = []
+            backup_codes = list(raw_codes) if isinstance(raw_codes, list) else []
+            matched_idx = next(
+                (
+                    idx
+                    for idx, code in enumerate(backup_codes)
+                    if str(code).strip().lower() == normalized_code.lower()
+                ),
+                None,
+            )
+            if matched_idx is None:
+                return {"error": "Invalid MFA code"}
+            backup_codes.pop(matched_idx)
+            current_app.db(current_app.db.portal_users.id == user.id).update(
+                mfa_backup_codes=backup_codes,
+                updated_at=datetime.datetime.now(datetime.UTC),
+            )
+            current_app.db.commit()
 
         return {
             "id": user.id,
@@ -567,6 +590,41 @@ class PortalAuthService:
             return {"error": "Invalid verification code", "status_code": 400}
 
         return {"verified": True}
+
+    @staticmethod
+    def regenerate_backup_codes(user_id: int) -> dict:
+        """Generate a fresh set of 10 single-use TOTP bypass/backup codes.
+
+        Replaces any previously issued backup codes for the user.
+
+        Args:
+            user_id: Portal user ID
+
+        Returns:
+            Dict with ``backup_codes`` and ``remaining``, or an error dict
+            with ``status_code``.
+        """
+        user = current_app.db.portal_users[user_id]
+        if not user:
+            return {"error": "User not found", "status_code": 404}
+
+        if not user.mfa_secret:
+            return {
+                "error": "MFA must be enabled before regenerating backup codes",
+                "status_code": 400,
+            }
+
+        backup_codes = [secrets.token_hex(4) for _ in range(10)]
+        current_app.db(current_app.db.portal_users.id == user.id).update(
+            mfa_backup_codes=backup_codes,
+            updated_at=datetime.datetime.now(datetime.UTC),
+        )
+        current_app.db.commit()
+
+        return {
+            "backup_codes": backup_codes,
+            "remaining": len(backup_codes),
+        }
 
     @staticmethod
     def disable_mfa(user_id: int) -> dict:

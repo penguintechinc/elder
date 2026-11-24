@@ -1,6 +1,16 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { User, Mail, Building2, Lock, Shield, Copy, CheckCircle } from 'lucide-react'
+import {
+  User,
+  Mail,
+  Building2,
+  Lock,
+  Shield,
+  Copy,
+  CheckCircle,
+  Download,
+  RefreshCw,
+} from 'lucide-react'
 import QRCode from 'qrcode'
 import toast from 'react-hot-toast'
 import api, { type MfaSetupResponse } from '@/lib/api'
@@ -25,6 +35,7 @@ export default function Profile() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [mfaSetup, setMfaSetup] = useState<MfaSetupResponse | null>(null)
   const [mfaQrDataUrl, setMfaQrDataUrl] = useState<string | null>(null)
+  const [regeneratedBackupCodes, setRegeneratedBackupCodes] = useState<string[] | null>(null)
   const [totpCode, setTotpCode] = useState('')
   const queryClient = useQueryClient()
 
@@ -128,6 +139,7 @@ export default function Profile() {
     mutationFn: () => api.disableMfa(),
     onSuccess: async () => {
       setMfaSetup(null)
+      setRegeneratedBackupCodes(null)
       setTotpCode('')
       await queryClient.invalidateQueries({ queryKey: ['profile'] })
       await queryClient.invalidateQueries({ queryKey: ['portal-profile'] })
@@ -138,6 +150,50 @@ export default function Profile() {
       toast.error(error.response?.data?.error || 'Failed to disable MFA')
     },
   })
+
+  const regenerateBackupCodesMutation = useMutation({
+    mutationFn: () => api.regenerateMfaBackupCodes(),
+    onSuccess: async (data) => {
+      setRegeneratedBackupCodes(data.backup_codes)
+      await queryClient.invalidateQueries({ queryKey: ['profile'] })
+      await queryClient.invalidateQueries({ queryKey: ['portal-profile'] })
+      toast.success('New backup codes generated. Previous codes are now invalid.')
+    },
+    onError: (error: ApiError) => {
+      toast.error(error.response?.data?.error || 'Failed to regenerate backup codes')
+    },
+  })
+
+  const handleDownloadBackupCodes = (codes: string[]) => {
+    const content = [
+      'Elder MFA Recovery / Bypass Codes',
+      `Account: ${profile?.email || 'unknown'}`,
+      `Generated: ${new Date().toISOString()}`,
+      '',
+      'Each code can be used once to sign in if you lose access to Google Authenticator:',
+      ...codes.map((c, idx) => `${idx + 1}. ${c}`),
+      '',
+    ].join('\n')
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'elder-mfa-backup-codes.txt'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    toast.success('Backup codes downloaded')
+  }
+
+  const handleCopyBackupCodes = async (codes: string[]) => {
+    try {
+      await navigator.clipboard.writeText(codes.join('\n'))
+      toast.success('Backup codes copied to clipboard')
+    } catch {
+      toast.error('Failed to copy backup codes')
+    }
+  }
 
   const handleCopySecret = async () => {
     if (!mfaSetup?.secret) return
@@ -517,9 +573,29 @@ export default function Profile() {
               {Array.isArray(mfaSetup.backup_codes) &&
                 mfaSetup.backup_codes.length > 0 && (
                   <div>
-                    <span className="block text-sm font-medium text-slate-300 mb-2">
-                      Backup Codes (save these in a safe place)
-                    </span>
+                    <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                      <span className="block text-sm font-medium text-slate-300">
+                        Backup / Bypass Codes (save these in a safe place)
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => handleCopyBackupCodes(mfaSetup.backup_codes)}
+                        >
+                          <Copy className="w-4 h-4 mr-1" />
+                          Copy All
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => handleDownloadBackupCodes(mfaSetup.backup_codes)}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          Download (.txt)
+                        </Button>
+                      </div>
+                    </div>
                     <div
                       data-testid="mfa-backup-codes"
                       className="grid grid-cols-2 sm:grid-cols-5 gap-2"
@@ -584,7 +660,73 @@ export default function Profile() {
                   policy and cannot be disabled.
                 </p>
               )}
-              <div>
+              <div className="pt-3 border-t border-slate-700 space-y-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <h3 className="text-sm font-medium text-white">
+                      Recovery / Bypass Codes
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      {typeof profile?.mfa_backup_codes_remaining === 'number'
+                        ? `${profile.mfa_backup_codes_remaining} single-use bypass code(s) remaining.`
+                        : 'Generate a fresh set of 10 single-use bypass codes.'}{' '}
+                      Resetting invalidates all previously issued codes.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    isLoading={regenerateBackupCodesMutation.isPending}
+                    onClick={() => regenerateBackupCodesMutation.mutate()}
+                  >
+                    <RefreshCw className="w-4 h-4 mr-1.5" />
+                    Reset Backup Codes
+                  </Button>
+                </div>
+
+                {regeneratedBackupCodes && regeneratedBackupCodes.length > 0 && (
+                  <div className="p-3 bg-slate-900/70 border border-slate-700 rounded-lg space-y-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-xs font-medium text-emerald-300">
+                        New Backup Codes — save or download now (shown once)
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => handleCopyBackupCodes(regeneratedBackupCodes)}
+                        >
+                          <Copy className="w-4 h-4 mr-1" />
+                          Copy All
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => handleDownloadBackupCodes(regeneratedBackupCodes)}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          Download (.txt)
+                        </Button>
+                      </div>
+                    </div>
+                    <div
+                      data-testid="mfa-regenerated-backup-codes"
+                      className="grid grid-cols-2 sm:grid-cols-5 gap-2"
+                    >
+                      {regeneratedBackupCodes.map((code) => (
+                        <code
+                          key={code}
+                          className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-center text-xs font-mono text-slate-200"
+                        >
+                          {code}
+                        </code>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2">
                 <Button
                   type="button"
                   variant="ghost"
