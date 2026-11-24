@@ -439,9 +439,9 @@ def seed_issue_comments(
             "metadata": {
                 "channel": "email",
                 "direction": "outbound",
-                "from": "support@elderrms.app",
+                "from": "support@example.com",
                 "to": "alice@acme.local",
-                "message_id": f"<demo-msg-{uuid4().hex[:8]}@elderrms.app>",
+                "message_id": f"<demo-msg-{uuid4().hex[:8]}@example.com>",
             },
         },
         {
@@ -451,7 +451,7 @@ def seed_issue_comments(
                 "channel": "email",
                 "direction": "inbound",
                 "from": "alice@acme.local",
-                "to": "support@elderrms.app",
+                "to": "support@example.com",
                 "message_id": "<alice-reply-123@acme.local>",
             },
         },
@@ -461,9 +461,9 @@ def seed_issue_comments(
             "metadata": {
                 "channel": "email",
                 "direction": "outbound",
-                "from": "support@elderrms.app",
+                "from": "support@example.com",
                 "to": "alice@acme.local",
-                "message_id": f"<demo-msg-{uuid4().hex[:8]}@elderrms.app>",
+                "message_id": f"<demo-msg-{uuid4().hex[:8]}@example.com>",
             },
         },
     ]

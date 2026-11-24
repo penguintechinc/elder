@@ -197,7 +197,9 @@ async def collab_ws(diagram_id: int):
 
     try:
         # Validate ticket from query params
-        ticket = request.args.get("ticket")
+        # websocket.args, not request.args: there is no request context in a
+        # websocket handler, so request.* raises and the handshake never completes.
+        ticket = websocket.args.get("ticket")
         if not ticket:
             log.warning("ws_connect_no_ticket", diagram_id=diagram_id)
             await websocket.close(1008)
@@ -454,6 +456,11 @@ async def collab_ws(diagram_id: int):
 
     except Exception as e:
         log.error("ws_handler_unexpected_error", error=str(e))
+        # Never leave the peer hanging on a swallowed error: close explicitly.
+        try:
+            await websocket.close(1011)
+        except Exception as close_err:
+            log.warning("ws_close_after_error_failed", error=str(close_err))
     finally:
         # Cleanup: mark session as inactive
         if session_id:

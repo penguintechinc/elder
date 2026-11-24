@@ -2,13 +2,16 @@
 
 # flake8: noqa: E501
 
-from typing import Dict
+from dataclasses import dataclass, field
+from itertools import islice
 
 import networkx as nx
 from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.pagination import clamp_int, env_bounded_int, parse_limit
+from apps.api.utils.subject_limit import limit_per_subject
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 bp = Blueprint("graph", __name__)
@@ -28,9 +31,112 @@ VALID_RESOURCE_TYPES = [
 ]
 
 
+# Hard bounds on graph traversal and payload size. Environment overrides are
+# parsed defensively (bad values fall back to the default) and are themselves
+# capped so a misconfiguration cannot remove the limit.
+GRAPH_MAX_DEPTH = env_bounded_int("ELDER_GRAPH_MAX_DEPTH", 6, 25)
+GRAPH_MAX_NODES = env_bounded_int("ELDER_GRAPH_MAX_NODES", 5000, 50000)
+GRAPH_MAX_EDGES = env_bounded_int("ELDER_GRAPH_MAX_EDGES", 20000, 200000)
+# Upper bound on cycles enumerated by /analyze (enumeration is exponential).
+GRAPH_MAX_CYCLES = 1000
+
+_MISSING_TENANT = "Missing tenant claim in token"
+
+# One per-caller budget (requests/minute and in-flight) shared by every graph
+# traversal endpoint, keyed by tenant:subject from the verified token.
+graph_limited = limit_per_subject(
+    "elder:graph",
+    rate_env="ELDER_GRAPH_RATE_PER_MINUTE",
+    rate_default=120,
+    inflight_env="ELDER_GRAPH_MAX_CONCURRENT_PER_USER",
+    inflight_default=4,
+)
+
+
+@dataclass(slots=True)
+class SubgraphWalk:
+    """Result of a bounded, tenant-scoped walk outward from one entity.
+
+    Holds the reached entities with their distance from the centre and
+    whether a node or edge cap cut the walk short.
+    """
+
+    entities: list = field(default_factory=list)
+    depths: dict[int, int] = field(default_factory=dict)
+    truncated: bool = False
+
+
+def _resolve_depth(raw_depth: int | None) -> tuple[int, bool]:
+    """Map a requested traversal depth onto the enforced maximum.
+
+    ``None`` or any negative value means "as deep as allowed" and resolves to
+    ``GRAPH_MAX_DEPTH``; larger requests are clamped. Returns the effective
+    depth and whether the request was reduced to fit the limit.
+    """
+    if raw_depth is None or raw_depth < 0:
+        return GRAPH_MAX_DEPTH, True
+    if raw_depth > GRAPH_MAX_DEPTH:
+        return GRAPH_MAX_DEPTH, True
+    return raw_depth, False
+
+
+def _tenant_org_ids(db, tenant_id: int | None) -> list[int]:
+    """Return the ids of every organization owned by the caller's tenant.
+
+    Entities carry no tenant column of their own, so every graph query is
+    scoped through this list. A missing tenant yields an empty list, which
+    callers must treat as "no access", never as "no filter".
+    """
+    if not tenant_id:
+        return []
+    rows = db(db.organizations.tenant_id == tenant_id).select(db.organizations.id)
+    return [row.id for row in rows]
+
+
+def _tenant_entity_query(db, org_ids: list[int], org_id: int | None = None):
+    """Build the entity filter restricted to the caller's organizations.
+
+    An ``org_id`` outside the caller's tenant returns ``None`` so the caller
+    yields an empty result instead of another tenant's entities.
+    """
+    if org_id:
+        if org_id not in org_ids:
+            return None
+        return db.entities.organization_id == org_id
+    return db.entities.organization_id.belongs(org_ids)
+
+
+def _select_capped(db, query, orderby, maximum: int) -> tuple[list, bool]:
+    """Run a select bounded to ``maximum`` rows and report truncation.
+
+    Fetches one extra row to detect that more data existed, so the caller
+    can flag a truncated response without issuing a separate count query.
+    """
+    rows = list(db(query).select(orderby=orderby, limitby=(0, maximum + 1)))
+    return rows[:maximum], len(rows) > maximum
+
+
+def _entity_edges(db, entity_ids: list[int]) -> tuple[list, bool]:
+    """Fetch entity-to-entity dependencies inside ``entity_ids``, capped.
+
+    Both endpoints must be in the supplied (already tenant-scoped) id set,
+    which keeps edges transitively inside the caller's tenant.
+    """
+    if not entity_ids:
+        return [], False
+    query = (
+        (db.dependencies.source_type == "entity")
+        & (db.dependencies.source_id.belongs(entity_ids))
+        & (db.dependencies.target_type == "entity")
+        & (db.dependencies.target_id.belongs(entity_ids))
+    )
+    return _select_capped(db, query, db.dependencies.id, GRAPH_MAX_EDGES)
+
+
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("infrastructure:read")
+@graph_limited
 async def get_graph():
     """
     Get full dependency graph or filtered subgraph.
@@ -39,37 +145,38 @@ async def get_graph():
         - organization_id: Filter by organization
         - entity_type: Filter by entity type
         - entity_id: Center graph on specific entity
-        - depth: Maximum depth from entity_id (default: 2, -1 for all)
+        - depth: Maximum depth from entity_id (default: 2; -1 means the
+          enforced maximum, ELDER_GRAPH_MAX_DEPTH)
         - include_metadata: Include entity metadata (default: false)
 
     Returns:
         200: Graph data in vis.js compatible format
         {
             "nodes": [{"id": 1, "label": "Entity Name", "type": "compute", ...}],
-            "edges": [{"from": 1, "to": 2, "type": "depends_on", ...}]
+            "edges": [{"from": 1, "to": 2, "type": "depends_on", ...}],
+            "stats": {"entity_count": 1, "dependency_count": 1, "truncated": false}
         }
+        403: Token carries no tenant claim
     """
     db = current_app.db_read
     # Resolve the caller's tenant here (in the request coroutine) — g does
     # not propagate into the threadpool callable below.
     tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": _MISSING_TENANT}), 403
 
     # Get filter parameters
     org_id = request.args.get("organization_id", type=int)
     entity_type = request.args.get("entity_type")
     entity_id = request.args.get("entity_id", type=int)
-    depth = request.args.get("depth", 2, type=int)
+    depth, depth_clamped = _resolve_depth(
+        clamp_int(request.args.get("depth"), 2, -1, GRAPH_MAX_DEPTH + 1)
+    )
     include_metadata = request.args.get("include_metadata", "false").lower() == "true"
 
     def get_graph_data():
-        # Build entity query
-        query = db.entities.id > 0
-
-        if org_id:
-            query &= db.entities.organization_id == org_id
-
-        if entity_type:
-            query &= db.entities.type == entity_type
+        org_ids = _tenant_org_ids(db, tenant_id)
+        truncated = False
 
         # If entity_id specified, get subgraph centered on that entity
         if entity_id:
@@ -83,10 +190,20 @@ async def get_graph():
             if not entity:
                 return None, "Entity not found", 404
 
-            entities = _get_entity_subgraph(db, entity, depth, tenant_id)
+            entities, truncated = _get_entity_subgraph(
+                db, entity, depth, org_ids, tenant_id
+            )
         else:
-            # Get all entities matching filters
-            entities = db(query).select()
+            # Every entity query is restricted to the caller's organizations.
+            query = _tenant_entity_query(db, org_ids, org_id) if org_ids else None
+            if query is None:
+                entities = []
+            else:
+                if entity_type:
+                    query &= db.entities.type == entity_type
+                entities, truncated = _select_capped(
+                    db, query, db.entities.id, GRAPH_MAX_NODES
+                )
 
         # Get entity IDs for dependency filtering
         entity_ids = [e.id for e in entities]
@@ -100,6 +217,7 @@ async def get_graph():
                     "stats": {
                         "entity_count": 0,
                         "dependency_count": 0,
+                        "truncated": False,
                     },
                 },
                 None,
@@ -108,12 +226,7 @@ async def get_graph():
 
         # Get dependencies between these entities
         # Dependencies table uses source_type/source_id, not source_entity_id
-        dependencies = db(
-            (db.dependencies.source_type == "entity")
-            & (db.dependencies.source_id.belongs(entity_ids))
-            & (db.dependencies.target_type == "entity")
-            & (db.dependencies.target_id.belongs(entity_ids))
-        ).select()
+        dependencies, edges_truncated = _entity_edges(db, entity_ids)
 
         # Build vis.js compatible graph data
         nodes = []
@@ -148,18 +261,16 @@ async def get_graph():
 
             edges.append(edge)
 
-        return (
-            {
-                "nodes": nodes,
-                "edges": edges,
-                "stats": {
-                    "entity_count": len(entities),
-                    "dependency_count": len(dependencies),
-                },
-            },
-            None,
-            200,
-        )
+        stats = {
+            "entity_count": len(entities),
+            "dependency_count": len(dependencies),
+            "truncated": truncated or edges_truncated,
+        }
+        if entity_id:
+            stats["depth"] = depth
+            stats["depth_clamped"] = depth_clamped
+
+        return {"nodes": nodes, "edges": edges, "stats": stats}, None, 200
 
     result, error, status = await run_in_threadpool(get_graph_data)
 
@@ -172,6 +283,7 @@ async def get_graph():
 @bp.route("/analyze", methods=["GET"])
 @login_required
 @require_scope("infrastructure:read")
+@graph_limited
 async def analyze_graph():
     """
     Analyze dependency graph and return insights.
@@ -181,18 +293,25 @@ async def analyze_graph():
 
     Returns:
         200: Graph analysis metrics
+        403: Token carries no tenant claim
     """
     db = current_app.db_read
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": _MISSING_TENANT}), 403
 
     org_id = request.args.get("organization_id", type=int)
 
     def analyze():
-        # Build query
-        query = db.entities.id > 0
-        if org_id:
-            query &= db.entities.organization_id == org_id
+        # Restrict the analysis to the caller's own organizations.
+        org_ids = _tenant_org_ids(db, tenant_id)
+        query = _tenant_entity_query(db, org_ids, org_id) if org_ids else None
 
-        entities = db(query).select()
+        entities, truncated = (
+            _select_capped(db, query, db.entities.id, GRAPH_MAX_NODES)
+            if query is not None
+            else ([], False)
+        )
         entity_ids = [e.id for e in entities]
 
         # Early return if no entities found
@@ -202,6 +321,7 @@ async def analyze_graph():
                     "total_entities": 0,
                     "total_dependencies": 0,
                     "entities_by_type": {},
+                    "truncated": False,
                 },
                 "graph_metrics": {
                     "density": 0,
@@ -216,12 +336,7 @@ async def analyze_graph():
                 },
             }
 
-        dependencies = db(
-            (db.dependencies.source_type == "entity")
-            & (db.dependencies.source_id.belongs(entity_ids))
-            & (db.dependencies.target_type == "entity")
-            & (db.dependencies.target_id.belongs(entity_ids))
-        ).select()
+        dependencies, edges_truncated = _entity_edges(db, entity_ids)
 
         # Build NetworkX graph for analysis
         G = nx.DiGraph()
@@ -244,6 +359,7 @@ async def analyze_graph():
                 "total_entities": len(entities),
                 "total_dependencies": len(dependencies),
                 "entities_by_type": _count_by_type(entities),
+                "truncated": truncated or edges_truncated,
             },
             "graph_metrics": {
                 "density": nx.density(G) if len(entities) > 1 else 0,
@@ -278,9 +394,10 @@ async def analyze_graph():
                 if deg > 0
             ]
 
-        # Detect cycles (circular dependencies)
+        # Detect cycles (circular dependencies). Enumeration is exponential in
+        # the worst case, so stop after a fixed number of cycles.
         try:
-            cycles = list(nx.simple_cycles(G))
+            cycles = list(islice(nx.simple_cycles(G), GRAPH_MAX_CYCLES))
             analysis["issues"] = {
                 "circular_dependencies": len(cycles),
                 "cycles": cycles[:5] if cycles else [],  # Return first 5 cycles
@@ -301,6 +418,7 @@ async def analyze_graph():
 @bp.route("/path", methods=["GET"])
 @login_required
 @require_scope("infrastructure:read")
+@graph_limited
 async def find_path():
     """
     Find dependency path between two entities.
@@ -311,10 +429,13 @@ async def find_path():
 
     Returns:
         200: Path information
-        404: No path found
+        403: Token carries no tenant claim
+        404: Entity not found
     """
     db = current_app.db_read
     tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": _MISSING_TENANT}), 403
 
     from_id = request.args.get("from", type=int)
     to_id = request.args.get("to", type=int)
@@ -336,12 +457,23 @@ async def find_path():
         if not to_entity:
             return None, "Target entity not found", 404
 
-        # Build graph - only include entity dependencies
-        dependencies = db(
-            (db.dependencies.source_type == "entity")
-            & (db.dependencies.target_type == "entity")
-        ).select()
+        # Build the graph only from the caller's own entities, so a path can
+        # never route through (or reveal) another tenant's entity.
+        org_ids = _tenant_org_ids(db, tenant_id)
+        tenant_entities, nodes_truncated = _select_capped(
+            db,
+            db.entities.organization_id.belongs(org_ids),
+            db.entities.id,
+            GRAPH_MAX_NODES,
+        )
+        entity_map = {e.id: e for e in tenant_entities}
+        entity_map[from_entity.id] = from_entity
+        entity_map[to_entity.id] = to_entity
+        dependencies, edges_truncated = _entity_edges(db, list(entity_map))
+        truncated = nodes_truncated or edges_truncated
+
         G = nx.DiGraph()
+        G.add_nodes_from((from_id, to_id))
 
         for dep in dependencies:
             G.add_edge(dep.source_id, dep.target_id, dependency_id=dep.id)
@@ -349,40 +481,33 @@ async def find_path():
         # Find path
         try:
             path = nx.shortest_path(G, from_id, to_id)
-            path_length = len(path) - 1
+        except (nx.NetworkXNoPath, nx.NodeNotFound):
+            result = {
+                "path_exists": False,
+                "message": f"No dependency path from {from_entity.name} to {to_entity.name}",
+            }
+            if truncated:
+                result["truncated"] = True
+            return result, None, 200
 
-            # Get entities in path
-            entities_in_path = db(db.entities.id.belongs(path)).select()
-            entity_map = {e.id: e for e in entities_in_path}
+        path_details = [
+            {
+                "id": eid,
+                "name": entity_map[eid].name,
+                "type": entity_map[eid].type,
+            }
+            for eid in path
+        ]
 
-            path_details = [
-                {
-                    "id": eid,
-                    "name": entity_map[eid].name,
-                    "type": entity_map[eid].type,
-                }
-                for eid in path
-            ]
-
-            return (
-                {
-                    "path_exists": True,
-                    "path_length": path_length,
-                    "path": path_details,
-                },
-                None,
-                200,
-            )
-
-        except nx.NetworkXNoPath:
-            return (
-                {
-                    "path_exists": False,
-                    "message": f"No dependency path from {from_entity.name} to {to_entity.name}",
-                },
-                None,
-                200,
-            )
+        return (
+            {
+                "path_exists": True,
+                "path_length": len(path) - 1,
+                "path": path_details,
+            },
+            None,
+            200,
+        )
 
     result, error, status = await run_in_threadpool(find_path_impl)
 
@@ -395,6 +520,7 @@ async def find_path():
 @bp.route("/map", methods=["GET"])
 @login_required
 @require_scope("infrastructure:read")
+@graph_limited
 async def get_map():
     """
     Get global map of all resources and relationships for visualization.
@@ -432,7 +558,7 @@ async def get_map():
     include_dependencies = (
         request.args.get("include_dependencies", "true").lower() == "true"
     )
-    limit = request.args.get("limit", 500, type=int)
+    limit = parse_limit(request.args, 500, GRAPH_MAX_NODES)
 
     # Parse resource types
     resource_types = (
@@ -991,78 +1117,191 @@ def _get_node_style_by_resource(resource_type: str, subtype: str = None) -> tupl
     return resource_styles.get(resource_type, ("dot", "#95a5a6"))
 
 
-def _get_entity_subgraph(db, entity, depth: int, tenant_id: int | None):
+def _walk_entity_subgraph(
+    db,
+    entity,
+    depth: int,
+    org_ids: list[int],
+    tenant_id: int | None = None,
+    dependency_types: list[str] | None = None,
+) -> SubgraphWalk:
     """
-    Get entities within depth distance from given entity.
+    Walk entity-to-entity dependencies breadth-first from ``entity``.
+
+    Issues a fixed number of queries per level (one for the frontier's
+    edges, one for the newly reached entities) regardless of how many
+    entities the level holds, and stops at the depth, node and edge caps.
 
     Args:
         db: PyDAL database instance
         entity: Center entity (PyDAL row), already tenant-verified by the caller
-        depth: Maximum depth (-1 for unlimited)
-        tenant_id: Caller's tenant id (gh-237) — dependency edges aren't
-            themselves tenant-filtered, so each traversed entity is
-            re-verified against the caller's tenant before being added;
-            an edge into another tenant's entity is silently dropped
+        depth: Maximum depth; clamped to GRAPH_MAX_DEPTH
+        org_ids: Organizations owned by the caller's tenant (gh-237) — each
+            level's entities are fetched restricted to these organizations,
+            so an edge into another tenant's entity is silently dropped
             rather than surfaced, since it should never legitimately exist.
+        tenant_id: Caller's tenant; when given, edges recorded for another
+            tenant are excluded in the query itself so they are never read
+            (legacy edges with no recorded tenant are still considered and
+            filtered through ``org_ids``).
+        dependency_types: Optional dependency types to follow
 
     Returns:
-        List of entities in subgraph
+        SubgraphWalk with the reached entities, their depths, and truncation
     """
-    if depth == -1:
-        depth = 9999
-
+    walk = SubgraphWalk(entities=[entity], depths={entity.id: 0})
     visited = {entity.id}
-    current_level = [entity]
-    all_entities = [entity]
+    frontier = [entity.id]
 
-    for _ in range(depth):
-        if not current_level:
+    for level in range(1, max(0, min(depth, GRAPH_MAX_DEPTH)) + 1):
+        if not frontier or not org_ids:
             break
 
-        next_level = []
+        # One query for every edge touching the current level.
+        edge_query = (
+            (db.dependencies.source_type == "entity")
+            & (db.dependencies.target_type == "entity")
+            & (
+                db.dependencies.source_id.belongs(frontier)
+                | db.dependencies.target_id.belongs(frontier)
+            )
+        )
+        if tenant_id:
+            edge_query &= (db.dependencies.tenant_id == tenant_id) | (
+                db.dependencies.tenant_id == None  # noqa: E711 - SQL IS NULL
+            )
+        if dependency_types:
+            edge_query &= db.dependencies.dependency_type.belongs(dependency_types)
+        deps, edges_cut = _select_capped(
+            db, edge_query, db.dependencies.id, GRAPH_MAX_EDGES
+        )
+        walk.truncated = walk.truncated or edges_cut
 
-        for e in current_level:
-            # Get outgoing dependencies (this entity depends on others)
-            outgoing = db(
-                (db.dependencies.source_type == "entity")
-                & (db.dependencies.source_id == e.id)
-            ).select()
-            for dep in outgoing:
-                if dep.target_id not in visited:
-                    visited.add(dep.target_id)
-                    target = get_tenant_scoped(
-                        db,
-                        db.entities,
-                        dep.target_id,
-                        tenant_id,
-                        org_fk="organization_id",
-                    )
-                    if target:
-                        next_level.append(target)
-                        all_entities.append(target)
+        candidates = {dep.source_id for dep in deps} | {dep.target_id for dep in deps}
+        candidates -= visited
+        if not candidates:
+            break
+        visited |= candidates
 
-            # Get incoming dependencies (others depend on this entity)
-            incoming = db(
-                (db.dependencies.target_type == "entity")
-                & (db.dependencies.target_id == e.id)
-            ).select()
-            for dep in incoming:
-                if dep.source_id not in visited:
-                    visited.add(dep.source_id)
-                    source = get_tenant_scoped(
-                        db,
-                        db.entities,
-                        dep.source_id,
-                        tenant_id,
-                        org_fk="organization_id",
-                    )
-                    if source:
-                        next_level.append(source)
-                        all_entities.append(source)
+        remaining = GRAPH_MAX_NODES - len(walk.entities)
+        if remaining <= 0:
+            walk.truncated = True
+            break
 
-        current_level = next_level
+        # One query for the level's entities, restricted to the caller's orgs.
+        rows, nodes_cut = _select_capped(
+            db,
+            db.entities.id.belongs(sorted(candidates))
+            & db.entities.organization_id.belongs(org_ids),
+            db.entities.id,
+            remaining,
+        )
+        walk.truncated = walk.truncated or nodes_cut
+        walk.entities.extend(rows)
+        frontier = [row.id for row in rows]
+        walk.depths.update(dict.fromkeys(frontier, level))
 
-    return all_entities
+    return walk
+
+
+def _get_entity_subgraph(
+    db, entity, depth: int, org_ids: list[int], tenant_id: int | None = None
+) -> tuple[list, bool]:
+    """
+    Get entities within depth distance from given entity.
+
+    Thin wrapper over ``_walk_entity_subgraph`` for callers that only need
+    the reached entities and the truncation flag.
+
+    Returns:
+        (entities in subgraph, whether the node/edge cap cut the walk short)
+    """
+    walk = _walk_entity_subgraph(db, entity, depth, org_ids, tenant_id)
+    return walk.entities, walk.truncated
+
+
+def scoped_entity_search_graph(
+    db,
+    tenant_id: int | None,
+    start_entity_id: int,
+    max_depth: int,
+    dependency_types: list[str] | None = None,
+) -> dict | None:
+    """
+    Build the graph-search result for one entity inside the caller's tenant.
+
+    Returns ``None`` when the start entity is missing or belongs to another
+    tenant (callers map that to 404). Entity-to-entity edges are returned
+    only between reached entities; edges from a reached entity to a
+    non-entity resource are returned only when the edge is recorded for the
+    caller's tenant.
+    """
+    entity = get_tenant_scoped(
+        db, db.entities, start_entity_id, tenant_id, org_fk="organization_id"
+    )
+    if not entity:
+        return None
+
+    org_ids = _tenant_org_ids(db, tenant_id)
+    walk = _walk_entity_subgraph(
+        db, entity, max_depth, org_ids, tenant_id, dependency_types
+    )
+    reached = set(walk.depths)
+    ids = sorted(reached)
+
+    edge_query = (
+        (db.dependencies.source_type == "entity")
+        & (db.dependencies.source_id.belongs(ids))
+    ) | (
+        (db.dependencies.target_type == "entity")
+        & (db.dependencies.target_id.belongs(ids))
+    )
+    edge_query &= (db.dependencies.tenant_id == tenant_id) | (
+        db.dependencies.tenant_id == None  # noqa: E711 - SQL IS NULL
+    )
+    if dependency_types:
+        edge_query &= db.dependencies.dependency_type.belongs(dependency_types)
+    deps, edges_cut = _select_capped(
+        db, edge_query, db.dependencies.id, GRAPH_MAX_EDGES
+    )
+
+    edges = []
+    for dep in deps:
+        if dep.source_type == "entity" and dep.target_type == "entity":
+            if dep.source_id not in reached or dep.target_id not in reached:
+                continue
+        elif dep.tenant_id != tenant_id:
+            # Non-entity endpoint: only edges owned by the caller's tenant.
+            continue
+        edges.append(
+            {
+                "source": dep.source_id,
+                "target": dep.target_id,
+                "type": dep.dependency_type,
+                "metadata": dep.metadata,
+            }
+        )
+
+    nodes = [
+        {
+            "id": row.id,
+            "name": row.name,
+            "entity_type": row.type,
+            "sub_type": row.sub_type,
+            "depth": walk.depths[row.id],
+        }
+        for row in walk.entities
+    ]
+
+    return {
+        "start_entity_id": start_entity_id,
+        "max_depth": max_depth,
+        "nodes": nodes,
+        "edges": edges,
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+        "truncated": walk.truncated or edges_cut,
+    }
 
 
 def _count_by_type(entities) -> dict[str, int]:

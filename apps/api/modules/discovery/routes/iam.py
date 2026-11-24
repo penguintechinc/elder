@@ -9,6 +9,7 @@ from quart import Blueprint, current_app, jsonify, request
 from apps.api.auth.decorators import admin_required, login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.iam import IAMService
+from apps.api.utils.pagination import parse_limit
 
 logger = logging.getLogger(__name__)
 
@@ -263,7 +264,7 @@ def list_users(provider_id):
 
         kwargs = {}
         if request.args.get("limit"):
-            kwargs["limit"] = int(request.args.get("limit"))
+            kwargs["limit"] = parse_limit(request.args, 100)
         if request.args.get("next_token"):
             kwargs["next_token"] = request.args.get("next_token")
 
@@ -417,7 +418,7 @@ def list_roles(provider_id):
 
         kwargs = {}
         if request.args.get("limit"):
-            kwargs["limit"] = int(request.args.get("limit"))
+            kwargs["limit"] = parse_limit(request.args, 100)
         if request.args.get("next_token"):
             kwargs["next_token"] = request.args.get("next_token")
 
@@ -572,7 +573,7 @@ def list_policies(provider_id):
 
         kwargs = {}
         if request.args.get("limit"):
-            kwargs["limit"] = int(request.args.get("limit"))
+            kwargs["limit"] = parse_limit(request.args, 100)
         if request.args.get("next_token"):
             kwargs["next_token"] = request.args.get("next_token")
 
@@ -918,7 +919,7 @@ def list_groups(provider_id):
 
         kwargs = {}
         if request.args.get("limit"):
-            kwargs["limit"] = int(request.args.get("limit"))
+            kwargs["limit"] = parse_limit(request.args, 100)
         if request.args.get("next_token"):
             kwargs["next_token"] = request.args.get("next_token")
 
