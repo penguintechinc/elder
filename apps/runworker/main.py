@@ -147,9 +147,7 @@ class RunWorkerConfig:
             heartbeat_interval = max(5.0, float(raw_hb_interval))
         except ValueError:
             heartbeat_interval = 30.0
-        worker_version = (
-            os.getenv("ELDER_VERSION") or os.getenv("APP_VERSION") or ""
-        ).strip()
+        worker_version = _resolve_worker_version()
         return cls(
             elder_api_url=api_url,
             elder_internal_token=token,
@@ -170,6 +168,26 @@ class RunWorkerConfig:
             heartbeat_interval_seconds=heartbeat_interval,
             worker_version=worker_version,
         )
+
+
+def _resolve_worker_version() -> str:
+    """Resolve the svc-runworker version from env vars or baked .version file."""
+    for env_key in ("ELDER_VERSION", "APP_VERSION"):
+        val = (os.getenv(env_key) or "").strip()
+        if val and val != "0.0.0":
+            return val
+    candidates = (
+        Path(__file__).resolve().parents[2] / ".version",
+        Path("/app/.version"),
+    )
+    for path in candidates:
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+            if text:
+                return text
+        except OSError:
+            continue
+    return ""
 
 
 CONFIGMAP_MAX_CODE_BYTES = 900 * 1024  # Safe margin below K8s 1 MiB etcd limit
