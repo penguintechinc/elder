@@ -470,7 +470,7 @@ MODULES = (
     ModuleManifest(
         name="access_reviews",
         title="Access Reviews",
-        license_feature=None,
+        license_feature="access-reviews",
         depends_on=(),
         blueprints=_access_reviews_blueprints,
         models_import=(

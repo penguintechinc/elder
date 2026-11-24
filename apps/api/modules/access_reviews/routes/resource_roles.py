@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
+from apps.api.licensing_fallback import license_required
 from apps.api.models.dataclasses import ResourceRoleDTO, from_pydal_rows
 from apps.api.models.pydantic import CreateResourceRoleRequest, ResourceRoleResponse
 from apps.api.utils.async_utils import run_in_threadpool
@@ -117,6 +118,7 @@ def _get_tenant_scoped_role(db, table, role_id: int, tenant_id: int | None):
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("access_reviews:read")
+@license_required("enterprise")
 async def list_resource_roles():
     """
     List resource role assignments with optional filtering.
@@ -220,6 +222,7 @@ async def list_resource_roles():
 @bp.route("", methods=["POST"])
 @login_required
 @require_scope("access_reviews:write")
+@license_required("enterprise")
 async def create_resource_role():
     """
     Grant a resource role to an identity or group.
@@ -384,6 +387,7 @@ async def create_resource_role():
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
 @require_scope("access_reviews:write")
+@license_required("enterprise")
 async def revoke_resource_role(id: int):
     """
     Revoke a resource role.
@@ -452,6 +456,7 @@ async def revoke_resource_role(id: int):
 @bp.route("/entities/<int:id>/roles", methods=["GET"])
 @login_required
 @require_scope("access_reviews:read")
+@license_required("enterprise")
 async def list_entity_roles(id: int):
     """
     List all resource roles for an entity.
@@ -513,6 +518,7 @@ async def list_entity_roles(id: int):
 @bp.route("/organizations/<int:id>/roles", methods=["GET"])
 @login_required
 @require_scope("access_reviews:read")
+@license_required("enterprise")
 async def list_organization_roles(id: int):
     """
     List all resource roles for an organization.
@@ -571,6 +577,7 @@ async def list_organization_roles(id: int):
 @bp.route("/identities/<int:id>/resource-roles", methods=["GET"])
 @login_required
 @require_scope("access_reviews:read")
+@license_required("enterprise")
 async def list_identity_resource_roles(id: int):
     """
     List all resource roles assigned to an identity.

@@ -248,10 +248,10 @@ class TestPhaseZeroModules:
         assert "infrastructure:write" in infra.scopes
         assert "infrastructure:admin" in infra.scopes
 
-    def test_access_reviews_not_feature_paywalled(self):
-        """Test that access_reviews is available on all tiers (scale, not features)."""
+    def test_access_reviews_license_gated(self):
+        """Test that access_reviews module is license-gated."""
         ar = next(m for m in MODULES if m.name == "access_reviews")
-        assert ar.license_feature is None
+        assert ar.license_feature == "access-reviews"
         assert "access_reviews:admin" in ar.scopes
 
     def test_discovery_depends_on_infrastructure(self):

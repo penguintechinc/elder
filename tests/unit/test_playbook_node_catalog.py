@@ -208,18 +208,23 @@ class TestNodeCatalogAndValidation:
         db = app.db
         t = self.fixtures["tenant_id"]
 
-        from unittest.mock import patch
+        fake_license = MagicMock()
+        fake_license.check_feature.side_effect = lambda feat: feat != "access-reviews"
+        old_license = app.extensions.get("license_client")
+        app.extensions["license_client"] = fake_license
 
         def _toggle_and_fetch():
             set_module_enabled(db, app.extensions.get("module_redis"), t, "ipam", False)
             db.commit()
-            with patch(
-                "apps.api.modules.streams.node_catalog.module_licensed",
-                side_effect=lambda _app, manifest: manifest.name != "access_reviews",
-            ):
-                return get_node_catalog(app, db, t)
+            return get_node_catalog(app, db, t)
 
-        catalog = await run_in_threadpool(_toggle_and_fetch)
+        try:
+            catalog = await run_in_threadpool(_toggle_and_fetch)
+        finally:
+            if old_license is None:
+                app.extensions.pop("license_client", None)
+            else:
+                app.extensions["license_client"] = old_license
 
         by_type = {n["node_type"]: n for n in catalog["nodes"]}
 
@@ -229,6 +234,7 @@ class TestNodeCatalogAndValidation:
             == "MODULE_DISABLED"
         )
         assert by_type["transform_elder_list_entities"]["enabled"] is True
+        # access_reviews requires license feature 'access-reviews'
         assert by_type["transform_elder_list_access_reviews"]["enabled"] is False
         assert (
             by_type["transform_elder_list_access_reviews"]["disabled_code"]
