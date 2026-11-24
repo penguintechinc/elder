@@ -46,33 +46,28 @@ RUN set -eu; \
     rm -f /tmp/.version; \
     npm run build
 
-# Production stage — serve built files via a rootless nginx reverse proxy.
-# This is what makes login work from ANY browser, not just one on the
-# cluster host: the SPA calls a RELATIVE /api/v1 base (see
-# src/lib/api.ts — VITE_API_URL built empty), so the browser only ever
-# talks to this container's own origin; nginx same-origin-proxies /api/*
-# server-side to the elder-api Service (see nginx.conf). No more separate
-# NodePort origin for the API that only resolves from the cluster host.
-#
-# nginxinc/nginx-unprivileged already runs as non-root (uid 101 "nginx")
-# and listens on 8080 (not the privileged port 80) — no useradd juggling
-# needed, unlike the old node-based `serve` runtime.
-FROM nginxinc/nginx-unprivileged:1.27-bookworm@sha256:f9dfa9c20b2b0b7c5cc830374f22f23dee3f750b6c5291ca7e0330b5c88e6403 AS runner
+# Production stage — serve built SPA via rootless Express on Node 24 (PenguinTech standard).
+# In-cluster, Envoy (Cilium Gateway API HTTPRoute) routes /api directly to hub-api
+# and / to hub-webui. Express also proxies /api for local/port-forward access.
+FROM node:24-bookworm-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c AS runner
 
-# All of this image's writable paths (nginx pid, proxy/client/fastcgi temp
-# dirs) live under /tmp per its baked-in nginx.conf — which the Helm chart
-# already mounts as an emptyDir for the web component — so no extra
-# chown/volume wiring is needed even under readOnlyRootFilesystem: true.
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY web/nginx.conf /etc/nginx/conf.d/default.conf
+WORKDIR /app
 
-# Explicit non-root user. The nginx-unprivileged base already runs as this
-# uid; declared here so the rootless check + reviewers can see it plainly.
-USER 101
+ENV NODE_ENV=production
+ENV PORT=8080
+
+COPY web/package.json web/package-lock.json web/.npmrc ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+
+COPY --from=builder /app/dist ./dist
+COPY web/server.ts ./server.ts
+
+# Run as the built-in unprivileged `node` user (uid 1000, matching Helm securityContext.runAsUser: 1000).
+USER 1000
 
 EXPOSE 8080
 
-# No curl/wget/node in this image to build a native HEALTHCHECK around;
-# k8s liveness/readiness httpGet probes (deployment.yaml) cover this
-# instead — see devops-containers.md (native binary only, no curl/wget).
-CMD ["nginx", "-g", "daemon off;"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+
+CMD ["node", "server.ts"]
