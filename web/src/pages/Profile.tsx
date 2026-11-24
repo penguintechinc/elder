@@ -1,6 +1,17 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { User, Mail, Building2, Lock, Shield, Copy, CheckCircle } from 'lucide-react'
+import {
+  User,
+  Mail,
+  Building2,
+  Lock,
+  Shield,
+  Copy,
+  CheckCircle,
+  Download,
+  RefreshCw,
+} from 'lucide-react'
+import QRCode from 'qrcode'
 import toast from 'react-hot-toast'
 import api, { type MfaSetupResponse } from '@/lib/api'
 import Button from '@/components/Button'
@@ -23,8 +34,37 @@ export default function Profile() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [mfaSetup, setMfaSetup] = useState<MfaSetupResponse | null>(null)
+  const [mfaQrDataUrl, setMfaQrDataUrl] = useState<string | null>(null)
+  const [regeneratedBackupCodes, setRegeneratedBackupCodes] = useState<string[] | null>(null)
   const [totpCode, setTotpCode] = useState('')
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    let cancelled = false
+    if (!mfaSetup?.provisioning_uri) {
+      setMfaQrDataUrl(null)
+      return
+    }
+    QRCode.toString(mfaSetup.provisioning_uri, {
+      type: 'svg',
+      width: 220,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+    })
+      .then((svg) => {
+        if (!cancelled) {
+          setMfaQrDataUrl(
+            `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+          )
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setMfaQrDataUrl(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [mfaSetup?.provisioning_uri])
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ['profile'],
@@ -99,6 +139,7 @@ export default function Profile() {
     mutationFn: () => api.disableMfa(),
     onSuccess: async () => {
       setMfaSetup(null)
+      setRegeneratedBackupCodes(null)
       setTotpCode('')
       await queryClient.invalidateQueries({ queryKey: ['profile'] })
       await queryClient.invalidateQueries({ queryKey: ['portal-profile'] })
@@ -109,6 +150,50 @@ export default function Profile() {
       toast.error(error.response?.data?.error || 'Failed to disable MFA')
     },
   })
+
+  const regenerateBackupCodesMutation = useMutation({
+    mutationFn: () => api.regenerateMfaBackupCodes(),
+    onSuccess: async (data) => {
+      setRegeneratedBackupCodes(data.backup_codes)
+      await queryClient.invalidateQueries({ queryKey: ['profile'] })
+      await queryClient.invalidateQueries({ queryKey: ['portal-profile'] })
+      toast.success('New backup codes generated. Previous codes are now invalid.')
+    },
+    onError: (error: ApiError) => {
+      toast.error(error.response?.data?.error || 'Failed to regenerate backup codes')
+    },
+  })
+
+  const handleDownloadBackupCodes = (codes: string[]) => {
+    const content = [
+      'Elder MFA Recovery / Bypass Codes',
+      `Account: ${profile?.email || 'unknown'}`,
+      `Generated: ${new Date().toISOString()}`,
+      '',
+      'Each code can be used once to sign in if you lose access to Google Authenticator:',
+      ...codes.map((c, idx) => `${idx + 1}. ${c}`),
+      '',
+    ].join('\n')
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'elder-mfa-backup-codes.txt'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    toast.success('Backup codes downloaded')
+  }
+
+  const handleCopyBackupCodes = async (codes: string[]) => {
+    try {
+      await navigator.clipboard.writeText(codes.join('\n'))
+      toast.success('Backup codes copied to clipboard')
+    } catch {
+      toast.error('Failed to copy backup codes')
+    }
+  }
 
   const handleCopySecret = async () => {
     if (!mfaSetup?.secret) return
@@ -418,51 +503,99 @@ export default function Profile() {
           {mfaSetup ? (
             <div className="space-y-5">
               <p className="text-sm text-slate-300">
-                Add this account to Google Authenticator using the Base32 secret or
-                provisioning URI below, then enter a 6-digit code to verify your setup.
+                Scan this QR code with Google Authenticator (or any TOTP authenticator app),
+                or enter the Base32 secret key manually, then enter a 6-digit code below to
+                verify your setup.
               </p>
 
-              <div>
-                <span className="block text-sm font-medium text-slate-300 mb-1">
-                  Secret Key (Base32)
-                </span>
-                <div className="flex items-center gap-2">
-                  <code
-                    data-testid="mfa-setup-secret"
-                    className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-emerald-300 font-mono text-sm break-all"
-                  >
-                    {mfaSetup.secret}
-                  </code>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={handleCopySecret}
-                    aria-label="Copy Base32 secret"
-                  >
-                    <Copy className="w-4 h-4 mr-1" />
-                    Copy
-                  </Button>
+              <div className="flex flex-col sm:flex-row gap-6 items-start">
+                <div className="flex-shrink-0 flex flex-col items-center">
+                  {mfaQrDataUrl ? (
+                    <img
+                      src={mfaQrDataUrl}
+                      alt="Google Authenticator QR Code"
+                      width={220}
+                      height={220}
+                      data-testid="mfa-qr-code"
+                      className="rounded-lg bg-white p-2 border border-slate-700"
+                    />
+                  ) : (
+                    <div
+                      data-testid="mfa-qr-loading"
+                      className="w-[220px] h-[220px] rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-xs text-slate-400"
+                    >
+                      Generating QR code...
+                    </div>
+                  )}
+                  <span className="mt-2 text-xs text-slate-400">
+                    Scan with Google Authenticator
+                  </span>
                 </div>
-              </div>
 
-              <div>
-                <span className="block text-sm font-medium text-slate-300 mb-1">
-                  Provisioning URI (otpauth://)
-                </span>
-                <code
-                  data-testid="mfa-setup-uri"
-                  className="block px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-300 font-mono text-xs break-all"
-                >
-                  {mfaSetup.provisioning_uri}
-                </code>
+                <div className="flex-1 w-full space-y-4">
+                  <div>
+                    <span className="block text-sm font-medium text-slate-300 mb-1">
+                      Manual Setup Key (Base32)
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <code
+                        data-testid="mfa-setup-secret"
+                        className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-emerald-300 font-mono text-sm break-all"
+                      >
+                        {mfaSetup.secret}
+                      </code>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={handleCopySecret}
+                        aria-label="Copy Base32 secret"
+                      >
+                        <Copy className="w-4 h-4 mr-1" />
+                        Copy
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="block text-sm font-medium text-slate-300 mb-1">
+                      Provisioning URI (otpauth://)
+                    </span>
+                    <code
+                      data-testid="mfa-setup-uri"
+                      className="block px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-300 font-mono text-xs break-all"
+                    >
+                      {mfaSetup.provisioning_uri}
+                    </code>
+                  </div>
+                </div>
               </div>
 
               {Array.isArray(mfaSetup.backup_codes) &&
                 mfaSetup.backup_codes.length > 0 && (
                   <div>
-                    <span className="block text-sm font-medium text-slate-300 mb-2">
-                      Backup Codes (save these in a safe place)
-                    </span>
+                    <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                      <span className="block text-sm font-medium text-slate-300">
+                        Backup / Bypass Codes (save these in a safe place)
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => handleCopyBackupCodes(mfaSetup.backup_codes)}
+                        >
+                          <Copy className="w-4 h-4 mr-1" />
+                          Copy All
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => handleDownloadBackupCodes(mfaSetup.backup_codes)}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          Download (.txt)
+                        </Button>
+                      </div>
+                    </div>
                     <div
                       data-testid="mfa-backup-codes"
                       className="grid grid-cols-2 sm:grid-cols-5 gap-2"
@@ -527,7 +660,73 @@ export default function Profile() {
                   policy and cannot be disabled.
                 </p>
               )}
-              <div>
+              <div className="pt-3 border-t border-slate-700 space-y-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <h3 className="text-sm font-medium text-white">
+                      Recovery / Bypass Codes
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      {typeof profile?.mfa_backup_codes_remaining === 'number'
+                        ? `${profile.mfa_backup_codes_remaining} single-use bypass code(s) remaining.`
+                        : 'Generate a fresh set of 10 single-use bypass codes.'}{' '}
+                      Resetting invalidates all previously issued codes.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    isLoading={regenerateBackupCodesMutation.isPending}
+                    onClick={() => regenerateBackupCodesMutation.mutate()}
+                  >
+                    <RefreshCw className="w-4 h-4 mr-1.5" />
+                    Reset Backup Codes
+                  </Button>
+                </div>
+
+                {regeneratedBackupCodes && regeneratedBackupCodes.length > 0 && (
+                  <div className="p-3 bg-slate-900/70 border border-slate-700 rounded-lg space-y-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-xs font-medium text-emerald-300">
+                        New Backup Codes — save or download now (shown once)
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => handleCopyBackupCodes(regeneratedBackupCodes)}
+                        >
+                          <Copy className="w-4 h-4 mr-1" />
+                          Copy All
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => handleDownloadBackupCodes(regeneratedBackupCodes)}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          Download (.txt)
+                        </Button>
+                      </div>
+                    </div>
+                    <div
+                      data-testid="mfa-regenerated-backup-codes"
+                      className="grid grid-cols-2 sm:grid-cols-5 gap-2"
+                    >
+                      {regeneratedBackupCodes.map((code) => (
+                        <code
+                          key={code}
+                          className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-center text-xs font-mono text-slate-200"
+                        >
+                          {code}
+                        </code>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2">
                 <Button
                   type="button"
                   variant="ghost"

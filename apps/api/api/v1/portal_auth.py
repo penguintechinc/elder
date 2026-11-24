@@ -6,6 +6,7 @@ MFA management, and password operations with tenant context.
 
 # flake8: noqa: E501
 
+import json
 from datetime import UTC, datetime, timezone
 from functools import wraps
 from inspect import iscoroutinefunction
@@ -478,6 +479,26 @@ async def confirm_mfa():
     return jsonify({"verified": True}), 200
 
 
+@bp.route("/mfa/backup-codes/regenerate", methods=["POST"])
+@portal_token_required
+def regenerate_mfa_backup_codes():
+    """Regenerate single-use MFA backup/bypass codes for the authenticated user.
+
+    Invalidates all previously generated backup codes and returns 10 new codes.
+
+    Returns:
+        JSON with ``backup_codes`` list and ``remaining`` count
+    """
+    user_id = int(request.portal_user["sub"])
+    result = PortalAuthService.regenerate_backup_codes(user_id)
+
+    if "error" in result:
+        status_code = result.get("status_code", 400)
+        return jsonify({"error": result["error"]}), status_code
+
+    return jsonify(result), 200
+
+
 @bp.route("/mfa/disable", methods=["POST"])
 @portal_token_required
 def disable_mfa():
@@ -668,6 +689,18 @@ def get_current_user():
         user_created_at=getattr(user, "created_at", None),
     )
 
+    raw_backup_codes = getattr(user, "mfa_backup_codes", None)
+    if isinstance(raw_backup_codes, str):
+        try:
+            raw_backup_codes = json.loads(raw_backup_codes)
+        except ValueError:
+            raw_backup_codes = []
+    backup_codes_remaining = (
+        len(raw_backup_codes) if isinstance(raw_backup_codes, list) else 0
+    )
+    last_login_at = getattr(user, "last_login_at", None)
+    created_at = getattr(user, "created_at", None)
+
     return (
         jsonify(
             {
@@ -677,9 +710,22 @@ def get_current_user():
                 "tenant_id": user.tenant_id,
                 "tenant_role": user.tenant_role,
                 "global_role": user.global_role,
+                "is_active": bool(getattr(user, "is_active", True)),
+                "auth_provider": getattr(user, "auth_provider", None) or "local",
                 "mfa_enabled": mfa_enabled,
+                "mfa_backup_codes_remaining": backup_codes_remaining,
                 **mfa_status,
                 "email_verified": user.email_verified,
+                "last_login_at": (
+                    last_login_at.isoformat()
+                    if hasattr(last_login_at, "isoformat")
+                    else last_login_at
+                ),
+                "created_at": (
+                    created_at.isoformat()
+                    if hasattr(created_at, "isoformat")
+                    else created_at
+                ),
                 "permissions": permissions,
             }
         ),

@@ -5985,6 +5985,17 @@
   },
   {
     "service": "portal-auth",
+    "operation": "regenerate_mfa_backup_codes",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/mfa/backup-codes/regenerate",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Regenerate single-use MFA backup/bypass codes for the authenticated user.",
+    "has_body": true,
+    "destructive": true
+  },
+  {
+    "service": "portal-auth",
     "operation": "update_current_user",
     "method": "PATCH",
     "path": "/api/v1/portal-auth/me",

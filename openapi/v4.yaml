@@ -13664,6 +13664,13 @@ paths:
       parameters: []
       responses: {}
       summary: Update current authenticated portal user info.
+  /api/v1/portal-auth/mfa/backup-codes/regenerate:
+    post:
+      description: "\nInvalidates all previously generated backup codes and returns 10 new single-use codes."
+      operationId: post_regenerate_mfa_backup_codes
+      parameters: []
+      responses: {}
+      summary: Regenerate single-use MFA backup/bypass codes for the authenticated user.
   /api/v1/portal-auth/mfa/confirm:
     post:
       description: "\nRequest body:\n    totp_code: str - 6-digit TOTP code from Google\
