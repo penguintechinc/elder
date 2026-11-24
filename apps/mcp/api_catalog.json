@@ -8111,7 +8111,7 @@
       "id"
     ],
     "wildcard_path_params": [],
-    "summary": "Update a vulnerability's editable metadata, ownership, CVSS, adjusted risk score, or remediation issue.",
+    "summary": "Update a vulnerability's metadata, ownership, CVSS, adjusted risk score, or remediation issue.",
     "has_body": true,
     "destructive": true
   },
@@ -8124,7 +8124,7 @@
       "id"
     ],
     "wildcard_path_params": [],
-    "summary": "Update a vulnerability's editable metadata, ownership, CVSS, adjusted risk score, or remediation issue.",
+    "summary": "Update a vulnerability's metadata, ownership, CVSS, adjusted risk score, or remediation issue.",
     "has_body": true,
     "destructive": true
   },

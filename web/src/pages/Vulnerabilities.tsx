@@ -864,10 +864,14 @@ export default function Vulnerabilities() {
             >
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                  <label
+                    htmlFor="assign-parent-type"
+                    className="block text-sm font-medium text-slate-300 mb-1"
+                  >
                     Type
                   </label>
                   <select
+                    id="assign-parent-type"
                     name="parent_type"
                     value={assignParentType}
                     onChange={(e) => {
@@ -881,9 +885,9 @@ export default function Vulnerabilities() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                  <span className="block text-sm font-medium text-slate-300 mb-1">
                     {assignParentType === "service" ? "Service" : "Software"}
-                  </label>
+                  </span>
                   <SearchableSelect
                     options={
                       assignParentType === "service"
@@ -905,10 +909,14 @@ export default function Vulnerabilities() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                  <label
+                    htmlFor="assign-notes"
+                    className="block text-sm font-medium text-slate-300 mb-1"
+                  >
                     Notes (optional)
                   </label>
                   <textarea
+                    id="assign-notes"
                     name="notes"
                     rows={3}
                     maxLength={5000}
@@ -1038,9 +1046,9 @@ export default function Vulnerabilities() {
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                    <span className="block text-sm font-medium text-slate-300 mb-1.5">
                       Owning OU (Organization)
-                    </label>
+                    </span>
                     <SearchableSelect
                       options={orgOptions}
                       value={newOwnerOrgId}
@@ -1051,9 +1059,9 @@ export default function Vulnerabilities() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                    <span className="block text-sm font-medium text-slate-300 mb-1.5">
                       Owning Resource (Entity)
-                    </label>
+                    </span>
                     <SearchableSelect
                       options={entityOptions}
                       value={newOwnerEntityId}
@@ -1204,9 +1212,9 @@ export default function Vulnerabilities() {
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                    <span className="block text-sm font-medium text-slate-300 mb-1.5">
                       Owning OU (Organization)
-                    </label>
+                    </span>
                     <SearchableSelect
                       options={orgOptions}
                       value={editOwnerOrgId}
@@ -1217,9 +1225,9 @@ export default function Vulnerabilities() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                    <span className="block text-sm font-medium text-slate-300 mb-1.5">
                       Owning Resource (Entity)
-                    </label>
+                    </span>
                     <SearchableSelect
                       options={entityOptions}
                       value={editOwnerEntityId}
@@ -1366,9 +1374,9 @@ export default function Vulnerabilities() {
                   will also be saved as the vulnerability&apos;s Owning OU.
                 </p>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  <span className="block text-sm font-medium text-slate-300 mb-1.5">
                     Owning OU (Organization)
-                  </label>
+                  </span>
                   <SearchableSelect
                     options={orgOptions}
                     value={issueOrgId}
