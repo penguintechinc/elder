@@ -14,8 +14,9 @@ const DEFAULT_DIST = join(dirname(fileURLToPath(import.meta.url)), "dist");
  * Create the Express static server for the Elder Web UI.
  *
  * Route order is load-bearing:
- * 1. /healthz — dependency-free container health probe
- * 2. /api     — same-origin fallback proxy to hub-api (Envoy handles /api in-cluster)
+ * 1. /livez   — dependency-free container self-check (Docker HEALTHCHECK)
+ * 2. /api & /healthz — proxied to hub-api so Admin Settings System Health and
+ *    the K8s readinessProbe reflect live API health JSON
  * 3. static   — hashed Vite bundles cached immutably for 1 year
  * 4. fallback — SPA deep links serve index.html with Cache-Control: no-cache
  */
@@ -26,13 +27,13 @@ export function createApp(options: ServerOptions = {}): Express {
   const app = express();
   app.disable("x-powered-by");
 
-  app.get("/healthz", (_req, res) => {
+  app.get("/livez", (_req, res) => {
     res.status(200).type("text/plain").send("ok");
   });
 
   app.use(
     createProxyMiddleware({
-      pathFilter: "/api",
+      pathFilter: ["/api", "/healthz"],
       target: apiUrl,
       changeOrigin: true,
       ws: true,
