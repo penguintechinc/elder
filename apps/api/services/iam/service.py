@@ -3,8 +3,8 @@
 # flake8: noqa: E501
 
 import json
-from datetime import UTC, datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from apps.api.services.iam.aws_client import AWSIAMClient
 from apps.api.services.iam.base import BaseIAMProvider
@@ -51,44 +51,103 @@ def _is_blank_or_redacted_secret(value: Any) -> bool:
     return False
 
 
+class IAMTenantRequiredError(PermissionError):
+    """Raised when an IAM operation is attempted without a verified tenant id."""
+
+
+class IAMProviderNotFoundError(LookupError):
+    """Raised when a provider/organization does not exist in the caller's tenant.
+
+    Rows owned by another tenant are reported exactly like missing rows so
+    callers cannot enumerate other tenants' ids.
+    """
+
+
+def _require_tenant(tenant_id: int | None) -> int:
+    """Return ``tenant_id`` or raise ``IAMTenantRequiredError`` (fail closed)."""
+    if not tenant_id:
+        raise IAMTenantRequiredError("A verified tenant id is required")
+    return int(tenant_id)
+
+
 class IAMService:
-    """Service layer for IAM management operations."""
+    """Service layer for IAM management operations.
+
+    Every public method takes the caller's verified ``tenant_id`` first.
+    ``iam_providers`` has no ``tenant_id`` column; tenancy is derived from
+    ``iam_providers.organization_id -> organizations.tenant_id``.
+    """
 
     def __init__(self, db):
         """
         Initialize IAMService.
 
         Args:
-            db: PyDAL database instance
+            db: penguin-dal database instance
         """
         self.db = db
 
-    def _get_provider_client(self, provider_id: int) -> BaseIAMProvider:
+    def _tenant_org_ids(self, tenant_id: int) -> list[int]:
+        """Return the ids of all organizations owned by ``tenant_id``."""
+        db = self.db
+        rows = db(db.organizations.tenant_id == tenant_id).select(db.organizations.id)
+        return [r.id for r in rows]
+
+    def _require_tenant_org(self, tenant_id: int, organization_id: int) -> int:
+        """Return ``organization_id`` if it belongs to ``tenant_id``, else raise."""
+        db = self.db
+        org = (
+            db(
+                (db.organizations.id == organization_id)
+                & (db.organizations.tenant_id == tenant_id)
+            )
+            .select(db.organizations.id)
+            .first()
+        )
+        if not org:
+            raise IAMProviderNotFoundError(f"Organization not found: {organization_id}")
+        return org.id
+
+    def _get_scoped_provider(
+        self, tenant_id: int | None, provider_id: int, label: str = "Provider"
+    ) -> Any:
+        """Load a provider row only if its organization belongs to ``tenant_id``."""
+        tid = _require_tenant(tenant_id)
+        org_ids = self._tenant_org_ids(tid)
+        provider = None
+        if provider_id and org_ids:
+            db = self.db
+            provider = (
+                db(
+                    (db.iam_providers.id == provider_id)
+                    & (db.iam_providers.organization_id.belongs(org_ids))
+                )
+                .select()
+                .first()
+            )
+        if not provider:
+            raise IAMProviderNotFoundError(f"{label} not found: {provider_id}")
+        return provider
+
+    def _get_provider_client(
+        self, tenant_id: int | None, provider_id: int
+    ) -> BaseIAMProvider:
         """
-        Get configured provider client.
-
-        Args:
-            provider_id: Provider ID from database
-
-        Returns:
-            Configured provider client instance
+        Get configured provider client for a provider in the caller's tenant.
 
         Raises:
-            Exception: If provider not found or invalid type
+            IAMTenantRequiredError: If no tenant id is supplied
+            IAMProviderNotFoundError: If the provider is missing or foreign
+            Exception: If the provider type is unsupported
         """
-        provider = self.db.iam_providers[provider_id]
-
-        if not provider:
-            raise Exception(f"IAM provider not found: {provider_id}")
+        provider = self._get_scoped_provider(tenant_id, provider_id, "IAM provider")
 
         config = provider.as_dict()
         config["provider_type"] = provider.provider_type
 
-        # Add config_json fields to config
         if provider.config_json:
-            config.update(provider.config_json)
+            config.update(_parse_json_dict(provider.config_json))
 
-        # Create appropriate client
         provider_type = provider.provider_type.lower()
 
         if provider_type == "aws_iam":
@@ -104,71 +163,64 @@ class IAMService:
 
     def list_providers(
         self,
+        tenant_id: int | None,
         enabled_only: bool = False,
         organization_id: int | None = None,
     ) -> list[dict[str, Any]]:
-        """List all IAM providers."""
-        query = self.db.iam_providers.id > 0
+        """List IAM providers in the caller's tenant."""
+        tid = _require_tenant(tenant_id)
+        org_ids = self._tenant_org_ids(tid)
+        if organization_id is not None:
+            org_ids = [o for o in org_ids if o == organization_id]
+        if not org_ids:
+            return []
 
+        query = self.db.iam_providers.organization_id.belongs(org_ids)
         if enabled_only:
             query &= self.db.iam_providers.enabled == True  # noqa: E712
-
-        if organization_id is not None:
-            query &= self.db.iam_providers.organization_id == organization_id
 
         providers = self.db(query).select(orderby=self.db.iam_providers.name)
 
         return [self._sanitize_provider(p.as_dict()) for p in providers]
 
-    def get_provider(self, provider_id: int) -> dict[str, Any]:
+    def get_provider(self, tenant_id: int | None, provider_id: int) -> dict[str, Any]:
         """Get provider details."""
-        provider = self.db.iam_providers[provider_id]
-
-        if not provider:
-            raise Exception(f"Provider not found: {provider_id}")
-
+        provider = self._get_scoped_provider(tenant_id, provider_id)
         return self._sanitize_provider(provider.as_dict())
 
     def create_provider(
         self,
+        tenant_id: int | None,
         name: str,
         provider_type: str,
         config: dict[str, Any],
         description: str | None = None,
         organization_id: int | None = None,
     ) -> dict[str, Any]:
-        """Create a new IAM provider."""
-        # Validate provider type
+        """Create a new IAM provider in an organization of the caller's tenant."""
+        tid = _require_tenant(tenant_id)
         valid_types = ["aws_iam", "gcp_iam", "kubernetes"]
         if provider_type.lower() not in valid_types:
             raise Exception(
                 f"Invalid provider type: {provider_type}. Must be one of {valid_types}"
             )
 
-        resolved_org_id = organization_id
-        if resolved_org_id is None:
-            first_org = (
-                self.db(self.db.organizations.id > 0)
-                .select(orderby=self.db.organizations.id, limitby=(0, 1))
-                .first()
-            )
-            if not first_org:
+        if organization_id is not None:
+            resolved_org_id = self._require_tenant_org(tid, organization_id)
+        else:
+            org_ids = sorted(self._tenant_org_ids(tid))
+            if not org_ids:
                 raise ValueError(
                     "organization_id is required (no default organization exists)"
                 )
-            resolved_org_id = first_org.id
+            resolved_org_id = org_ids[0]
 
         provider_config = dict(config or {})
         if description is not None:
             provider_config["_description"] = description
 
-        from apps.api.utils.village_id import (
-            mint_village_id,
-            resolve_tenant_id_for_org,
-        )
+        from apps.api.utils.village_id import mint_village_id
 
-        # Create provider (matching live iam_providers columns)
-        tenant_id = resolve_tenant_id_for_org(self.db, resolved_org_id)
         now = datetime.now(UTC)
         provider_id = self.db.iam_providers.insert(
             name=name,
@@ -176,17 +228,18 @@ class IAMService:
             organization_id=resolved_org_id,
             enabled=True,
             config_json=provider_config,
-            village_id=mint_village_id(tenant_id),
+            village_id=mint_village_id(tid),
             created_at=now,
             updated_at=now,
         )
 
         self.db.commit()
 
-        return self.get_provider(provider_id)
+        return self.get_provider(tid, provider_id)
 
     def update_provider(
         self,
+        tenant_id: int | None,
         provider_id: int,
         name: str | None = None,
         config: dict[str, Any] | None = None,
@@ -195,10 +248,8 @@ class IAMService:
         organization_id: int | None = None,
     ) -> dict[str, Any]:
         """Update provider configuration."""
-        provider = self.db.iam_providers[provider_id]
-
-        if not provider:
-            raise Exception(f"Provider not found: {provider_id}")
+        provider = self._get_scoped_provider(tenant_id, provider_id)
+        tid = int(tenant_id)  # validated by _get_scoped_provider
 
         existing_cfg = _parse_json_dict(getattr(provider, "config_json", None))
         update_data: dict[str, Any] = {}
@@ -207,7 +258,9 @@ class IAMService:
         if enabled is not None:
             update_data["enabled"] = enabled
         if organization_id is not None:
-            update_data["organization_id"] = organization_id
+            update_data["organization_id"] = self._require_tenant_org(
+                tid, organization_id
+            )
 
         if config is not None or description is not None:
             if config is not None:
@@ -238,34 +291,28 @@ class IAMService:
             self.db(self.db.iam_providers.id == provider_id).update(**update_data)
             self.db.commit()
 
-        return self.get_provider(provider_id)
+        return self.get_provider(tid, provider_id)
 
-    def delete_provider(self, provider_id: int) -> dict[str, Any]:
-        """Delete an IAM provider."""
-        provider = self.db.iam_providers[provider_id]
+    def delete_provider(
+        self, tenant_id: int | None, provider_id: int
+    ) -> dict[str, Any]:
+        """Delete an IAM provider.
 
-        if not provider:
-            raise Exception(f"Provider not found: {provider_id}")
+        Users/roles/policies live in the external provider and are never
+        persisted locally, so there are no dependent rows to check.
+        """
+        provider = self._get_scoped_provider(tenant_id, provider_id)
 
-        # Check if provider has registered resources
-        users_count = self.db(self.db.iam_users.iam_provider_id == provider_id).count()
-        roles_count = self.db(self.db.iam_roles.iam_provider_id == provider_id).count()
-
-        if users_count > 0 or roles_count > 0:
-            raise Exception(
-                f"Cannot delete provider with {users_count} users and {roles_count} roles. "
-                "Delete resources first or use force delete."
-            )
-
-        self.db(self.db.iam_providers.id == provider_id).delete()
+        self.db(self.db.iam_providers.id == provider.id).delete()
         self.db.commit()
 
         return {"message": "Provider deleted successfully"}
 
-    def test_provider(self, provider_id: int) -> dict[str, Any]:
-        """Test provider connectivity."""
+    def test_provider(self, tenant_id: int | None, provider_id: int) -> dict[str, Any]:
+        """Test provider connectivity (provider must be in the caller's tenant)."""
+        self._get_scoped_provider(tenant_id, provider_id)
         try:
-            client = self._get_provider_client(provider_id)
+            client = self._get_provider_client(tenant_id, provider_id)
             success = client.test_connection()
 
             return {
@@ -282,23 +329,16 @@ class IAMService:
                 "tested_at": datetime.now(UTC).isoformat(),
             }
 
-    def sync_provider(self, provider_id: int) -> dict[str, Any]:
-        """Sync resources from provider to database."""
+    def sync_provider(self, tenant_id: int | None, provider_id: int) -> dict[str, Any]:
+        """Sync from the provider and record the time on ``iam_providers.last_sync_at``."""
+        provider = self._get_scoped_provider(tenant_id, provider_id)
         try:
-            client = self._get_provider_client(provider_id)
+            client = self._get_provider_client(tenant_id, provider_id)
             result = client.sync_from_provider()
 
-            # Store sync results in database
             now = datetime.now(UTC)
-            self.db.iam_sync_log.insert(
-                iam_provider_id=provider_id,
-                synced_at=now,
-                users_synced=result.get("users_synced", 0),
-                roles_synced=result.get("roles_synced", 0),
-                policies_synced=result.get("policies_synced", 0),
-                errors_json=result.get("errors", []),
-                created_at=now,
-                updated_at=now,
+            self.db(self.db.iam_providers.id == provider.id).update(
+                last_sync_at=now, updated_at=now
             )
             self.db.commit()
 
@@ -314,172 +354,210 @@ class IAMService:
 
     # User Management
 
-    def list_users(self, provider_id: int, **kwargs) -> list[dict[str, Any]]:
+    def list_users(
+        self, tenant_id: int | None, provider_id: int, **kwargs
+    ) -> list[dict[str, Any]]:
         """List users from provider."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.list_users(**kwargs)
 
-    def get_user(self, provider_id: int, user_id: str) -> dict[str, Any]:
+    def get_user(
+        self, tenant_id: int | None, provider_id: int, user_id: str
+    ) -> dict[str, Any]:
         """Get user details."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.get_user(user_id)
 
-    def create_user(self, provider_id: int, **kwargs) -> dict[str, Any]:
+    def create_user(
+        self, tenant_id: int | None, provider_id: int, **kwargs
+    ) -> dict[str, Any]:
         """Create a new user."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.create_user(**kwargs)
 
-    def update_user(self, provider_id: int, user_id: str, **kwargs) -> dict[str, Any]:
+    def update_user(
+        self, tenant_id: int | None, provider_id: int, user_id: str, **kwargs
+    ) -> dict[str, Any]:
         """Update user."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.update_user(user_id, **kwargs)
 
-    def delete_user(self, provider_id: int, user_id: str) -> dict[str, Any]:
+    def delete_user(
+        self, tenant_id: int | None, provider_id: int, user_id: str
+    ) -> dict[str, Any]:
         """Delete user."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.delete_user(user_id)
 
     # Role Management
 
-    def list_roles(self, provider_id: int, **kwargs) -> list[dict[str, Any]]:
+    def list_roles(
+        self, tenant_id: int | None, provider_id: int, **kwargs
+    ) -> list[dict[str, Any]]:
         """List roles from provider."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.list_roles(**kwargs)
 
-    def get_role(self, provider_id: int, role_id: str) -> dict[str, Any]:
+    def get_role(
+        self, tenant_id: int | None, provider_id: int, role_id: str
+    ) -> dict[str, Any]:
         """Get role details."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.get_role(role_id)
 
-    def create_role(self, provider_id: int, **kwargs) -> dict[str, Any]:
+    def create_role(
+        self, tenant_id: int | None, provider_id: int, **kwargs
+    ) -> dict[str, Any]:
         """Create a new role."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.create_role(**kwargs)
 
-    def update_role(self, provider_id: int, role_id: str, **kwargs) -> dict[str, Any]:
+    def update_role(
+        self, tenant_id: int | None, provider_id: int, role_id: str, **kwargs
+    ) -> dict[str, Any]:
         """Update role."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.update_role(role_id, **kwargs)
 
-    def delete_role(self, provider_id: int, role_id: str) -> dict[str, Any]:
+    def delete_role(
+        self, tenant_id: int | None, provider_id: int, role_id: str
+    ) -> dict[str, Any]:
         """Delete role."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.delete_role(role_id)
 
     # Policy Management
 
-    def list_policies(self, provider_id: int, **kwargs) -> list[dict[str, Any]]:
+    def list_policies(
+        self, tenant_id: int | None, provider_id: int, **kwargs
+    ) -> list[dict[str, Any]]:
         """List policies from provider."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.list_policies(**kwargs)
 
-    def get_policy(self, provider_id: int, policy_id: str) -> dict[str, Any]:
+    def get_policy(
+        self, tenant_id: int | None, provider_id: int, policy_id: str
+    ) -> dict[str, Any]:
         """Get policy details."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.get_policy(policy_id)
 
-    def create_policy(self, provider_id: int, **kwargs) -> dict[str, Any]:
+    def create_policy(
+        self, tenant_id: int | None, provider_id: int, **kwargs
+    ) -> dict[str, Any]:
         """Create a new policy."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.create_policy(**kwargs)
 
-    def delete_policy(self, provider_id: int, policy_id: str) -> dict[str, Any]:
+    def delete_policy(
+        self, tenant_id: int | None, provider_id: int, policy_id: str
+    ) -> dict[str, Any]:
         """Delete policy."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.delete_policy(policy_id)
 
     # Policy Attachments
 
     def attach_policy_to_user(
-        self, provider_id: int, user_id: str, policy_id: str
+        self, tenant_id: int | None, provider_id: int, user_id: str, policy_id: str
     ) -> dict[str, Any]:
         """Attach policy to user."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.attach_policy_to_user(user_id, policy_id)
 
     def detach_policy_from_user(
-        self, provider_id: int, user_id: str, policy_id: str
+        self, tenant_id: int | None, provider_id: int, user_id: str, policy_id: str
     ) -> dict[str, Any]:
         """Detach policy from user."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.detach_policy_from_user(user_id, policy_id)
 
     def attach_policy_to_role(
-        self, provider_id: int, role_id: str, policy_id: str
+        self, tenant_id: int | None, provider_id: int, role_id: str, policy_id: str
     ) -> dict[str, Any]:
         """Attach policy to role."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.attach_policy_to_role(role_id, policy_id)
 
     def detach_policy_from_role(
-        self, provider_id: int, role_id: str, policy_id: str
+        self, tenant_id: int | None, provider_id: int, role_id: str, policy_id: str
     ) -> dict[str, Any]:
         """Detach policy from role."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.detach_policy_from_role(role_id, policy_id)
 
     def list_user_policies(
-        self, provider_id: int, user_id: str
+        self, tenant_id: int | None, provider_id: int, user_id: str
     ) -> list[dict[str, Any]]:
         """List policies attached to user."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.list_user_policies(user_id)
 
     def list_role_policies(
-        self, provider_id: int, role_id: str
+        self, tenant_id: int | None, provider_id: int, role_id: str
     ) -> list[dict[str, Any]]:
         """List policies attached to role."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.list_role_policies(role_id)
 
     # Access Keys
 
-    def create_access_key(self, provider_id: int, user_id: str) -> dict[str, Any]:
+    def create_access_key(
+        self, tenant_id: int | None, provider_id: int, user_id: str
+    ) -> dict[str, Any]:
         """Create access key for user."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.create_access_key(user_id)
 
-    def list_access_keys(self, provider_id: int, user_id: str) -> list[dict[str, Any]]:
+    def list_access_keys(
+        self, tenant_id: int | None, provider_id: int, user_id: str
+    ) -> list[dict[str, Any]]:
         """List access keys for user."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.list_access_keys(user_id)
 
     def delete_access_key(
-        self, provider_id: int, user_id: str, key_id: str
+        self, tenant_id: int | None, provider_id: int, user_id: str, key_id: str
     ) -> dict[str, Any]:
         """Delete access key."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.delete_access_key(user_id, key_id)
 
     # Group Management
 
-    def list_groups(self, provider_id: int, **kwargs) -> list[dict[str, Any]]:
+    def list_groups(
+        self, tenant_id: int | None, provider_id: int, **kwargs
+    ) -> list[dict[str, Any]]:
         """List groups from provider."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.list_groups(**kwargs)
 
-    def create_group(self, provider_id: int, **kwargs) -> dict[str, Any]:
+    def create_group(
+        self, tenant_id: int | None, provider_id: int, **kwargs
+    ) -> dict[str, Any]:
         """Create a new group."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.create_group(**kwargs)
 
-    def delete_group(self, provider_id: int, group_id: str) -> dict[str, Any]:
+    def delete_group(
+        self, tenant_id: int | None, provider_id: int, group_id: str
+    ) -> dict[str, Any]:
         """Delete group."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.delete_group(group_id)
 
     def add_user_to_group(
-        self, provider_id: int, user_id: str, group_id: str
+        self, tenant_id: int | None, provider_id: int, user_id: str, group_id: str
     ) -> dict[str, Any]:
         """Add user to group."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.add_user_to_group(user_id, group_id)
 
     def remove_user_from_group(
-        self, provider_id: int, user_id: str, group_id: str
+        self, tenant_id: int | None, provider_id: int, user_id: str, group_id: str
     ) -> dict[str, Any]:
         """Remove user from group."""
-        client = self._get_provider_client(provider_id)
+        client = self._get_provider_client(tenant_id, provider_id)
         return client.remove_user_from_group(user_id, group_id)
 
     # Utility Methods
