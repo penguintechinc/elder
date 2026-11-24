@@ -3,7 +3,6 @@
 # flake8: noqa: E501
 
 from apps.api.services.iam.aws_client import AWSIAMClient
-from apps.api.services.iam.azure_client import AzureADClient
 from apps.api.services.iam.base import BaseIAMProvider
 from apps.api.services.iam.gcp_client import GCPIAMClient
 from apps.api.services.iam.k8s_client import KubernetesRBACClient
@@ -14,6 +13,5 @@ __all__ = [
     "AWSIAMClient",
     "GCPIAMClient",
     "KubernetesRBACClient",
-    "AzureADClient",
     "IAMService",
 ]

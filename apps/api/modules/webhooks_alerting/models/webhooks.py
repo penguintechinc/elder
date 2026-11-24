@@ -100,6 +100,11 @@ class WebhookDelivery(Base, IDMixin):
     attempt_count = Column(Integer, nullable=True)
     delivered_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=True)
+    claimed_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When outbox recovery last claimed this row",
+    )
 
 
 class NotificationRule(Base, IDMixin, VillageIDMixin, TimestampMixin):

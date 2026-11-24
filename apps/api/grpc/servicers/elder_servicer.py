@@ -714,7 +714,16 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             if request.HasField("is_active"):
                 data["is_active"] = request.is_active
             if request.HasField("is_superuser"):
-                data["is_superuser"] = request.is_superuser
+                # The gRPC surface has no caller authentication, so it can
+                # never grant or revoke superuser: that would let any caller
+                # make itself a global admin. Change it via the REST API as a
+                # verified superuser instead.
+                logger.warning(
+                    "grpc_update_identity_superuser_refused", identity_id=request.id
+                )
+                context.set_code(grpc.StatusCode.PERMISSION_DENIED)
+                context.set_details("is_superuser cannot be changed via gRPC")
+                return auth_pb2.UpdateIdentityResponse()
 
             # Update identity
             if data:

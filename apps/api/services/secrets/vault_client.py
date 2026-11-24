@@ -76,11 +76,18 @@ class HashicorpVaultClient(SecretProviderClient):
         logger.info(f"Initialized Hashicorp Vault client for {self.base_url}")
 
     def _make_request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
-        """Make a request to Vault API."""
+        """Make a request to the Vault API with a bounded timeout.
+
+        Goes through vault_request so every call has explicit connect/read
+        timeouts and idempotent reads are retried; a timeout surfaces as a
+        clear provider error instead of hanging the caller.
+        """
+        from apps.api.common.providers.vault import vault_request, vault_timeout
+
         url = f"{self.base_url}{path}"
 
         try:
-            response = self.session.request(method, url, **kwargs)
+            response = vault_request(self.session, method, url, **kwargs)
 
             # Handle specific HTTP status codes
             if response.status_code == 404:
@@ -101,9 +108,17 @@ class HashicorpVaultClient(SecretProviderClient):
 
             return response.json() if response.text else {}
 
+        except requests.exceptions.Timeout as e:
+            connect_timeout, read_timeout = vault_timeout()
+            message = (
+                f"Vault request timed out ({type(e).__name__}) for {method} {path} "
+                f"(connect timeout {connect_timeout:g}s, read timeout {read_timeout:g}s)"
+            )
+            logger.error(message)
+            raise SecretProviderException(message) from e
         except requests.exceptions.RequestException as e:
             logger.error(f"Vault request failed: {str(e)}")
-            raise SecretProviderException(f"Vault request failed: {str(e)}")
+            raise SecretProviderException(f"Vault request failed: {str(e)}") from e
 
     def test_connection(self) -> bool:
         """Test connection to Vault."""

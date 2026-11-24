@@ -99,3 +99,31 @@ def get_tenant_scoped(
         return None
 
     return row
+
+
+def caller_has_scope(scope: str) -> bool:
+    """Report whether the caller's verified claims grant ``scope``.
+
+    Mirrors ``require_scope``'s semantics (superusers bypass) so a handler
+    that spans several resource families (e.g. universal search) can drop
+    the families the caller cannot read instead of rejecting the request.
+    """
+    user = getattr(g, "current_user", None)
+    if user is not None and getattr(user, "is_superuser", False):
+        return True
+    claims = getattr(g, "claims", {}) or {}
+    return scope in set(claims.get("scope", []) or [])
+
+
+def get_tenant_org_ids(db: Any, tenant_id: int | None) -> list[int]:
+    """Return the ids of every organization owned by ``tenant_id``.
+
+    Used to scope tables that carry tenancy only through
+    ``organization_id`` (e.g. ``entities``). Returns an empty list when
+    ``tenant_id`` is falsy so callers fail closed -- an empty list must be
+    treated as "no visible rows", never as "skip the filter".
+    """
+    if not tenant_id:
+        return []
+    rows = db(db.organizations.tenant_id == tenant_id).select(db.organizations.id)
+    return [r.id for r in rows]

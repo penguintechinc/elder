@@ -16,7 +16,7 @@ from sqlalchemy import event
 from apps.api.modules.infrastructure.routes import graph as graph_routes
 
 OWN_TENANT = 1
-SCOPES = ["infrastructure:read"]
+SCOPES = ["infrastructure:read", "issues:read"]
 
 
 def _user() -> MagicMock:

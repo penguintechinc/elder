@@ -86,6 +86,32 @@ struct CompleteDiscoveryJobRequest {
     error_message: Option<String>,
 }
 
+/// A completion payload plus the claim token `hub-api` issued on `/start`.
+///
+/// `hub-api` only accepts a completion from the scanner that holds the claim,
+/// so the token returned by the claim must accompany the result.
+#[derive(Debug, Serialize)]
+struct ClaimedCompletion<'a, T: Serialize> {
+    #[serde(flatten)]
+    completion: &'a T,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    claim_token: Option<&'a str>,
+}
+
+/// Extract the claim token from a `/start` response body.
+///
+/// Accepts the token at the top level or under a `data` envelope; returns
+/// `None` for an older `hub-api` that does not issue claim tokens.
+fn claim_token_from(response: &Value) -> Option<String> {
+    response
+        .get("claim_token")
+        .or_else(|| response.get("data").and_then(|d| d.get("claim_token")))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_owned)
+}
+
 #[derive(Debug, Serialize)]
 struct JobProgressHeartbeat {
     status: &'static str,
@@ -534,14 +560,17 @@ async fn run_discovery_job(
         provider = %job.provider
     );
     async {
-        if let Err(err) = client
+        let claim_token = match client
             .post_empty::<Value>(&format!("/api/v1/discovery/jobs/{}/start", job.id))
             .await
         {
-            tracing::error!(job_id = job.id, error = %err, "Failed marking discovery job running");
-            metrics.record_job(&job.provider, false, start.elapsed().as_secs_f64());
-            return;
-        }
+            Ok(response) => claim_token_from(&response),
+            Err(err) => {
+                tracing::error!(job_id = job.id, error = %err, "Failed marking discovery job running");
+                metrics.record_job(&job.provider, false, start.elapsed().as_secs_f64());
+                return;
+            }
+        };
 
         let progress = ProgressReporter::spawn(
             Arc::clone(&client),
@@ -599,7 +628,10 @@ async fn run_discovery_job(
         if let Err(err) = client
             .post_json::<_, Value>(
                 &format!("/api/v1/discovery/jobs/{}/complete", job.id),
-                &completion,
+                &ClaimedCompletion {
+                    completion: &completion,
+                    claim_token: claim_token.as_deref(),
+                },
             )
             .await
         {
@@ -625,14 +657,17 @@ async fn run_sbom_job(
         scan_type = %scan.scan_type
     );
     async {
-        if let Err(err) = client
+        let claim_token = match client
             .post_empty::<Value>(&format!("/api/v1/sbom/scans/{}/start", scan.id))
             .await
         {
-            tracing::error!(scan_id = scan.id, error = %err, "Failed marking SBOM scan running");
-            metrics.record_job("sbom", false, start.elapsed().as_secs_f64());
-            return;
-        }
+            Ok(response) => claim_token_from(&response),
+            Err(err) => {
+                tracing::error!(scan_id = scan.id, error = %err, "Failed marking SBOM scan running");
+                metrics.record_job("sbom", false, start.elapsed().as_secs_f64());
+                return;
+            }
+        };
 
         let progress = ProgressReporter::spawn(
             Arc::clone(&client),
@@ -680,6 +715,7 @@ async fn run_sbom_job(
             error_message: err_msg,
             scan_duration_ms: duration_ms,
             endpoints: &endpoints,
+            claim_token,
         };
         if let Err(err) = report_sbom_result(&client, scan.id, &outcome).await {
             tracing::error!(scan_id = scan.id, error = %err, "Failed submitting SBOM scan results");
@@ -741,6 +777,49 @@ mod tests {
         // Stale heartbeat must fail.
         std::fs::write(&health_path, format!("{}\n", now - 1000)).expect("write stale");
         assert!(verify_heartbeat(&health_path, 900, now).is_err());
+    }
+
+    #[test]
+    fn claim_token_is_read_from_start_response() {
+        assert_eq!(
+            claim_token_from(&json!({"job_id": 1, "claim_token": "tok-1"})).as_deref(),
+            Some("tok-1")
+        );
+        assert_eq!(
+            claim_token_from(&json!({"data": {"claim_token": " tok-2 "}})).as_deref(),
+            Some("tok-2")
+        );
+        for missing in [
+            json!({}),
+            json!({"claim_token": ""}),
+            json!({"claim_token": 7}),
+        ] {
+            assert_eq!(claim_token_from(&missing), None);
+        }
+    }
+
+    #[test]
+    fn claimed_completion_flattens_payload_and_adds_token() {
+        let completion = CompleteDiscoveryJobRequest {
+            success: true,
+            results: json!({"hosts": 2}),
+            error_message: None,
+        };
+        let with_token = serde_json::to_value(ClaimedCompletion {
+            completion: &completion,
+            claim_token: Some("tok-1"),
+        })
+        .expect("serializable");
+        assert_eq!(
+            with_token,
+            json!({"success": true, "results": {"hosts": 2}, "error_message": null, "claim_token": "tok-1"})
+        );
+        let without = serde_json::to_value(ClaimedCompletion {
+            completion: &completion,
+            claim_token: None,
+        })
+        .expect("serializable");
+        assert!(without.get("claim_token").is_none());
     }
 
     #[test]
