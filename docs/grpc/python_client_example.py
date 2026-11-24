@@ -7,18 +7,42 @@ Installation:
     pip install grpcio grpcio-tools protobuf
 
 Usage:
-    python python_client_example.py
+    ELDER_USERNAME=... ELDER_PASSWORD=... python python_client_example.py
+
+Authentication:
+    Every RPC except Login, RefreshToken and HealthCheck requires an access
+    token in the `authorization` metadata (`Bearer <token>`); calls without
+    one are rejected with UNAUTHENTICATED. Results are scoped to the tenant
+    of the authenticated identity.
 """
+
+import os
 
 import grpc
 
 from apps.api.grpc.generated import (
+    auth_pb2,
     common_pb2,
     elder_pb2,
     elder_pb2_grpc,
     entity_pb2,
     organization_pb2,
 )
+
+
+class BearerAuth(grpc.UnaryUnaryClientInterceptor):
+    """Attach `authorization: Bearer <token>` metadata to every unary call."""
+
+    def __init__(self, token: str):
+        """Keep the access token to send."""
+        self._token = token
+
+    def intercept_unary_unary(self, continuation, client_call_details, request):
+        """Add the bearer token to the outgoing call metadata."""
+        metadata = list(client_call_details.metadata or [])
+        metadata.append(("authorization", f"Bearer {self._token}"))
+        details = client_call_details._replace(metadata=metadata)
+        return continuation(details, request)
 
 
 def run_examples():
@@ -30,6 +54,15 @@ def run_examples():
     # channel = grpc.secure_channel('grpc.example.com:443', credentials)
 
     channel = grpc.insecure_channel("localhost:50051")
+
+    # Log in once, then attach the access token to every subsequent call.
+    login = elder_pb2_grpc.ElderServiceStub(channel).Login(
+        auth_pb2.LoginRequest(
+            username=os.environ["ELDER_USERNAME"],
+            password=os.environ["ELDER_PASSWORD"],
+        )
+    )
+    channel = grpc.intercept_channel(channel, BearerAuth(login.access_token))
 
     # Create stub (client)
     stub = elder_pb2_grpc.ElderServiceStub(channel)
