@@ -145,7 +145,7 @@ hub-webui:
   enabled: true
   image:
     repository: elder/hub-webui
-    tag: latest
+    tag: ""  # empty = v<Chart.appVersion> (immutable release tag); never `latest`
     pullPolicy: IfNotPresent
   replicaCount: 2
   # Container runs rootless Express on Node 24 (web/Dockerfile, web/server.ts),
@@ -205,7 +205,7 @@ hub-api:
     waddles.penguintech.io/ollama-client: "true"
   image:
     repository: elder/hub-api
-    tag: latest
+    tag: ""  # empty = v<Chart.appVersion> (immutable release tag); never `latest`
     pullPolicy: IfNotPresent
   replicaCount: 2
   service:
@@ -337,7 +337,7 @@ hub-mcp:
   enabled: true
   image:
     repository: elder/hub-mcp
-    tag: latest
+    tag: ""  # empty = v<Chart.appVersion> (immutable release tag); never `latest`
     pullPolicy: IfNotPresent
   replicaCount: 2
   service:
@@ -394,7 +394,7 @@ svc-scanner:
   ttlSecondsAfterFinished: 600
   image:
     repository: elder/svc-scanner
-    tag: latest
+    tag: ""  # empty = v<Chart.appVersion> (immutable release tag); never `latest`
     pullPolicy: IfNotPresent
   env:
     ELDER_API_URL: "http://hub-api:5000"
@@ -440,7 +440,7 @@ svc-integrations:
   ttlSecondsAfterFinished: 600
   image:
     repository: elder/svc-integrations
-    tag: latest
+    tag: ""  # empty = v<Chart.appVersion> (immutable release tag); never `latest`
     pullPolicy: IfNotPresent
   env:
     ELDER_API_URL: "http://hub-api:5000"
@@ -471,7 +471,7 @@ svc-worker:
   enabled: true
   image:
     repository: elder/svc-worker
-    tag: latest
+    tag: ""  # empty = v<Chart.appVersion> (immutable release tag); never `latest`
     pullPolicy: IfNotPresent
   replicaCount: 1
   service:
@@ -584,7 +584,7 @@ svc-flows-invoker:
   enabled: true
   image:
     repository: elder/svc-flows-invoker
-    tag: latest
+    tag: ""  # empty = v<Chart.appVersion> (immutable release tag); never `latest`
     pullPolicy: IfNotPresent
   replicaCount: 1
   env:
@@ -672,7 +672,7 @@ svc-runworker:
   enabled: false
   image:
     repository: elder/svc-runworker
-    tag: latest
+    tag: ""  # empty = v<Chart.appVersion> (immutable release tag); never `latest`
     pullPolicy: IfNotPresent
   replicaCount: 1
   # Dedicated namespace where per-execution Kubernetes Jobs run.

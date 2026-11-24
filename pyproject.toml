@@ -51,12 +51,11 @@ exclude_dirs = ["tests", "scripts", ".venv", "node_modules"]
 #                           K8s RBAC clients, Alertmanager client, shared
 #                           events). Was 44.15% before gh-283.
 #   tests/integration only: 23.67% (47 passed, 1 skipped, 8 xfailed)
-# 20 is a safe default floor below both measured numbers (with margin for
-# incidental variance) so neither CI job breaks on day one. ci.yml passes a
-# tighter --cov-fail-under override per job (45 for python-unit, raised from
-# 40 by gh-283 and rounded down from the 47.56% measured floor for headroom;
-# 20 for python-integration) which takes precedence over this default. Keep
+# Ratchet (release/v4.0.X CI run 45502797263, sha 49f50b2c): python-unit
+# measured 65.83% -> ci.yml floor 64; python-integration measured 22.18% ->
+# floor 21. This default is the lower of the two (21) so local partial runs
+# stay meaningful; ci.yml's per-job --cov-fail-under takes precedence. Keep
 # ratcheting toward 90 as coverage improves — see gh-276/gh-275 for the
 # stale-test debt suppressing coverage in tests/integration and tests/unit's
 # sbom_schedules.
-addopts = "--cov=apps --cov=shared --cov-report=term-missing --cov-fail-under=20"
+addopts = "--cov=apps --cov=shared --cov-report=term-missing --cov-fail-under=21"

@@ -112,7 +112,7 @@ must keep pulling from their own registry (docker.io).
 {{- $registry = $context.Values.global.imageRegistry -}}
 {{- end -}}
 {{- $repository := (index $context.Values $component).image.repository -}}
-{{- $tag := (index $context.Values $component).image.tag -}}
+{{- $tag := (index $context.Values $component).image.tag | default (printf "v%s" $context.Chart.AppVersion) -}}
 {{- if $registry }}
 {{- printf "%s/%s:%s" $registry $repository $tag }}
 {{- else }}

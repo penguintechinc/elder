@@ -6,6 +6,9 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main, 'release/**' ]
+  # version-release.yml dispatches this on the new v* tag: tags/releases
+  # created with GITHUB_TOKEN never fire `push: tags`, workflow_dispatch does.
+  workflow_dispatch:
 
 # Required permissions for GHCR push, security scanning, and integration tests
 permissions:
@@ -194,15 +197,20 @@ jobs:
         REF_NAME: ${{ github.ref_name }}
         REGISTRY: ${{ env.REGISTRY }}
         ORG: ${{ github.repository_owner }}
+        SHA: ${{ github.sha }}
       run: |
         IMAGE="${REGISTRY}/${ORG}/elder/${SERVICE}"
+        SHORT_SHA="${SHA:0:12}"
         SRC_AMD64="${IMAGE}:${VERSION}-amd64"
         # SRC_ARM64="${IMAGE}:${VERSION}-arm64"  # Temporarily disabled
 
         # Determine which named tags to create for this ref
+        # Every build gets an immutable <version>-g<sha> tag; the channel tag
+        # is a convenience alias. No `latest` tag is published — deploy by
+        # version (chart default is v<appVersion>) or by the -g<sha> tag.
         TAGS=()
         if [ "$IS_RELEASE_TAG" = "true" ]; then
-          TAGS+=("${IMAGE}:${VERSION}" "${IMAGE}:${REF_NAME}" "${IMAGE}:latest")
+          TAGS+=("${IMAGE}:${VERSION}" "${IMAGE}:${REF_NAME}")
         elif [ "$IS_MAIN" = "true" ]; then
           TAGS+=("${IMAGE}:${VERSION}-gamma")
         elif [ "$IS_RELEASE_BRANCH" = "true" ]; then
@@ -210,6 +218,7 @@ jobs:
         else
           TAGS+=("${IMAGE}:${VERSION}-alpha")
         fi
+        TAGS+=("${IMAGE}:${VERSION}-g${SHORT_SHA}")
 
         # Build the --tag args list
         TAG_ARGS=()
@@ -226,7 +235,9 @@ jobs:
   release:
     needs: merge-manifests
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Manually pushed tags only: for dispatched runs version-release.yml has
+    # already created the GitHub release for this tag.
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
 
     steps:
     - name: Checkout code
