@@ -3,10 +3,12 @@
 # flake8: noqa: E501
 
 import fnmatch
+import os
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import structlog
+from opentelemetry import metrics as otel_metrics
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, request
 
@@ -36,6 +38,72 @@ from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scop
 
 bp = Blueprint("sbom_scans", __name__)
 logger = structlog.get_logger()
+
+# A claimed ("running") scan whose claimant has not completed it within the
+# lease is assumed dead and re-queued. Must exceed the scanner's per-job
+# timeout (svc-scanner default 300s) or a slow-but-alive scan is duplicated.
+DEFAULT_SBOM_CLAIM_LEASE_SECONDS = 900
+_MIN_SBOM_CLAIM_LEASE_SECONDS = 60
+_TERMINAL_SCAN_STATUSES = ("completed", "failed")
+
+_claim_counter = otel_metrics.get_meter("elder").create_counter(
+    "elder.sbom.scan.claims",
+    description="SBOM scan claim/lease/completion outcomes",
+)
+
+
+def _claim_lease_seconds() -> int:
+    """Return the SBOM claim lease from ``ELDER_SBOM_CLAIM_LEASE_SECONDS``.
+
+    Invalid or too-small values fall back to the default rather than
+    raising, so a bad deployment value cannot take the scanner routes down.
+    """
+    raw = (os.environ.get("ELDER_SBOM_CLAIM_LEASE_SECONDS") or "").strip()
+    try:
+        value = int(raw) if raw else DEFAULT_SBOM_CLAIM_LEASE_SECONDS
+    except ValueError:
+        value = 0
+    if value < _MIN_SBOM_CLAIM_LEASE_SECONDS:
+        if raw:
+            logger.warning("sbom_invalid_claim_lease_env", value=raw)
+        return DEFAULT_SBOM_CLAIM_LEASE_SECONDS
+    return value
+
+
+def _requeue_stale_scans(db, tenant_id: int | None) -> int:
+    """Re-queue running scans whose claim lease expired (dead claimant).
+
+    One conditional UPDATE, so two callers cannot both re-queue the same
+    row. ``tenant_id=None`` (system worker) sweeps every tenant; otherwise
+    only the caller's tenant is touched.
+    """
+    cutoff = datetime.now(UTC) - timedelta(seconds=_claim_lease_seconds())
+    query = (db.sbom_scans.status == "running") & (db.sbom_scans.started_at < cutoff)
+    if tenant_id is not None:
+        query &= db.sbom_scans.tenant_id == tenant_id
+    requeued = db(query).update(status="pending", started_at=None)
+    if requeued:
+        db.commit()
+        _claim_counter.add(requeued, {"outcome": "requeued_stale"})
+        logger.warning("sbom_stale_claims_requeued", count=requeued)
+    return requeued
+
+
+def _claim_scan(db, scan_id: int, tenant_id: int) -> bool:
+    """Atomically move one scan from pending to running (the claim).
+
+    A single ``UPDATE ... WHERE id AND tenant_id AND status='pending'``:
+    concurrent claimers serialise on the row lock and all but the first
+    re-evaluate the predicate against ``running`` and update zero rows.
+    """
+    claimed = db(
+        (db.sbom_scans.id == scan_id)
+        & (db.sbom_scans.tenant_id == tenant_id)
+        & (db.sbom_scans.status == "pending")
+    ).update(status="running", started_at=datetime.now(UTC))
+    db.commit()
+    _claim_counter.add(1, {"outcome": "claimed" if claimed else "lost"})
+    return bool(claimed)
 
 
 def _match_license_pattern(license_id: str, pattern: str) -> bool:
@@ -417,6 +485,10 @@ async def get_pending_scans():
     that need to be processed. Results are not paginated since the worker
     needs all pending scans to process them efficiently.
 
+    The list is advisory: a scan is only owned once ``POST /<id>/start``
+    succeeds (atomic claim), and claimed scans no longer appear here.
+    Scans whose claim lease expired are re-queued before listing.
+
     Returns:
         200: List of pending scans (ordered by created_at ascending, oldest first)
 
@@ -430,6 +502,7 @@ async def get_pending_scans():
         return ApiResponse.error("Invalid or missing tenant claim", 400)
 
     def get_scans():
+        _requeue_stale_scans(db, None if system_worker else tenant_id)
         if system_worker:
             active_tenant_ids = [
                 r.id
@@ -491,7 +564,9 @@ async def start_scan(id: int):
     Mark an SBOM scan as running (for scanner worker).
 
     This endpoint is called by the scanner worker when it begins processing
-    a scan job.
+    a scan job. It is the atomic claim: with any number of scanner replicas
+    racing on the same scan exactly one receives 200, the rest 400 and must
+    skip the scan.
 
     Path Parameters:
         - id: Scan ID
@@ -525,21 +600,16 @@ async def start_scan(id: int):
     if not scan:
         return ApiResponse.not_found("SBOM Scan", id)
 
-    # Verify scan is pending
-    if scan.status != "pending":
-        return ApiResponse.error(f"Scan is not pending (status: {scan.status})", 400)
-
     def mark_running():
-        db(
-            (db.sbom_scans.id == id) & (db.sbom_scans.tenant_id == scan.tenant_id)
-        ).update(
-            status="running",
-            started_at=datetime.now(UTC),
-        )
-        db.commit()
-        return db.sbom_scans[id]  # tenant-scope-exempt: verified above
+        # A scan abandoned by a dead claimant becomes claimable again first.
+        _requeue_stale_scans(db, scan.tenant_id)
+        claimed = _claim_scan(db, id, scan.tenant_id)
+        return claimed, db.sbom_scans[id]  # tenant-scope-exempt: verified above
 
-    updated_scan = await run_in_threadpool(mark_running)
+    claimed, updated_scan = await run_in_threadpool(mark_running)
+    if not claimed:
+        current = updated_scan.status if updated_scan else scan.status
+        return ApiResponse.error(f"Scan is not pending (status: {current})", 400)
 
     scan_dto = from_pydal_row(updated_scan, SBOMScanDTO)
     return ApiResponse.success(asdict(scan_dto))
@@ -553,7 +623,9 @@ async def submit_results(id: int):
     Submit SBOM scan results (for scanner worker).
 
     This endpoint is called by the scanner worker to submit the results
-    of a completed scan job.
+    of a completed scan job. Completion is idempotent: the first submission
+    wins the scan's transition to a terminal status; any later or concurrent
+    submission is acknowledged with the stored scan and changes nothing.
 
     Path Parameters:
         - id: Scan ID
@@ -608,6 +680,11 @@ async def submit_results(id: int):
     if not scan:
         return ApiResponse.not_found("SBOM Scan", id)
 
+    if scan.status in _TERMINAL_SCAN_STATUSES:
+        _claim_counter.add(1, {"outcome": "duplicate_completion"})
+        logger.info("sbom_duplicate_completion_ignored", scan_id=id, status=scan.status)
+        return ApiResponse.success(asdict(from_pydal_row(scan, SBOMScanDTO)))
+
     scan_tenant_id = scan.tenant_id
     success = body.success
     components = body.components or []
@@ -616,7 +693,31 @@ async def submit_results(id: int):
     error_message = body.error_message
     scan_duration_ms = body.scan_duration_ms
 
+    scan_filter = (db.sbom_scans.id == id) & (db.sbom_scans.tenant_id == scan_tenant_id)
+
     def process_results():
+        # Completion gate: one conditional UPDATE moves the scan to its
+        # terminal status. Only the submission that wins it writes
+        # components, so duplicate/concurrent completions are no-ops.
+        won = db(
+            scan_filter & ~db.sbom_scans.status.belongs(_TERMINAL_SCAN_STATUSES)
+        ).update(
+            status="completed" if success else "failed",
+            completed_at=datetime.now(UTC),
+        )
+        db.commit()
+        if not won:
+            return None, []
+        try:
+            return apply_results()
+        except Exception:
+            db(scan_filter).update(
+                status="failed", error_message="Result processing failed"
+            )
+            db.commit()
+            raise
+
+    def apply_results():
         # Get existing components for this parent within the scan's tenant
         existing_query = (
             (db.sbom_components.parent_type == scan.parent_type)
@@ -729,12 +830,8 @@ async def submit_results(id: int):
                 violations=violations,
             )
 
-        # Update scan record
-        status = "completed" if success else "failed"
-        db(
-            (db.sbom_scans.id == id) & (db.sbom_scans.tenant_id == scan_tenant_id)
-        ).update(
-            status=status,
+        # Record scan details (status/completed_at were set by the gate)
+        db(scan_filter).update(
             files_scanned=files_scanned,
             commit_hash=commit_hash,
             components_found=len(components),
@@ -742,13 +839,19 @@ async def submit_results(id: int):
             components_updated=components_updated,
             error_message=error_message,
             scan_duration_ms=scan_duration_ms,
-            completed_at=datetime.now(UTC),
         )
 
         db.commit()
         return db.sbom_scans[id], component_ids  # tenant-scope-exempt: verified above
 
     updated_scan, component_ids = await run_in_threadpool(process_results)
+    if updated_scan is None:
+        _claim_counter.add(1, {"outcome": "duplicate_completion"})
+        logger.info("sbom_duplicate_completion_ignored", scan_id=id)
+        current = await run_in_threadpool(resolve_scan)
+        if not current:
+            return ApiResponse.not_found("SBOM Scan", id)
+        return ApiResponse.success(asdict(from_pydal_row(current, SBOMScanDTO)))
 
     # Trigger vulnerability matching for all components (async, non-blocking)
     if success and component_ids:
