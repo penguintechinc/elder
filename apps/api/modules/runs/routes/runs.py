@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
+import time
 import uuid
+from collections import deque
 from datetime import UTC, datetime
 from typing import Any
 
@@ -39,8 +43,21 @@ from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.village_id import mint_village_id
+from shared.observability import get_meter
 
 logger = structlog.get_logger(__name__)
+
+# Claim-anomaly detection: sliding window of claim timestamps per worker.
+CLAIM_RATE_WINDOW_SECONDS = 60.0
+DEFAULT_CLAIM_RATE_WARN_THRESHOLD = 120
+CLAIM_RATE_MAX_TRACKED_WORKERS = 1024
+_claim_rate_windows: dict[str, deque[float]] = {}
+_claim_rate_lock = threading.Lock()
+_claim_anomaly_counter = get_meter("elder").create_counter(
+    name="elder.runs.claim_anomalies",
+    description="Worker claims flagged as anomalous (new tenant or rate spike)",
+    unit="1",
+)
 
 bp = Blueprint("runs", __name__)
 
@@ -180,6 +197,74 @@ def _require_runworker() -> tuple[Any, int] | None:
     if "runs:invoke" not in scopes:
         return jsonify({"error": "Forbidden: runs:invoke scope required"}), 403
     return None
+
+
+def _audit_claim_anomalies(
+    db: Any,
+    worker_id: str,
+    remote_worker_id: str | None,
+    items: list[dict[str, Any]],
+) -> None:
+    """Flag claims that do not match a worker's history (first tenant, rate spike).
+
+    A worker token is accepted for every tenant's queue, so a leaked token
+    shows up as a worker suddenly serving tenants it never served, or claiming
+    far faster than usual. Both raise a structured warning and a metric for
+    alerting. Detection never blocks or fails a claim.
+    """
+    try:
+        claimed_ids = {int(item["id"]) for item in items}
+        for tenant_id in sorted({int(item["tenant_id"]) for item in items}):
+            prior = db(
+                (db.run_executions.worker_id == worker_id)
+                & (db.run_executions.tenant_id == tenant_id)
+            ).select(
+                orderby=db.run_executions.id,
+                limitby=(0, len(claimed_ids) + 1),
+            )  # tenant-scope-exempt: worker claim history check for one tenant
+            if all(int(row.id) in claimed_ids for row in prior):
+                _claim_anomaly_counter.add(1, {"reason": "new_tenant"})
+                logger.warning(
+                    "run_claim_anomaly",
+                    reason="new_tenant",
+                    detail="worker claimed for a tenant it has not served before",
+                    worker_id=worker_id,
+                    remote_worker_id=remote_worker_id,
+                    tenant_id=tenant_id,
+                )
+        now = time.monotonic()
+        rate_key = str(remote_worker_id or worker_id)
+        with _claim_rate_lock:
+            window = _claim_rate_windows.setdefault(rate_key, deque())
+            window.extend([now] * len(items))
+            while window and now - window[0] > CLAIM_RATE_WINDOW_SECONDS:
+                window.popleft()
+            claims_in_window = len(window)
+            if len(_claim_rate_windows) > CLAIM_RATE_MAX_TRACKED_WORKERS:
+                _claim_rate_windows.clear()
+        if claims_in_window > _claim_rate_warn_threshold():
+            _claim_anomaly_counter.add(1, {"reason": "rate_spike"})
+            logger.warning(
+                "run_claim_anomaly",
+                reason="rate_spike",
+                detail="worker claim rate exceeds the configured threshold",
+                worker_id=worker_id,
+                remote_worker_id=remote_worker_id,
+                claims_in_window=claims_in_window,
+                window_seconds=CLAIM_RATE_WINDOW_SECONDS,
+            )
+    except Exception as exc:  # noqa: BLE001 - detection must never fail a claim
+        logger.error("run_claim_anomaly_check_failed", error=str(exc))
+
+
+def _claim_rate_warn_threshold() -> int:
+    """Return the claims-per-window count above which a rate spike is flagged."""
+    raw = os.getenv("RUNS_CLAIM_RATE_WARN_THRESHOLD") or ""
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_CLAIM_RATE_WARN_THRESHOLD
+    return value if value > 0 else DEFAULT_CLAIM_RATE_WARN_THRESHOLD
 
 
 def _serialize_function(
@@ -1338,6 +1423,16 @@ async def claim_pending_executions():
         return claimed_items
 
     items = await run_in_threadpool(claim)
+    if items:
+        claim_claims = getattr(g, "claims", None) or {}
+        raw_remote_id = claim_claims.get("remote_worker_id")
+        await run_in_threadpool(
+            _audit_claim_anomalies,
+            db,
+            worker_id,
+            str(raw_remote_id) if raw_remote_id else None,
+            items,
+        )
     for item in items:
         scopes = item.get("granted_scopes") or []
         if scopes:

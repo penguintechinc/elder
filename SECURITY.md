@@ -29,6 +29,16 @@ if you'd like, credit you in the release notes / security advisory once a fix sh
 A machine-readable version of this contact is published at
 [`/.well-known/security.txt`](.well-known/security.txt) per [RFC 9116](https://www.rfc-editor.org/rfc/rfc9116).
 
+## Tenant Code Execution (CodeRuns)
+
+Tenant-supplied code runs in per-execution pods under a VM-isolated (Kata)
+runtime class by default, with no platform credentials, no Kubernetes API
+token, and default-deny networking. Warm in-pod execution is opt-in and only
+supported when the worker pod itself runs under Kata. Running tenant code
+without a Kata boundary is an unsupported configuration that requires an
+explicit, logged exception flag. Details and supported modes:
+[`docs/deployment/runworker-isolation.md`](docs/deployment/runworker-isolation.md).
+
 ## Scope
 
 This policy covers the Elder application (`apps/`, `shared/`, `web/`) and its official

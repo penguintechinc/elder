@@ -678,17 +678,53 @@ svc-runworker:
   # Dedicated namespace where per-execution Kubernetes Jobs run.
   executionNamespace: "elder-runs"
   createExecutionNamespace: true
+  # Only when createExecutionNamespace is false: confirms the operator has
+  # labelled executionNamespace with pod-security.kubernetes.io/enforce=restricted
+  # (the chart cannot label a namespace it does not own). Rendering FAILS for
+  # the Job backend when the namespace is neither chart-created nor verified.
+  executionNamespacePodSecurityVerified: false
   # How svc-runworker fetches S3-backed artifacts:
   # - "worker": worker fetches via presigned URL, verifies SHA-256, mounts read-only ConfigMap (preserves zero-egress pods; auto-promotes >900KiB to init_container)
   # - "init_container": hardened initContainer fetches via presigned URL into emptyDir /workspace
   s3FetchMode: "worker"
-  # Optional RuntimeClass (e.g. "kata") for VM-isolated function pods.
-  runtimeClassName: ""
-  # Secret holding ELDER_INTERNAL_TOKEN (never hardcoded in values/manifests).
+  # Where tenant code runs:
+  # - "k8s_job" (default): every execution in its own pod in executionNamespace
+  #   (own ServiceAccount with no RBAC and no mounted token, default-deny
+  #   network, runtimeClassName below). The worker pod runs no tenant code.
+  # - "sandbox": opt-in warm in-pod execution. Rendering FAILS unless
+  #   podRuntimeClassName is one of sandboxedRuntimeClasses or
+  #   kataException.inPodSandbox is recorded. No API token is mounted.
+  # - "auto": in-pod when possible, else a Job. Tenant code then shares a pod
+  #   with a Kubernetes API token, so it always needs kataException.inPodSandbox.
+  runnerBackend: "k8s_job"
+  # RuntimeClass for execution pods. Required (rendering fails when empty)
+  # unless kataException.executionPods is recorded.
+  runtimeClassName: "kata"
+  # RuntimeClass of the svc-runworker pod itself (needed for "sandbox").
+  podRuntimeClassName: ""
+  # Runtime classes accepted as a VM isolation boundary, for the worker pod
+  # (podRuntimeClassName) and for execution pods (runtimeClassName). Both the
+  # chart and the worker require MEMBERSHIP in this list: any other value
+  # (runc, a misspelt class) fails rendering and is refused at worker start.
+  sandboxedRuntimeClasses: ["kata", "kata-qemu", "kata-clh", "kata-fc"]
+  # Running tenant code without a Kata boundary is unsupported for production.
+  # Only set a flag here with a recorded approval, and annotate the override
+  # in the environment values file with "# KATA EXCEPTION (approved)".
+  kataException:
+    executionPods: false
+    inPodSandbox: false
+  # ServiceAccount (no RBAC, no token) used by execution pods.
+  executionServiceAccount: "elder-run-exec"
+  # Per-execution restriction gateway ports on the worker pod; one port per
+  # concurrent execution (env.RUNS_MAX_CONCURRENT) starting at portBase.
+  gateway:
+    portBase: 18080
+  # REQUIRED: Secret holding this worker's provisioned token
+  # (POST /api/v1/admin/workers -> one-time ewk_ token). Rendering fails when
+  # name is empty. The worker is never given the platform signing key.
   internalTokenSecret:
-    name: "svc-runworker-token"
+    name: ""
     key: "token"
-    optional: true
   env:
     ELDER_API_URL: "http://hub-api:5000"
     RUNS_WORKER_CLUSTER: ""
@@ -722,6 +758,13 @@ svc-runworker:
   # function pods in executionNamespace.
   networkPolicy:
     enabled: true
+    # HTTPS hostnames the worker pod may reach beyond hub-api: a remote-cluster
+    # Elder API host, and the upper bound for function egress allowlists
+    # (the restriction gateway proxies those from the worker pod). Empty =
+    # no internet egress at all.
+    egressFQDNs: []
+    # Optional S3-compatible storage egress, e.g. {cidr: "10.0.5.0/24", port: 9000}
+    s3Egress: {}
 
 # Ingress configuration
 ingress:

@@ -1,7 +1,8 @@
 """Ephemeral per-execution Tool & Network Restriction Gateway for CodeRuns.
 
-Runs inside ``svc-runworker`` bound strictly to ``127.0.0.1:0`` (OS-assigned
-ephemeral port) for the duration of a single execution. Untrusted CodeRun
+Runs inside ``svc-runworker`` for the duration of a single execution: bound
+to ``127.0.0.1:0`` (OS-assigned ephemeral port) for in-pod executions, or to
+the controller pod IP on a NetworkPolicy-allowlisted port for Job executions. Untrusted CodeRun
 subprocesses receive only a random per-execution ``gateway_token`` and talk to
 this local HTTP proxy — the real ``elder_api_token`` NEVER enters the CodeRun
 process environment.
@@ -20,6 +21,7 @@ Defense-in-depth protections enforced on every request:
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import ipaddress
 import json
@@ -265,13 +267,21 @@ class RestrictionGateway:
         granted_scopes: Collection[str] = (),
         allowed_egress_domains: Collection[str] = (),
         execution_id: str = "",
+        tenant_id: str = "",
         max_requests: int = DEFAULT_MAX_REQUESTS,
         max_body_bytes: int = MAX_BODY_BYTES,
         upstream_timeout: float = DEFAULT_UPSTREAM_TIMEOUT,
         http_client: httpx.Client | None = None,
         dns_resolver: Callable[[str, int], list[str]] | None = None,
+        bind_host: str = "127.0.0.1",
+        bind_port: int = 0,
     ) -> None:
         self.elder_api_url = (elder_api_url or "http://hub-api:5000").rstrip("/")
+        # Loopback + OS-assigned port for in-pod executions; the Job backend
+        # binds the controller pod IP on a NetworkPolicy-allowlisted port so
+        # execution pods can reach nothing but this proxy.
+        self.bind_host = (bind_host or "127.0.0.1").strip()
+        self.bind_port = int(bind_port)
         self._elder_api_token = elder_api_token or ""
         self.granted_scopes: tuple[str, ...] = tuple(
             s.strip() for s in granted_scopes if s and s.strip()
@@ -285,7 +295,12 @@ class RestrictionGateway:
         self.max_requests = max(1, int(max_requests))
         self.max_body_bytes = max(1, int(max_body_bytes))
         self.upstream_timeout = max(1.0, float(upstream_timeout))
-        self.gateway_token: str = secrets.token_urlsafe(32)
+        self.tenant_id = str(tenant_id or "")
+        # The token is bound to this execution (and tenant): a fresh random
+        # key per gateway instance signs the execution identity, so a token
+        # is only ever valid at the gateway created for that execution.
+        self._token_key: bytes = secrets.token_bytes(32)
+        self.gateway_token: str = f"{secrets.token_urlsafe(32)}.{self._token_binding()}"
         self._dns_resolver = dns_resolver
 
         self._external_client = http_client is not None
@@ -315,10 +330,11 @@ class RestrictionGateway:
 
     @property
     def url(self) -> str:
-        """Base URL of the local gateway (``http://127.0.0.1:<port>``)."""
+        """Base URL of the gateway (``http://<bind_host>:<port>``)."""
         if not self._port:
             raise RuntimeError("RestrictionGateway has not been started")
-        return f"http://127.0.0.1:{self._port}"
+        host = f"[{self.bind_host}]" if ":" in self.bind_host else self.bind_host
+        return f"http://{host}:{self._port}"
 
     @property
     def request_count(self) -> int:
@@ -327,7 +343,7 @@ class RestrictionGateway:
             return self._request_count
 
     def start(self) -> RestrictionGateway:
-        """Bind to ``127.0.0.1:0`` and start serving in a background daemon thread."""
+        """Bind ``bind_host:bind_port`` and serve in a background daemon thread."""
         if self._server is not None:
             return self
 
@@ -352,7 +368,16 @@ class RestrictionGateway:
             do_HEAD = _dispatch
             do_OPTIONS = _dispatch
 
-        server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        server_cls: type[ThreadingHTTPServer] = ThreadingHTTPServer
+        if ":" in self.bind_host:
+
+            class _V6Server(ThreadingHTTPServer):
+                """IPv6 variant used when the controller pod IP is IPv6."""
+
+                address_family = socket.AF_INET6
+
+            server_cls = _V6Server
+        server = server_cls((self.bind_host, self.bind_port), _Handler)
         server.daemon_threads = True
         self._server = server
         self._port = int(server.server_address[1])
@@ -434,13 +459,29 @@ class RestrictionGateway:
             handler.wfile.write(body)
 
     def _verify_auth(self, handler: BaseHTTPRequestHandler) -> bool:
+        """Check the Bearer token in constant time and its execution binding."""
         auth_header = handler.headers.get("Authorization") or ""
         if not auth_header.startswith("Bearer "):
             return False
         supplied = auth_header[7:].strip()
         if not supplied:
             return False
-        return hmac.compare_digest(supplied, self.gateway_token)
+        if not hmac.compare_digest(supplied, self.gateway_token):
+            return False
+        # Re-derive the binding from this gateway's own execution identity so
+        # a token minted for another execution or tenant can never verify.
+        _, _, binding = supplied.rpartition(".")
+        return hmac.compare_digest(binding, self._token_binding())
+
+    def _token_binding(self) -> str:
+        """Return the HMAC binding this gateway's token to its execution.
+
+        Signs ``execution_id`` and ``tenant_id`` with the per-instance key so
+        the credential is tied to one execution of one tenant, not just to a
+        random value.
+        """
+        message = f"{self.execution_id}\x00{self.tenant_id}".encode()
+        return hmac.new(self._token_key, message, hashlib.sha256).hexdigest()
 
     def _read_request_body(
         self,

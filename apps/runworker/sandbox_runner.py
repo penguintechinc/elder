@@ -16,11 +16,19 @@ churn):
   execution via ``wasmtime``.
 - Streams incremental stdout/stderr to ``on_logs`` on ``log_flush_interval``.
 - Cleans up the workspace and shuts down the gateway in ``finally``.
+
+Isolation model: the subprocess shares the worker's UID, so rlimits and a
+stripped environment are *not* a trust boundary. This backend is therefore
+opt-in and only permitted when the pod itself runs under a VM-isolated
+runtime class (see ``evaluate_sandbox_isolation``). As defence in depth the
+worker process is made non-dumpable before any spawn so same-UID children are
+denied ``/proc/<pid>`` introspection and ptrace of the worker.
 """
 
 from __future__ import annotations
 
 import base64
+import ctypes
 import json
 import logging
 import os
@@ -100,6 +108,98 @@ _RUNTIME_FILENAMES: dict[str, str] = {
     "rust": "main.rs",
     "wasm": "main.wasm",
 }
+
+
+KATA_EXCEPTION_APPROVED = "approved"
+DEFAULT_SANDBOXED_RUNTIME_CLASS_PREFIXES: tuple[str, ...] = ("kata",)
+
+_PR_GET_DUMPABLE = 3
+_PR_SET_DUMPABLE = 4
+
+
+class SandboxIsolationError(RuntimeError):
+    """Raised when the in-pod sandbox is requested without an isolation boundary."""
+
+
+def is_sandboxed_runtime_class(
+    runtime_class: str,
+    sandboxed_runtime_classes: tuple[str, ...] = (),
+) -> bool:
+    """Return whether ``runtime_class`` names a VM-isolated runtime class.
+
+    Single membership test shared by the worker-pod check and the
+    execution-pod check. The allowlist comes from the chart value
+    ``svc-runworker.sandboxedRuntimeClasses``; a merely non-empty name is
+    never enough, so ``runc`` or a misspelt class cannot pass as isolated.
+    Without an allowlist only ``kata*`` class names are accepted.
+    """
+    name = (runtime_class or "").strip().lower()
+    if not name:
+        return False
+    allowlist = tuple(c.strip().lower() for c in sandboxed_runtime_classes if c.strip())
+    if allowlist:
+        return name in allowlist
+    return name.startswith(DEFAULT_SANDBOXED_RUNTIME_CLASS_PREFIXES)
+
+
+def evaluate_sandbox_isolation(
+    *,
+    pod_runtime_class: str,
+    sandboxed_runtime_classes: tuple[str, ...] = (),
+    kata_exception: str = "",
+) -> tuple[bool, str]:
+    """Decide whether in-pod execution is permitted for this worker pod.
+
+    Returns ``(allowed, reason)``. In-pod execution is allowed only when the
+    pod's runtime class is a VM-isolated one (an explicit allowlist entry, or
+    a ``kata*`` class by default), or when the operator set the documented
+    Kata exception. Anything else is refused so tenant code never shares a
+    kernel-level trust boundary with the worker by accident.
+    """
+    runtime_class = (pod_runtime_class or "").strip().lower()
+    if is_sandboxed_runtime_class(runtime_class, sandboxed_runtime_classes):
+        return True, f"pod runtime class {runtime_class!r} is sandboxed"
+    if (kata_exception or "").strip().lower() == KATA_EXCEPTION_APPROVED:
+        return True, "KATA EXCEPTION (approved) override is set"
+    return (
+        False,
+        "worker pod is not running under a sandboxed runtime class "
+        f"(RUNS_POD_RUNTIME_CLASS={runtime_class or '<unset>'!r})",
+    )
+
+
+def _prctl(option: int, arg: int = 0) -> int:
+    """Call ``prctl(2)`` through libc, raising ``OSError`` on failure."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    result = int(libc.prctl(option, arg, 0, 0, 0))
+    if result < 0:
+        errno = ctypes.get_errno()
+        raise OSError(errno, f"prctl({option}) failed: {os.strerror(errno)}")
+    return result
+
+
+def harden_worker_process() -> None:
+    """Mark the worker process non-dumpable so children cannot introspect it.
+
+    A non-dumpable process denies same-UID readers access to its
+    ``/proc/<pid>/environ`` and memory and cannot be ptrace-attached. Raises
+    ``SandboxIsolationError`` when the kernel does not support it, because
+    in-pod execution must not proceed without this guard.
+    """
+    if not sys.platform.startswith("linux"):
+        raise SandboxIsolationError(
+            "In-pod sandbox requires Linux prctl(PR_SET_DUMPABLE) support"
+        )
+    try:
+        if _prctl(_PR_GET_DUMPABLE) != 0:
+            _prctl(_PR_SET_DUMPABLE, 0)
+        dumpable = _prctl(_PR_GET_DUMPABLE)
+    except (OSError, AttributeError) as exc:
+        raise SandboxIsolationError(
+            f"Could not mark the worker process non-dumpable: {exc}"
+        ) from exc
+    if dumpable != 0:
+        raise SandboxIsolationError("Worker process is still dumpable after prctl")
 
 
 def normalize_sandbox_runtime(runtime: str) -> str:
@@ -494,6 +594,7 @@ end
                     granted_scopes=request.granted_scopes,
                     allowed_egress_domains=request.allowed_egress_domains,
                     execution_id=request.execution_id,
+                    tenant_id=request.tenant_id or "",
                     max_requests=self.max_gateway_requests,
                     http_client=self._gateway_http_client,
                     dns_resolver=self._dns_resolver,
@@ -524,10 +625,16 @@ end
                 memory_mb=memory_mb,
             )
 
+            # Must hold before every spawn: refuses to run rather than start
+            # tenant code that could introspect this process.
+            harden_worker_process()
+
             proc = subprocess.Popen(  # noqa: S603
                 cmd,
                 cwd=str(workspace),
                 env=env,
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
