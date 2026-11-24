@@ -10,6 +10,7 @@ from quart import Blueprint, current_app, g, jsonify, request
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.common.licensing.enforce import check_limit
 from apps.api.logging_config import log_error_and_respond
+from apps.api.modules.diagrams.preview import build_diagram_previews, empty_preview
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
@@ -170,30 +171,33 @@ async def list_diagrams():
             limitby=(pagination.offset, pagination.offset + pagination.per_page),
         )
 
-        return total, rows
+        visible_rows = [
+            r for r in rows if _can_read_diagram(db, r, tenant_id, identity_id)
+        ]
+        previews = build_diagram_previews(db, [r.id for r in visible_rows])
 
-    total, rows = await run_in_threadpool(list_dgms)
+        return total, visible_rows, previews
 
-    # Post-filter by visibility
-    diagrams = []
-    for r in rows:
-        if _can_read_diagram(db, r, tenant_id, identity_id):
-            diagrams.append(
-                {
-                    "id": r.id,
-                    "village_id": r.village_id,
-                    "title": r.title,
-                    "description": r.description,
-                    "status": r.status,
-                    "is_public": r.is_public,
-                    "is_template": r.is_template,
-                    "tags": r.tags or [],
-                    "thumbnail_url": r.thumbnail_url,
-                    "owner_identity_id": r.owner_identity_id,
-                    "created_at": r.created_at.isoformat(),
-                    "updated_at": r.updated_at.isoformat(),
-                }
-            )
+    total, visible_rows, previews = await run_in_threadpool(list_dgms)
+
+    diagrams = [
+        {
+            "id": r.id,
+            "village_id": r.village_id,
+            "title": r.title,
+            "description": r.description,
+            "status": r.status,
+            "is_public": r.is_public,
+            "is_template": r.is_template,
+            "tags": r.tags or [],
+            "thumbnail_url": r.thumbnail_url,
+            "preview": previews.get(r.id, empty_preview()),
+            "owner_identity_id": r.owner_identity_id,
+            "created_at": r.created_at.isoformat(),
+            "updated_at": r.updated_at.isoformat(),
+        }
+        for r in visible_rows
+    ]
 
     return (
         jsonify(

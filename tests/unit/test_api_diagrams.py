@@ -241,6 +241,57 @@ class TestDiagrams:
         assert data["pagination"]["total"] == 3
 
     @pytest.mark.asyncio
+    async def test_list_diagrams_includes_preview(self, app):
+        """List endpoint returns lightweight preview geometry for diagrams."""
+        tenant_id = self.fixtures["tenant_id"]
+        identity_id = self.fixtures["identity_id"]
+        token = self._token(app, tenant_id, identity_id)
+
+        client = app.test_client()
+        create_resp = await client.post(
+            "/api/v1/diagrams",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "title": "Previewed Diagram",
+                "content": {
+                    "nodes": [
+                        {
+                            "id": "n1",
+                            "position": {"x": 0, "y": 0},
+                            "data": {"label": "API", "color": "#2563eb"},
+                        },
+                        {
+                            "id": "n2",
+                            "position": {"x": 220, "y": 0},
+                            "data": {"label": "DB", "color": "#16a34a"},
+                        },
+                    ],
+                    "edges": [
+                        {
+                            "id": "e1",
+                            "source": "n1",
+                            "target": "n2",
+                            "markerEnd": {"type": "arrowclosed"},
+                        }
+                    ],
+                },
+            },
+        )
+        assert create_resp.status_code == 201
+
+        list_resp = await client.get(
+            "/api/v1/diagrams",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert list_resp.status_code == 200
+        items = (await list_resp.get_json())["items"]
+        assert len(items) == 1
+        preview = items[0]["preview"]
+        assert [s["label"] for s in preview["shapes"]] == ["API", "DB"]
+        assert len(preview["connectors"]) == 1
+        assert preview["connectors"][0]["connector_type"] == "arrow"
+
+    @pytest.mark.asyncio
     async def test_list_diagrams_with_status_filter(self, app):
         """Test listing diagrams with status filter."""
         tenant_id = self.fixtures["tenant_id"]
