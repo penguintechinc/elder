@@ -6219,6 +6219,19 @@
   },
   {
     "service": "runs",
+    "operation": "cancel_run_execution",
+    "method": "POST",
+    "path": "/api/v1/runs/executions/{execution_id}/cancel",
+    "path_params": [
+      "execution_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Cancel a pending or running execution for the current tenant.",
+    "has_body": true,
+    "destructive": true
+  },
+  {
+    "service": "runs",
     "operation": "create_run_function",
     "method": "POST",
     "path": "/api/v1/runs",

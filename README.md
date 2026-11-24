@@ -31,7 +31,7 @@ Resource, Entity, Element & Relationship Tracking System
 
 **Elder** is a comprehensive resource, entity, element, and relationship tracking system designed for modern infrastructure management. Track dependencies, visualize relationships, and maintain control across complex organizational structures.
 
-As of **v4.0.0**, Elder is a **modular monolith**: one deployable platform made of 15 independently toggleable modules, grouped into the five WIRED pillars below. Several formerly separate PenguinTech products (IceCharts, IceStreams, IceFlows, Ruffled) now ship as modules inside it.
+As of **v4.0.0**, Elder is a **modular monolith**: one deployable platform made of 17 independently toggleable modules, grouped into the five WIRED pillars below, shipped across a 6-image Kubernetes architecture (`hub-webui`, `hub-mcp`, `hub-api`, `svc-worker`, `svc-scanner`, `svc-runworker`). Several formerly separate PenguinTech products (IceCharts, IceStreams, IceFlows, Ruffled) now ship as modules inside it.
 
 > ✅ **MariaDB Galera Cluster Compatible** - Full support for multi-master replication and high-availability deployments
 
@@ -44,19 +44,19 @@ As of **v4.0.0**, Elder is a **modular monolith**: one deployable platform made 
 Elder is an **internal** platform — it manages your own organization's estate, not your customers'. Everything it tracks falls into one of five pillars, and those five pillars are also how the product is grouped: they name the sidebar sections, the module groups, and the `ELDER_GROUP_*` deployment toggles.
 
 ```
-  W  Workstreams    things that run on a trigger      streams · flows · webhooks & alerting
-  I  Issues         things that need doing            issues · projects · internal tickets
-  R  Relationships  edges, discovered and attested    discovery · access reviews
-  E  Entities       things you inventory              CMDB · IPAM · SBOM · services · secrets
+  W  Workstreams    things that run on a trigger      streams · flows · runs (CodeRuns) · webhooks & alerting
+  I  Issues         things that need doing            issues · projects · on-call · internal tickets
+  R  Relationships  edges, discovered and attested    discovery · dependencies · access reviews
+  E  Entities       things you inventory              CMDB · IPAM · SBOM · services · AI · secrets
   D  Documents      things you write down             documents · pages · diagrams
 ```
 
 | Pillar | What it holds | Modules |
 |--------|---------------|---------|
-| **W** — Workstreams | Automation that fires on a schedule, an event, or a commit — workflow runs, CI/CD pipelines, outbound webhooks and alerts | `streams`, `flows`, `webhooks_alerting` |
-| **I** — Issues | Every unit of work, in one model: operational issues, project tasks, and internal support tickets (`issue_type=support`) | `issues`, `helpdesk` |
-| **R** — Relationships | How things connect — edges built automatically by cloud/K8s/IdP discovery, and identity→resource access attested by humans | `discovery`, `access_reviews` |
-| **E** — Entities | The inventory itself: the CMDB, IP space, software bill of materials, service catalog, and secrets | `infrastructure`, `ipam`, `sbom`, `services_oncall`, `secrets` |
+| **W** — Workstreams | Automation that fires on a schedule, an event, or a commit — Playbooks, CodeRuns, CI/CD pipelines, CSV bulk imports, outbound webhooks, and centralized Executions audit log | `streams`, `flows`, `runs`, `webhooks_alerting` |
+| **I** — Issues | Every unit of work, in one model: operational issues, project tasks, on-call rotations, and internal support tickets (`issue_type=support`) | `issues`, `helpdesk` |
+| **R** — Relationships | How things connect — edges built automatically by cloud/K8s/IdP discovery, dependency mapping, and identity→resource access attested by humans | `discovery`, `access_reviews` |
+| **E** — Entities | The inventory itself, split in the sidebar into **Infrastructure**, **Software**, and **Security**: CMDB, IPAM, SBOM, services, AI resources, and secrets | `infrastructure`, `ipam`, `sbom`, `services_oncall`, `ai`, `secrets` |
 | **D** — Documents | Written knowledge attached to the estate — knowledge base articles, documentation pages, and diagrams | `documents`, `pages`, `diagrams` |
 
 **Where the graph lives:** the dependency, topology, and relationship-graph views are served by the `infrastructure` module (Entities) — it owns both the objects and the edges between them. The **Relationships** group holds the modules whose *output* is edges: `discovery` creates them from scans, `access_reviews` attests the identity→resource ones.
@@ -67,16 +67,17 @@ Elder is an **internal** platform — it manages your own organization's estate,
 
 ## Modules
 
-All 15 modules are installed in every build and toggled at deploy time. Grouping is presentation and deployment only — **no group is license-tier-locked**.
+All 17 modules are installed in every build and toggled at deploy time. Grouping is presentation and deployment only — **no group is license-tier-locked**.
 
 > ⚠️ `flows` and `helpdesk` are **API-only today** — both expose REST surfaces and worker tasks, but neither has a page in the React app yet, so enabling them adds no sidebar entry.
 
 | Module | Title | Group | License-gated |
 |--------|-------|-------|---------------|
-| `streams` | Streams (Workflows) | workstreams | — |
+| `streams` | Streams (Playbooks / Workflows) | workstreams | — |
 | `flows` | Flows (CI/CD) | workstreams | — |
+| `runs` | CodeRuns (Serverless Functions) | workstreams | — |
 | `webhooks_alerting` | Webhooks & Alerting | workstreams | — |
-| `issues` | Issues & Project Tracking | issues | — |
+| `issues` | Work Management (Issues & Projects) | issues | — |
 | `helpdesk` | Helpdesk (Internal Ticketing) | issues | — |
 | `discovery` | Discovery & Sync | relationships | — |
 | `access_reviews` | Access Reviews | relationships | `access-reviews` |
@@ -84,6 +85,7 @@ All 15 modules are installed in every build and toggled at deploy time. Grouping
 | `ipam` | IP Address Management | entities | — |
 | `sbom` | Software Bill of Materials | entities | — |
 | `services_oncall` | Service Catalog & On-Call | entities | — |
+| `ai` | AI Resources | entities | — |
 | `secrets` | Secrets Management | entities | — |
 | `documents` | Documents & Knowledge Base | documents | — |
 | `pages` | Pages & Documentation | documents | — |
@@ -142,8 +144,10 @@ Entities use a flexible schema for infrastructure components:
 - **Secrets Management**: Integrate with Vault, AWS Secrets Manager, GCP Secret Manager
 - **Network Topology**: Track VPCs, subnets, peering, VPN connections
 - **Project Sync**: Bi-directional sync with GitHub, GitLab, Jira, Trello, OpenProject
-- **Workflow Automation**: Streams (event/schedule-driven workflows) and Flows (CI/CD pipelines)
-- **Diagramming**: React-Flow diagram editor with real-time collaboration
+- **Workflow Automation & CodeRuns**: Playbooks (event/schedule-driven workflows with Human Approval and S3 nodes), CodeRuns (sandboxed serverless functions via `svc-runworker`), Flows (CI/CD pipelines), and a centralized Executions audit log (All / Playbooks / CodeRuns / Webhooks)
+- **Diagramming & Playbook Export**: React-Flow diagram and playbook editors with pure-browser PNG/JPG/SVG export and versioned JSON backup/import
+- **CSV Bulk Imports**: S3-backed asynchronous bulk CSV imports dispatched over Valkey (`elder:csv_import:queue`) and processed by `svc-worker`
+- **Remote Workers Fleet**: Managed fleet of remote-capable `svc-runworker` and `svc-scanner` Deployments (`/api/v1/admin/workers`, `/admin/workers`) with one-time `ewk_` token onboarding, live config, heartbeats, and liveness tracking (`online`/`stale`/`offline`/`revoked`)
 - **Knowledge Base**: Documents and documentation pages attached to the estate
 - **Enterprise Features**: Audit logging, RBAC, MFA, SSO, multi-tenant, license management
 - **Backups**: S3/cloud backup jobs with scheduling and point-in-time restore
@@ -153,7 +157,7 @@ Entities use a flexible schema for infrastructure components:
 - **Global Search**: Full-text search across all resource types and entities
 - **Audit Logging**: Comprehensive action logging with admin filtering
 - **Network Topology Map**: Interactive geo-located visualization of infrastructure relationships
-- **MCP Server**: Model Context Protocol server so AI agents can query Elder over the authenticated REST API
+- **MCP Server, SDKs & CLI**: Hosted caller-scoped `hub-mcp` server for AI agents, official Python SDK (`sdk/python`), pure-rustls Rust SDK (`crates/elder-sdk`), and Rust CLI (`cli/elder-cli`)
 
 ## Screenshots
 
@@ -393,23 +397,30 @@ Entities use a flexible schema for infrastructure components:
 ## Key Features
 
 ### Core Capabilities
-- ✅ **WIRED Model**: Workstreams, Issues, Relationships, Entities, Documents — five pillars, five module groups, one platform
-- ✅ **Modular Monolith**: 15 modules, each toggleable per-module or per-group at deploy time
+- ✅ **WIRED Model**: Workstreams, Issues (Work Management), Relationships, Entities (Infrastructure / Software / Security), Documents — five pillars, five module groups, one platform
+- ✅ **Modular Monolith**: 17 modules, each toggleable per-module or per-group at deploy time
+- ✅ **6-Image Architecture**: `hub-webui`, `hub-mcp`, `hub-api`, `svc-worker`, `svc-scanner`, `svc-runworker`
 - ✅ **Dual Data Model**: 6 Resource types (dedicated schemas) + 5 Entity categories (flexible schema)
 - ✅ **Multi-Entity Support**: 5 entity categories with 40+ sub-types
 - ✅ **Hierarchical Organizations**: Unlimited depth organizational structures
 - ✅ **Dependency Graphs**: Visualize complex entity relationships
 - ✅ **Full RBAC**: Role-based permissions with org-scoped access
 - ✅ **Multi-Auth**: Local, SAML, OAuth2, OIDC, and LDAP authentication
-- ✅ **RESTful & gRPC APIs**: Complete API coverage
-- ✅ **Audit Logging**: Comprehensive audit trail for compliance
+- ✅ **RESTful, gRPC, MCP & SDKs**: OpenAPI 3.0 REST, gRPC, hosted `hub-mcp`, Python SDK (`sdk/python`), Rust SDK (`crates/elder-sdk`), and Rust CLI (`cli/elder-cli`)
+- ✅ **Audit Logging**: Comprehensive action logging plus centralized Executions audit log (Playbooks, CodeRuns, Webhooks)
 - ✅ **MariaDB Galera**: Full support for multi-master MySQL clustering
 - ✅ **Internal Helpdesk & Ticketing**: Employee/contractor support — tickets with SLA policies, canned responses, and teams, plus `issue_type=support` Issues with a combined identity+org-unit assignee picker and `issue.assigned` assignment webhooks
 
 ### v4.0.0 Highlights (Unreleased)
 
+- **6-Image Kubernetes Architecture**: Standardized around `hub-webui`, `hub-mcp`, `hub-api`, `svc-worker`, `svc-scanner`, and `svc-runworker`. CSV bulk imports run inside `svc-worker` (no standalone `svc-csv-importer` CronJob), and `svc-scanner` runs as a remote-capable long-running Deployment (`run --loop`).
 - **Modular monolith restructure** (#164): feature code moved from flat `apps/api/models/*.py` + `apps/api/api/v1/*` into per-module packages `apps/api/modules/<name>/{models,routes}/`. **Breaking**: `apps.api.models.infrastructure` no longer exists.
 - **WIRED module groups**: the old `core`/`crm`/`workflow`/`kb` buckets are replaced by the five pillars. **Breaking**: `ELDER_GROUP_CORE`/`CRM`/`WORKFLOW`/`KB` → `ELDER_GROUP_WORKSTREAMS`/`ISSUES`/`RELATIONSHIPS`/`ENTITIES`/`DOCUMENTS`.
+- **CodeRuns (`svc-runworker`)**: Sandboxed serverless functions (renamed from "Runs" to "CodeRuns" in the UI) with 5-minute (`300s`) max timeout, remote-capable HTTP polling against `hub-api` (zero DB/Valkey/S3 credentials on workers), warm sandbox pool + loopback Tool/Network Restriction Gateway + built-in zero-dependency `elder` helper SDK (`elder.py`/`elder.mjs`/`elder.rb`), per-CodeRun scoped permissions (`granted_scopes`, `allowed_egress_domains`) with ephemeral JWTs, live stdout log push every 30s (`RUNS_LOG_FLUSH_INTERVAL_SECONDS`), and operator-managed `execution_namespace` (`elder-runs`) with `worker_cluster` routing.
+- **Remote Scanner (`svc-scanner`)**: Flipped to a remote-capable long-running Rust Deployment (`run --loop`) with 5-minute (`300s`) default poll, 30s default progress push, remote `ELDER_INTERNAL_TOKEN` (`ewk_`) + in-cluster `JWT_SECRET_KEY` auth, and periodic fleet heartbeats.
+- **Remote Workers Fleet (`/api/v1/admin/workers`)**: Fleet onboarding (one-time `ewk_` token), offboarding/revocation, live config, heartbeats, and liveness (`online`/`stale`/`offline`/`revoked`) exposed consistently across WebUI (`/admin/workers`), `hub-mcp`, Python SDK (`client.workers`), Rust SDK (`elder-sdk::workers`), and Rust CLI (`elder workers`).
+- **S3 + Valkey CSV Bulk Imports**: `hub-api` streams uploaded CSVs to an S3-compatible bucket and pushes job IDs to Valkey (`elder:csv_import:queue`); `svc-worker` claims jobs immediately via `BRPOP` (with a 60s DB fallback sweep) and imports directly into PostgreSQL.
+- **UI & Workflow Upgrades**: Pure-browser PNG/JPG/SVG export and versioned JSON backup/import for Diagrams and Playbooks; centralized Executions audit log (`All` / `Playbooks` / `CodeRuns` / `Webhooks`); reorganized sidebar (`Workstreams`, `Work Management`, `Relationships`, `Infrastructure`, `Software`, `Security`, `Documents`).
 - **IceCharts merge** (#167, #168): `diagrams` (React-Flow editor with real-time collaboration), `streams` (workflow automation), `flows` (CI/CD) now ship as Elder modules.
 - **Ruffled merge** (#166, #173): `helpdesk`, `documents`, and `pages` merged in. Rookery was intentionally excluded.
 - **Issues ↔ tickets unification**: a support request is just an Issue (`issue_type=support`) — no parallel ticket resource. Polymorphic assignee (`identity` or `org_unit`) plus `issue.assigned` HMAC-signed webhooks filterable by type and assignee.
@@ -550,58 +561,62 @@ Full list: [`.env.example`](.env.example).
 
 ## Architecture
 
+Elder deploys as a **6-image Kubernetes architecture** split into hub control-plane services and background/remote workers:
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Client Layer                         │
-│  React UI │ REST Clients │ gRPC Clients │ MCP Agents    │
-└─────────────────────────────────────────────────────────┘
-                            │
-┌─────────────────────────────────────────────────────────┐
-│                   API Layer (modular monolith)          │
-│  Quart REST (ASGI/uvicorn) │ gRPC Server │ WebSocket    │
-│  JWT Auth │ RBAC │ Rate Limiting │ Module Registry      │
-│                                                         │
-│  W workstreams  I issues  R relationships               │
-│  E entities     D documents                             │
-└─────────────────────────────────────────────────────────┘
-        │                  │                    │
-┌───────────────┐ ┌─────────────────┐ ┌────────────────────┐
-│ Worker        │ │ Scanner         │ │ Flows Invoker      │
-│ Cloud disc.   │ │ Network/Banner  │ │ CI/CD pipeline     │
-│ Connector sync│ │ SBOM scan       │ │ step execution     │
-│ Cred refresh  │ │ HTTP screenshot │ │                    │
-│ SLA breach    │ │ Endpoint parser │ │                    │
-└───────────────┘ └─────────────────┘ └────────────────────┘
-                            │
-┌─────────────────────────────────────────────────────────┐
-│                   Data Layer                            │
-│  penguin-dal/PyDAL (PostgreSQL, MySQL/MariaDB, SQLite)  │
-│  Redis/Valkey (Cache, Sessions, Job Bus)                │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                            Client Layer                              │
+│  hub-webui (React SPA) │ hub-mcp (MCP) │ Python/Rust SDKs │ Rust CLI │
+└──────────────────────────────────────────────────────────────────────┘
+                                   │ HTTPS / JWT
+┌──────────────────────────────────────────────────────────────────────┐
+│                   hub-api (Quart ASGI Modular Monolith)              │
+│  REST (OpenAPI 3.0) │ gRPC │ WebSocket │ Auth/RBAC │ Module Registry │
+│  W workstreams  I issues  R relationships  E entities  D documents   │
+│  Workers Fleet (/api/v1/admin/workers) │ S3 CSV/Artifact Presigning  │
+└──────────────────────────────────────────────────────────────────────┘
+        │ DB + Valkey + S3           │ HTTP-only (ewk_ / JWT)   │ HTTP-only (ewk_ / JWT)
+┌─────────────────────────┐  ┌─────────────────────────┐  ┌─────────────────────────┐
+│ svc-worker              │  │ svc-scanner (Remote OK) │  │ svc-runworker (RemoteOK)│
+│ Cloud discovery         │  │ Rust Deployment         │  │ CodeRuns Deployment     │
+│ Connector sync          │  │ (`run --loop`, 300s)    │  │ Warm sandbox pool +     │
+│ CSV bulk import (BRPOP  │  │ Network/Banner/SBOM/    │  │ loopback Restriction GW │
+│  elder:csv_import:queue │  │ HTTP screenshot scans   │  │ Built-in elder SDK      │
+│  + 60s DB sweep)        │  │ 30s progress + fleet    │  │ 30s live log push       │
+│ SLA breach & Playbooks  │  │ heartbeats              │  │ elder-runs namespace    │
+└─────────────────────────┘  └─────────────────────────┘  └─────────────────────────┘
+        │                               (zero DB / Valkey / S3 credentials)
+┌──────────────────────────────────────────────────────────────────────┐
+│                             Data Layer                               │
+│  PostgreSQL / MariaDB Galera (penguin-dal) │ Valkey/Redis │ S3 Store │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-### Services
+### Services (6-Image Architecture)
 
-| Service | Path | Role |
-|---------|------|------|
-| **api** | `apps/api/` | Quart REST + gRPC, module registry, auth |
-| **web** | `web/` | React SPA served by Express |
-| **worker** | `apps/worker/` | Cloud discovery, connector sync, credential refresh, SLA breach |
-| **scanner** | `apps/scanner/` | Network, banner, SBOM, HTTP screenshot, endpoint parsing |
-| **flows-invoker** | `apps/flows_invoker/` | CI/CD pipeline step execution |
-| **mcp** | `apps/mcp/` | MCP (Model Context Protocol) server for AI agents, stdio transport |
+| Image / Service | Path | Role |
+|-----------------|------|------|
+| **`hub-webui`** | `web/` | React 18 + TypeScript SPA served by Express |
+| **`hub-mcp`** | `apps/mcp/` | Hosted caller-scoped MCP (Model Context Protocol) server for AI agents and AI Researcher |
+| **`hub-api`** | `apps/api/` | Quart ASGI REST + gRPC API, 17-module registry, auth/RBAC, Remote Workers Fleet registry, S3 CSV upload & Valkey queue dispatch |
+| **`svc-worker`** | `apps/worker/` | Background worker with direct PostgreSQL + Valkey access: CSV bulk import (`BRPOP elder:csv_import:queue` + 60s DB fallback sweep), cloud discovery, connector sync, credential refresh, Playbook execution, SLA breach |
+| **`svc-scanner`** | `services/svc-scanner/` | Rust remote-capable long-running Deployment (`run --loop`): network, banner, SBOM, and HTTP screenshot scans; 300s default poll, 30s default progress push, `ELDER_INTERNAL_TOKEN` (`ewk_`) + in-cluster `JWT_SECRET_KEY`, periodic fleet heartbeats (zero DB/Valkey/S3 creds) |
+| **`svc-runworker`** | `apps/runworker/` | Remote-capable CodeRuns Deployment polling `hub-api` over HTTP (zero DB/Valkey/S3 creds): 300s max timeout, warm sandbox pool + loopback Tool/Network Restriction Gateway + built-in `elder` helper SDK (`elder.py`/`elder.mjs`/`elder.rb`), per-CodeRun scoped permissions & ephemeral JWTs, 30s live stdout log flush (`RUNS_LOG_FLUSH_INTERVAL_SECONDS`), operator-managed `execution_namespace` (`elder-runs`) with `worker_cluster` routing |
 
 ### Technology Stack
 
 - **Backend**: Quart 0.20 (Python 3.13, ASGI) on uvicorn, penguin-dal/PyDAL
+- **Remote Scanner, SDK & CLI**: Rust (`services/svc-scanner`, `crates/elder-sdk`, `cli/elder-cli` — pure-rustls)
+- **Python SDK**: `sdk/python` (`elder_sdk` sync/async client)
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, ReactFlow, MapLibre GL
 - **Database**: PostgreSQL (recommended), MySQL/MariaDB Galera, SQLite
-- **Cache / Job Bus**: Redis / Valkey (Redis Streams)
+- **Cache / Job Bus**: Valkey / Redis (Lists `BRPOP`/`LPUSH`, Streams, cache)
+- **Object Storage**: S3-compatible bucket (backups, CSV bulk import staging, CodeRun artifacts)
 - **Migrations**: SQLAlchemy + Alembic (schema only; runtime queries go through penguin-dal)
-- **APIs**: REST (OpenAPI 3.0), gRPC, MCP
-- **Auth**: JWT, SAML, OIDC, OAuth2, LDAP, SCIM 2.0
+- **APIs**: REST (OpenAPI 3.0), gRPC, hosted MCP (`hub-mcp`)
+- **Auth**: JWT (including ephemeral CodeRun JWTs and `ewk_` remote worker tokens), SAML, OIDC, OAuth2, LDAP, SCIM 2.0
 - **Connectors**: AWS, GCP, Kubernetes, Okta, LDAP, vCenter, FleetDM, iBoss, Authentik, Google Workspace
-- **Monitoring**: Prometheus, Grafana
+- **Observability**: OpenTelemetry (logs, metrics, traces), Prometheus, Grafana
 - **Deployment**: Kubernetes via Helm (`k8s/helm/elder`), MicroK8s for local alpha
 
 ## Scanners & Integrations

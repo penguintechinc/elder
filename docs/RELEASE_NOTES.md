@@ -9,7 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.0.0] - Unreleased
 
-**Elder Platform Merge** — consolidates several separate PenguinTech products into Elder as toggleable modules, moving Elder to a modular-monolith architecture.
+**Elder Platform Merge** — consolidates several separate PenguinTech products into Elder as toggleable modules, moving Elder to a modular-monolith architecture backed by a 6-image Kubernetes deployment (`hub-webui`, `hub-mcp`, `hub-api`, `svc-worker`, `svc-scanner`, `svc-runworker`).
+
+### 🚀 6-Image Architecture, CodeRuns & Remote Workers Fleet
+
+- **6-Image Kubernetes Architecture**: Standardized service images (`hub-webui`, `hub-mcp`, `hub-api`, `svc-worker`, `svc-scanner`, `svc-runworker`). Removed the standalone `svc-csv-importer` CronJob and gated the legacy `svc-scanner` CronJob strictly on `mode=cronjob`.
+- **CSV Bulk Imports via S3 + Valkey (`svc-worker`)** (#419, #422, #429): `hub-api` streams uploaded CSVs to an S3-compatible bucket and pushes job IDs to Valkey (`elder:csv_import:queue`); `svc-worker` claims jobs immediately via `BRPOP` (with a 60s periodic DB fallback sweep) and imports directly into PostgreSQL.
+- **CodeRuns (`svc-runworker`)** (#408–#415, #420–#421, #425–#428, #430–#431): Renamed from "Runs" to "CodeRuns" in the UI; remote-capable Deployment polling `hub-api` over HTTP with zero DB/Valkey/S3 credentials; 5-minute (`300s`) max timeout; warm sandbox pool + loopback Tool/Network Restriction Gateway + built-in zero-dependency `elder` helper SDK (`elder.py`, `elder.mjs`, `elder.rb`); per-CodeRun scoped permissions (`granted_scopes`, `allowed_egress_domains`) with ephemeral JWTs; live stdout log push every 30s default (`RUNS_LOG_FLUSH_INTERVAL_SECONDS`); operator-managed `execution_namespace` (`elder-runs`) with `worker_cluster` routing.
+- **Remote Scanner (`svc-scanner`)** (#432, #436): Flipped to a remote-capable long-running Rust Deployment (`run --loop`) with 5-minute (`300s`) default poll, 30s default progress push, remote `ELDER_INTERNAL_TOKEN` (`ewk_`) + in-cluster `JWT_SECRET_KEY` auth, and periodic fleet heartbeats.
+- **Remote Workers Fleet (`/api/v1/admin/workers`)** (#433–#435, #437): Onboarding (one-time `ewk_` token), offboarding/revocation, live config, token rotation, heartbeats, and liveness (`online`/`stale`/`offline`/`revoked`) exposed consistently across WebUI (`/admin/workers`), `hub-mcp`, Python SDK (`client.workers`), Rust SDK (`elder-sdk::workers`), and Rust CLI (`elder workers`).
+- **UI & Workflow Upgrades** (#416–#418, #420–#421): Pure-browser PNG/JPG/SVG export and versioned JSON backup/import for Diagrams and Playbooks; centralized Executions audit log (`All` / `Playbooks` / `CodeRuns` / `Webhooks`); reorganized sidebar (`Workstreams`, `Work Management`, `Relationships`, `Infrastructure`, `Software`, `Security`, `Documents`, plus `Administration → Workers`).
+- **Official SDKs, Rust CLI & Hosted MCP** (#381, #383–#384, #395–#396, #398): Added official Python SDK (`sdk/python`), pure-rustls Rust SDK (`crates/elder-sdk`), pure-rustls Rust CLI (`cli/elder-cli`), and hosted caller-scoped `hub-mcp` Deployment.
 
 ### ✨ Merged Product Lines
 

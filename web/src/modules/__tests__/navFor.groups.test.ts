@@ -170,11 +170,11 @@ describe("navFor — one section per WIRED pillar", () => {
     expect(workstreams!.items.map((i) => i.href)).toEqual([
       "/webhooks",
       "/streams",
-      "/streams/approvals",
+      "/approvals",
       "/runs",
       "/backups",
       "/csv-templates",
-      "/streams/executions",
+      "/executions",
     ]);
     expect(workstreams!.items.map((i) => i.name)).toEqual([
       "Webhooks",
@@ -186,7 +186,7 @@ describe("navFor — one section per WIRED pillar", () => {
       "Executions",
     ]);
     expect(workstreams!.items[workstreams!.items.length - 1].href).toBe(
-      "/streams/executions",
+      "/executions",
     );
   });
 

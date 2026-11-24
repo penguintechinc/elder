@@ -4387,6 +4387,18 @@ class ApiClient {
     };
   }
 
+  async cancelRunExecution(executionId: string): Promise<RunExecutionDetail> {
+    const response = await this.client.post(
+      `/runs/executions/${executionId}/cancel`,
+    );
+    const row = response.data || {};
+    return {
+      ...row,
+      stdout: row.stdout ?? row.stdout_log ?? null,
+      stderr: row.stderr ?? row.stderr_log ?? null,
+    };
+  }
+
   async getRunPermissionsCatalog(): Promise<RunPermissionsCatalogResponse> {
     try {
       const response = await this.client.get("/runs/permissions/catalog");
@@ -4752,6 +4764,8 @@ export interface RunExecution {
   completed_at?: string | null;
   created_at: string;
 }
+
+export type RunExecutionDetail = RunExecution;
 
 export interface RunExecutionListResponse {
   data: RunExecution[];

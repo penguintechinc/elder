@@ -154,7 +154,11 @@ export function getExecutionStatusBadgeClass(status: string): string {
     case "failed":
     case "error":
     case "timeout":
+    case "timed_out":
       return "bg-rose-900/70 text-rose-200 border border-rose-700/60";
+    case "cancelled":
+    case "canceled":
+      return "bg-amber-900/70 text-amber-200 border border-amber-700/60";
     case "running":
       return "bg-sky-900/70 text-sky-200 border border-sky-700/60";
     case "pending":

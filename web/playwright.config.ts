@@ -2,9 +2,14 @@ import { defineConfig, devices } from '@playwright/test';
 import { execFileSync } from 'child_process';
 import path from 'path';
 
-// Repo-scoped artifact dir — prevents /tmp collisions when multiple repos run tests concurrently
-const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
-const repoName = path.basename(repoRoot);
+// Repo-scoped artifact dir — prevents /tmp collisions when multiple repos run tests concurrently.
+// Use --git-common-dir so git worktrees under .worktrees/* still resolve to the canonical repo name.
+const gitCommonDir = execFileSync('git', ['rev-parse', '--git-common-dir'], { encoding: 'utf8' }).trim();
+const resolvedCommon = path.resolve(gitCommonDir);
+const repoName =
+  path.basename(resolvedCommon) === '.git'
+    ? path.basename(path.dirname(resolvedCommon))
+    : path.basename(resolvedCommon);
 const artifactDir = `/tmp/playwright-${repoName}`;
 
 /**

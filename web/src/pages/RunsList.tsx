@@ -40,7 +40,6 @@ interface CreateFormState {
   timeout_seconds: string;
   memory_mb: string;
   schedule_cron: string;
-  execution_namespace: string;
   worker_cluster: string;
   granted_scopes: string[];
   allowed_egress_domains: string;
@@ -54,7 +53,6 @@ const DEFAULT_CREATE_FORM: CreateFormState = {
   timeout_seconds: "30",
   memory_mb: "256",
   schedule_cron: "",
-  execution_namespace: "elder-runs",
   worker_cluster: "",
   granted_scopes: [],
   allowed_egress_domains: "",
@@ -180,7 +178,6 @@ export default function RunsList() {
       memory_mb:
         Number.isFinite(parsedMemory) && parsedMemory > 0 ? parsedMemory : 256,
       schedule_cron: form.schedule_cron.trim() || null,
-      execution_namespace: form.execution_namespace.trim() || "elder-runs",
       worker_cluster: form.worker_cluster.trim() || null,
       granted_scopes: form.granted_scopes,
       allowed_egress_domains: parseEgressDomains(form.allowed_egress_domains),
@@ -354,8 +351,7 @@ export default function RunsList() {
                       )}
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300 font-mono">
                         <Server className="w-3 h-3" aria-hidden="true" />
-                        {fn.execution_namespace || "elder-runs"}
-                        {fn.worker_cluster ? ` @ ${fn.worker_cluster}` : ""}
+                        {fn.worker_cluster || "default worker"}
                       </span>
                       {fn.storage_backend &&
                         (() => {
@@ -636,49 +632,30 @@ export default function RunsList() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label
-                    htmlFor="run-fn-namespace"
-                    className="block text-sm font-medium text-slate-300 mb-1"
-                  >
-                    Execution Namespace
-                  </label>
-                  <input
-                    id="run-fn-namespace"
-                    type="text"
-                    value={form.execution_namespace}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        execution_namespace: e.target.value,
-                      }))
-                    }
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm font-mono text-slate-100 focus:outline-none focus:border-amber-400"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="run-fn-cluster"
-                    className="block text-sm font-medium text-slate-300 mb-1"
-                  >
-                    Worker Cluster
-                  </label>
-                  <input
-                    id="run-fn-cluster"
-                    type="text"
-                    value={form.worker_cluster}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        worker_cluster: e.target.value,
-                      }))
-                    }
-                    placeholder="Optional (default cluster)"
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm font-mono text-slate-100 focus:outline-none focus:border-amber-400"
-                  />
-                </div>
+              <div>
+                <label
+                  htmlFor="run-fn-cluster"
+                  className="block text-sm font-medium text-slate-300 mb-1"
+                >
+                  Worker Cluster (optional)
+                </label>
+                <input
+                  id="run-fn-cluster"
+                  type="text"
+                  value={form.worker_cluster}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      worker_cluster: e.target.value,
+                    }))
+                  }
+                  placeholder="Optional (default cluster)"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm font-mono text-slate-100 focus:outline-none focus:border-amber-400"
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  Routes this CodeRun to a remote worker pool configured under
+                  Administration → Workers. Execution namespace is operator-managed.
+                </p>
               </div>
 
               <CodeRunPermissionsEditor

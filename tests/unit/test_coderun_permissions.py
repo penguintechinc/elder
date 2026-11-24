@@ -611,6 +611,76 @@ class TestCodeRunRoutes:
         assert plain_item["allowed_egress_domains"] == []
         assert "elder_api_token" not in plain_item
 
+    @pytest.mark.asyncio
+    async def test_rejects_custom_execution_namespace_on_create_and_update(
+        self, tmp_path: Path
+    ) -> None:
+        app = _make_test_app(tmp_path)
+
+        class _AdminUser:
+            id = 1
+            username = "admin"
+            tenant_id = 1
+            is_superuser = True
+            is_active = True
+
+        @app.before_request
+        async def _inject_admin() -> None:
+            g.current_user = _AdminUser()
+            g.claims = {
+                "sub": "1",
+                "tenant": "1",
+                "scope": ["*:read", "*:write", "*:admin"],
+                "roles": ["admin"],
+            }
+
+        client = app.test_client()
+
+        # Creating with a non-default namespace (e.g. kube-system / system) must fail 400
+        for bad_ns in ("kube-system", "system", "elder", "default"):
+            bad_resp = await client.post(
+                "/api/v1/runs",
+                json={
+                    "name": f"bad-ns-{bad_ns}",
+                    "runtime": "python",
+                    "code": "def handler(d): return d",
+                    "execution_namespace": bad_ns,
+                },
+            )
+            assert bad_resp.status_code == 400, f"expected 400 for {bad_ns}"
+
+        # Creating without execution_namespace pins to operator-managed 'elder-runs'
+        ok_resp = await client.post(
+            "/api/v1/runs",
+            json={
+                "name": "safe-ns-fn",
+                "runtime": "python",
+                "code": "def handler(d): return d",
+                "worker_cluster": "eu-west",
+            },
+        )
+        assert ok_resp.status_code == 201
+        created = await ok_resp.get_json()
+        assert created["execution_namespace"] == "elder-runs"
+        assert created["worker_cluster"] == "eu-west"
+
+        # Updating execution_namespace to anything else must also fail 400
+        upd_bad = await client.put(
+            f"/api/v1/runs/{created['id']}",
+            json={"execution_namespace": "kube-system"},
+        )
+        assert upd_bad.status_code == 400
+
+        # Updating with default or omitted execution_namespace succeeds
+        upd_ok = await client.put(
+            f"/api/v1/runs/{created['id']}",
+            json={"worker_cluster": "us-east", "execution_namespace": "elder-runs"},
+        )
+        assert upd_ok.status_code == 200
+        updated = await upd_ok.get_json()
+        assert updated["execution_namespace"] == "elder-runs"
+        assert updated["worker_cluster"] == "us-east"
+
 
 class TestMigration050:
     """Verify Alembic migration 050 upgrades and downgrades cleanly on SQLite."""

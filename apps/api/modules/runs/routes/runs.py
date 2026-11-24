@@ -468,10 +468,16 @@ async def create_run_function():
     description = data.get("description")
     entrypoint = data.get("entrypoint")
     schedule_cron = data.get("schedule_cron")
-    execution_namespace = (
-        str(data.get("execution_namespace") or DEFAULT_EXECUTION_NAMESPACE).strip()
-        or DEFAULT_EXECUTION_NAMESPACE
-    )
+    raw_ns = data.get("execution_namespace")
+    if raw_ns is not None:
+        ns_str = str(raw_ns).strip()
+        if ns_str and ns_str != DEFAULT_EXECUTION_NAMESPACE:
+            return ApiResponse.validation_error(
+                "execution_namespace",
+                f"is operator-managed and locked to '{DEFAULT_EXECUTION_NAMESPACE}'; "
+                "use worker_cluster to route to a remote worker pool",
+            )
+    execution_namespace = DEFAULT_EXECUTION_NAMESPACE
     worker_cluster = data.get("worker_cluster")
     is_enabled = bool(data.get("is_enabled", True))
     identity_id = _current_identity_id()
@@ -706,11 +712,13 @@ async def update_run_function(func_id: int):
 
     if "execution_namespace" in data:
         ns = str(data["execution_namespace"] or "").strip()
-        if not ns:
+        if ns and ns != DEFAULT_EXECUTION_NAMESPACE:
             return ApiResponse.validation_error(
-                "execution_namespace", "cannot be empty"
+                "execution_namespace",
+                f"is operator-managed and locked to '{DEFAULT_EXECUTION_NAMESPACE}'; "
+                "use worker_cluster to route to a remote worker pool",
             )
-        update_fields["execution_namespace"] = ns
+        update_fields["execution_namespace"] = DEFAULT_EXECUTION_NAMESPACE
 
     if "worker_cluster" in data:
         update_fields["worker_cluster"] = data["worker_cluster"]
@@ -1043,6 +1051,79 @@ async def get_run_execution(execution_id: str):
     return jsonify(_serialize_execution(row, func_row=func_row)), 200
 
 
+@bp.route("/executions/<execution_id>/cancel", methods=["POST"])
+@login_required
+@require_scope("runs:invoke")
+async def cancel_run_execution(execution_id: str):
+    """Cancel a pending or running execution for the current tenant."""
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return ApiResponse.forbidden("Tenant context required")
+
+    def cancel():
+        exec_row = (
+            db(
+                (db.run_executions.execution_id == execution_id)
+                & (db.run_executions.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if not exec_row:
+            return None, None, "not_found"
+
+        if (exec_row.status or "").lower() in TERMINAL_EXECUTION_STATUSES:
+            return exec_row, None, "already_finished"
+
+        now = _utc_now()
+        duration_ms: int | None = None
+        if getattr(exec_row, "started_at", None) is not None:
+            started_dt = _parse_datetime(exec_row.started_at)
+            if started_dt is not None:
+                duration_ms = max(0, int((now - started_dt).total_seconds() * 1000))
+
+        db(
+            (db.run_executions.execution_id == execution_id)
+            & (db.run_executions.tenant_id == tenant_id)
+        ).update(
+            status="cancelled",
+            completed_at=now,
+            error_message="Cancelled by user",
+            duration_ms=duration_ms,
+        )
+        db.commit()
+
+        updated = (
+            db(
+                (db.run_executions.execution_id == execution_id)
+                & (db.run_executions.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        func_row = (
+            get_tenant_scoped(db, db.run_functions, updated.function_id, tenant_id)
+            if updated
+            else None
+        )
+        return updated, func_row, None
+
+    updated, func_row, reason = await run_in_threadpool(cancel)
+    if reason == "not_found":
+        return ApiResponse.not_found("Run execution", execution_id)
+    if reason == "already_finished":
+        return ApiResponse.error("Execution is already finished", 409)
+
+    logger.info(
+        "run_execution_cancelled",
+        execution_id=execution_id,
+        tenant_id=tenant_id,
+        duration_ms=getattr(updated, "duration_ms", None),
+    )
+    return jsonify(_serialize_execution(updated, func_row=func_row)), 200
+
+
 @bp.route("/internal/pending", methods=["GET"])
 @login_required
 @require_scope("runs:invoke")
@@ -1290,7 +1371,13 @@ async def report_execution_result(execution_id: str):
     if not isinstance(data, dict):
         return ApiResponse.error("Request body must be a JSON object", 400)
 
-    status = str(data.get("status") or "").strip().lower()
+    raw_status = str(data.get("status") or "").strip().lower()
+    _status_aliases = {
+        "succeeded": "completed",
+        "success": "completed",
+        "timeout": "timed_out",
+    }
+    status = _status_aliases.get(raw_status, raw_status)
     if status not in TERMINAL_EXECUTION_STATUSES:
         return ApiResponse.validation_error(
             "status",
@@ -1308,9 +1395,11 @@ async def report_execution_result(execution_id: str):
         if "output_data" in data
         else data.get("output_json", data.get("output"))
     )
-    stdout_log = data.get("stdout_log")
+    stdout_log = data.get("stdout_log") if "stdout_log" in data else data.get("logs")
     stderr_log = data.get("stderr_log")
-    error_message = data.get("error_message")
+    error_message = (
+        data.get("error_message") if "error_message" in data else data.get("error")
+    )
     completed_at = _parse_datetime(data.get("completed_at")) or _utc_now()
     duration_ms_raw = data.get("duration_ms")
 
