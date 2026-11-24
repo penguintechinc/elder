@@ -20,6 +20,14 @@ const routes: RouteObject[] = [
   { path: "ai/llms", element: <AIResources defaultType="llm" /> },
   { path: "ai/gateways", element: <AIResources defaultType="ai_gateway" /> },
   { path: "ai/mcp-servers", element: <AIResources defaultType="mcp_server" /> },
+  {
+    path: "ai/code-mode-servers",
+    element: <AIResources defaultType="code_mode_server" />,
+  },
+  {
+    path: "ai/utcp-servers",
+    element: <AIResources defaultType="utcp_server" />,
+  },
 ];
 
 const aiModule: FrontendModule = {

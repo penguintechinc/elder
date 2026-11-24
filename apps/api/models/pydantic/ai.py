@@ -8,7 +8,13 @@ from typing import Any, Literal
 from penguin_libs.pydantic.base import ImmutableModel, RequestModel
 from pydantic import Field
 
-AIResourceType = Literal["llm", "ai_gateway", "mcp_server"]
+AIResourceType = Literal[
+    "llm",
+    "ai_gateway",
+    "mcp_server",
+    "code_mode_server",
+    "utcp_server",
+]
 AIResourceStatus = Literal["pending_review", "allowed", "restricted", "not_allowed"]
 AIAgreementLevel = Literal["user", "team", "enterprise"]
 

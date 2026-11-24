@@ -111,6 +111,8 @@ components:
           - llm
           - ai_gateway
           - mcp_server
+          - code_mode_server
+          - utcp_server
           title: Resource Type
           type: string
         seats:
@@ -2998,6 +3000,8 @@ paths:
                     - llm
                     - ai_gateway
                     - mcp_server
+                    - code_mode_server
+                    - utcp_server
                     title: Resource Type
                     type: string
                   seats:
@@ -3180,6 +3184,8 @@ paths:
                     - llm
                     - ai_gateway
                     - mcp_server
+                    - code_mode_server
+                    - utcp_server
                     title: Resource Type
                     type: string
                   seats:
@@ -3350,6 +3356,8 @@ paths:
                     - llm
                     - ai_gateway
                     - mcp_server
+                    - code_mode_server
+                    - utcp_server
                     title: Resource Type
                     type: string
                   seats:

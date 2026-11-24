@@ -9,6 +9,8 @@ import {
   Bot,
   Server,
   Network,
+  Code2,
+  Plug,
   DollarSign,
   ExternalLink,
   CheckCircle2,
@@ -53,6 +55,8 @@ const RESOURCE_TABS: {
   { value: "llm", label: "AI LLMs" },
   { value: "ai_gateway", label: "AI Gateways" },
   { value: "mcp_server", label: "MCP Servers" },
+  { value: "code_mode_server", label: "Code Mode Servers" },
+  { value: "utcp_server", label: "UTCP Servers" },
   { value: "providers", label: "Providers" },
 ];
 
@@ -200,6 +204,33 @@ const RESOURCE_TYPES: { value: AIResourceType; label: string }[] = [
   { value: "llm", label: "AI LLM" },
   { value: "ai_gateway", label: "AI Gateway" },
   { value: "mcp_server", label: "MCP Server" },
+  { value: "code_mode_server", label: "Code Mode Server" },
+  { value: "utcp_server", label: "UTCP Server" },
+];
+
+const isServerResourceType = (type: AIResourceType): boolean =>
+  type === "mcp_server" ||
+  type === "code_mode_server" ||
+  type === "utcp_server";
+
+const TRANSPORT_OPTIONS: { value: string; label: string }[] = [
+  { value: "streamable-http", label: "Streamable HTTP" },
+  { value: "http", label: "HTTP / REST" },
+  { value: "sse", label: "SSE" },
+  { value: "stdio", label: "stdio" },
+  { value: "grpc", label: "gRPC" },
+  { value: "websocket", label: "WebSocket" },
+  { value: "cli", label: "CLI" },
+  { value: "graphql", label: "GraphQL" },
+];
+
+const AUTH_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "none", label: "None" },
+  { value: "api_key", label: "API Key" },
+  { value: "bearer", label: "Bearer Token" },
+  { value: "oauth2", label: "OAuth 2.0 / OIDC" },
+  { value: "mtls", label: "mTLS" },
+  { value: "basic", label: "Basic Auth" },
 ];
 
 const STATUS_OPTIONS: { value: AIResourceStatus; label: string }[] = [
@@ -255,6 +286,20 @@ const TYPE_LABEL: Record<AIResourceType, string> = {
   llm: "AI LLM",
   ai_gateway: "AI Gateway",
   mcp_server: "MCP Server",
+  code_mode_server: "Code Mode Server",
+  utcp_server: "UTCP Server",
+};
+
+const TYPE_BADGE: Record<AIResourceType, string> = {
+  llm: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+  ai_gateway:
+    "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300",
+  mcp_server:
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
+  code_mode_server:
+    "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300",
+  utcp_server:
+    "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300",
 };
 
 const formatCurrency = (amount: number | null | undefined): string => {
@@ -273,6 +318,8 @@ interface AIResourceFormState {
   provider: string;
   model_name: string;
   endpoint_url: string;
+  transport: string;
+  auth_type: string;
   status: AIResourceStatus;
   agreement_level: "" | AIAgreementLevel;
   plan_info: string;
@@ -296,6 +343,8 @@ const emptyFormState = (
   provider: "",
   model_name: "",
   endpoint_url: "",
+  transport: "",
+  auth_type: "",
   status: "pending_review",
   agreement_level: "",
   plan_info: "",
@@ -308,50 +357,96 @@ const emptyFormState = (
   is_active: true,
 });
 
-const resourceToFormState = (r: AIResource): AIResourceFormState => ({
-  name: r.name,
-  description: r.description || "",
-  organization_id: String(r.organization_id),
-  resource_type: r.resource_type,
-  provider: r.provider || "",
-  model_name: r.model_name || "",
-  endpoint_url: r.endpoint_url || "",
-  status: r.status,
-  agreement_level: r.agreement_level || "",
-  plan_info: r.plan_info || "",
-  budget_monthly:
-    r.budget_monthly !== null && r.budget_monthly !== undefined
-      ? String(r.budget_monthly)
-      : "",
-  cost_per_10m_tokens:
-    r.cost_per_10m_tokens !== null && r.cost_per_10m_tokens !== undefined
-      ? String(r.cost_per_10m_tokens)
-      : "",
-  seats: r.seats !== null && r.seats !== undefined ? String(r.seats) : "",
-  notes: r.notes || "",
-  tags: r.tags?.join(", ") || "",
-  metadataText: r.metadata ? JSON.stringify(r.metadata, null, 2) : "",
-  is_active: r.is_active,
-});
+const resourceToFormState = (r: AIResource): AIResourceFormState => {
+  const meta = r.metadata ? { ...r.metadata } : {};
+  const transport =
+    typeof meta.transport === "string" ? meta.transport : "";
+  const authType =
+    typeof meta.auth_type === "string" ? meta.auth_type : "";
+  if (isServerResourceType(r.resource_type)) {
+    delete meta.transport;
+    delete meta.auth_type;
+  }
+  const remainingMeta = Object.keys(meta).length > 0 ? meta : null;
+
+  return {
+    name: r.name,
+    description: r.description || "",
+    organization_id: String(r.organization_id),
+    resource_type: r.resource_type,
+    provider: r.provider || "",
+    model_name: r.model_name || "",
+    endpoint_url: r.endpoint_url || "",
+    transport,
+    auth_type: authType,
+    status: r.status,
+    agreement_level: r.agreement_level || "",
+    plan_info: r.plan_info || "",
+    budget_monthly:
+      r.budget_monthly !== null && r.budget_monthly !== undefined
+        ? String(r.budget_monthly)
+        : "",
+    cost_per_10m_tokens:
+      r.cost_per_10m_tokens !== null && r.cost_per_10m_tokens !== undefined
+        ? String(r.cost_per_10m_tokens)
+        : "",
+    seats: r.seats !== null && r.seats !== undefined ? String(r.seats) : "",
+    notes: r.notes || "",
+    tags: r.tags?.join(", ") || "",
+    metadataText: remainingMeta ? JSON.stringify(remainingMeta, null, 2) : "",
+    is_active: r.is_active,
+  };
+};
 
 function renderMetadataBadges(metadata?: Record<string, unknown> | null) {
   if (!metadata) return null;
-  const badges: string[] = [];
-  if (metadata.baa === true) badges.push("BAA");
+  const badges: { label: string; className: string }[] = [];
+  if (metadata.baa === true)
+    badges.push({
+      label: "BAA",
+      className:
+        "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+    });
   if (metadata.fedramp)
-    badges.push(`FEDRAMP: ${String(metadata.fedramp).toUpperCase()}`);
-  if (metadata.hipaa === true) badges.push("HIPAA");
-  if (metadata.soc2 === true) badges.push("SOC2");
+    badges.push({
+      label: `FEDRAMP: ${String(metadata.fedramp).toUpperCase()}`,
+      className:
+        "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+    });
+  if (metadata.hipaa === true)
+    badges.push({
+      label: "HIPAA",
+      className:
+        "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+    });
+  if (metadata.soc2 === true)
+    badges.push({
+      label: "SOC2",
+      className:
+        "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+    });
+  if (typeof metadata.transport === "string" && metadata.transport)
+    badges.push({
+      label: metadata.transport,
+      className:
+        "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300",
+    });
+  if (typeof metadata.auth_type === "string" && metadata.auth_type)
+    badges.push({
+      label: `auth: ${metadata.auth_type}`,
+      className:
+        "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+    });
   if (badges.length === 0) return null;
 
   return (
     <div className="flex flex-wrap gap-1">
       {badges.map((badge) => (
         <span
-          key={badge}
-          className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300"
+          key={badge.label}
+          className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${badge.className}`}
         >
-          {badge}
+          {badge.label}
         </span>
       ))}
     </div>
@@ -699,6 +794,18 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
       .map((t) => t.trim())
       .filter(Boolean);
 
+    let finalMetadata: Record<string, unknown> | null = parsedMetadata
+      ? { ...parsedMetadata }
+      : null;
+    if (isServerResourceType(formState.resource_type)) {
+      if (formState.transport) {
+        finalMetadata = { ...(finalMetadata || {}), transport: formState.transport };
+      }
+      if (formState.auth_type) {
+        finalMetadata = { ...(finalMetadata || {}), auth_type: formState.auth_type };
+      }
+    }
+
     const payload = {
       name: formState.name.trim(),
       description: formState.description.trim() || null,
@@ -719,7 +826,7 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
       seats: formState.seats ? parseInt(formState.seats, 10) : null,
       notes: formState.notes.trim() || null,
       tags: tags.length > 0 ? tags : null,
-      metadata: parsedMetadata,
+      metadata: finalMetadata,
       is_active: formState.is_active,
     };
 
@@ -734,6 +841,10 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
     if (type === "llm") return <Bot className="w-4 h-4 text-indigo-500" />;
     if (type === "ai_gateway")
       return <Network className="w-4 h-4 text-cyan-500" />;
+    if (type === "code_mode_server")
+      return <Code2 className="w-4 h-4 text-violet-500" />;
+    if (type === "utcp_server")
+      return <Plug className="w-4 h-4 text-sky-500" />;
     return <Server className="w-4 h-4 text-emerald-500" />;
   };
 
@@ -745,7 +856,8 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
             AI Resources
           </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            Track and govern approved LLMs, AI gateways, and MCP servers
+            Track and govern approved LLMs, AI gateways, MCP servers, Code Mode
+            servers, and UTCP servers
           </p>
         </div>
         <Button onClick={() => openCreateModal()}>
@@ -1073,7 +1185,9 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                           )}
                         </td>
                         <td className="py-3 px-4">
-                          <span className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_BADGE[resource.resource_type]}`}
+                          >
                             {renderTypeIcon(resource.resource_type)}
                             {TYPE_LABEL[resource.resource_type]}
                           </span>
@@ -1351,9 +1465,73 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                         endpoint_url: e.target.value,
                       })
                     }
-                    placeholder="https://api.anthropic.com"
+                    placeholder={
+                      formState.resource_type === "code_mode_server"
+                        ? "https://codemode.internal/api"
+                        : formState.resource_type === "utcp_server"
+                          ? "https://utcp.internal/utcp.json"
+                          : formState.resource_type === "mcp_server"
+                            ? "https://mcp.internal/sse"
+                            : "https://api.anthropic.com"
+                    }
                   />
                 </div>
+
+                {isServerResourceType(formState.resource_type) && (
+                  <>
+                    <div>
+                      <label
+                        htmlFor="ai-resource-transport"
+                        className="block text-sm font-medium mb-1"
+                      >
+                        Protocol / Transport
+                      </label>
+                      <Select
+                        id="ai-resource-transport"
+                        value={formState.transport}
+                        onChange={(e) =>
+                          setFormState({
+                            ...formState,
+                            transport: e.target.value,
+                          })
+                        }
+                      >
+                        <option value="">Not specified</option>
+                        {TRANSPORT_OPTIONS.map((t) => (
+                          <option key={t.value} value={t.value}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="ai-resource-auth-type"
+                        className="block text-sm font-medium mb-1"
+                      >
+                        Auth Type
+                      </label>
+                      <Select
+                        id="ai-resource-auth-type"
+                        value={formState.auth_type}
+                        onChange={(e) =>
+                          setFormState({
+                            ...formState,
+                            auth_type: e.target.value,
+                          })
+                        }
+                      >
+                        <option value="">Not specified</option>
+                        {AUTH_TYPE_OPTIONS.map((a) => (
+                          <option key={a.value} value={a.value}>
+                            {a.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  </>
+                )}
 
                 <div>
                   <label
@@ -1667,6 +1845,28 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                     {formatCurrency(viewingResource.cost_per_10m_tokens)}
                   </span>
                 </div>
+                {typeof viewingResource.metadata?.transport === "string" &&
+                  viewingResource.metadata.transport && (
+                    <div>
+                      <span className="text-slate-500 block text-xs">
+                        Protocol / Transport
+                      </span>
+                      <span className="font-mono">
+                        {viewingResource.metadata.transport}
+                      </span>
+                    </div>
+                  )}
+                {typeof viewingResource.metadata?.auth_type === "string" &&
+                  viewingResource.metadata.auth_type && (
+                    <div>
+                      <span className="text-slate-500 block text-xs">
+                        Auth Type
+                      </span>
+                      <span className="font-mono">
+                        {viewingResource.metadata.auth_type}
+                      </span>
+                    </div>
+                  )}
               </div>
 
               {viewingResource.endpoint_url && (
