@@ -27,14 +27,16 @@ from apps.api.models.dataclasses import (
 from apps.api.modules.issues.routes.common import _tenant_id, get_tenant_scoped_issue
 from apps.api.services.webhooks.assignment import (
     AssignmentEvent,
-    send_issue_assigned_webhooks,
+    schedule_issue_assigned_webhooks,
 )
+from apps.api.services.webhooks.service import tenant_ref_nowait
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
 from apps.api.utils.tenant_scoping import get_tenant_scoped
 from apps.api.utils.village_id import mint_village_id
 from shared.webhooks import send_issue_created_webhooks
+from shared.webhooks.delivery import schedule_background
 
 bp = Blueprint("issues", __name__)
 
@@ -419,7 +421,9 @@ async def create_issue(body: CreateIssueRequest):
 
     # Send issue created webhooks asynchronously (fire and forget)
     if issue.resource_id and issue.resource_type == "organization":
-        asyncio.create_task(
+        # schedule_background keeps a strong reference (a bare create_task
+        # can be garbage-collected mid-flight) and logs a crashed task.
+        schedule_background(
             send_issue_created_webhooks(
                 db=db,
                 issue_id=issue.id,
@@ -428,7 +432,11 @@ async def create_issue(body: CreateIssueRequest):
                 is_incident=issue.is_incident if hasattr(issue, "is_incident") else 0,
                 organization_id=issue.resource_id,
                 web_url_base=current_app.config.get("WEB_URL", "http://localhost:3000"),
-            )
+            ),
+            name="webhook-issue-created",
+            # Counted against this tenant's pending cap; when the cap is hit
+            # the delivery is shed (logged + metered) and creation proceeds.
+            tenant=tenant_ref_nowait(tenant_id),
         )
 
     # Send issue.assigned webhooks asynchronously (fire and forget) when the
@@ -436,7 +444,7 @@ async def create_issue(body: CreateIssueRequest):
     # or fail issue creation. send_issue_assigned_webhooks itself is
     # fire-and-forget-safe internally, but building AssignmentEvent and
     # scheduling the task both happen eagerly on the request path (before
-    # asyncio.create_task hands off), so both are guarded here too:
+    # the task is handed off), so both are guarded here too:
     # `getattr` covers issues.village_id being absent from the physical
     # table on DBs built by `alembic upgrade head` (no migration adds it,
     # only the ORM model declares it via VillageIDMixin — PyDAL raises
@@ -445,20 +453,18 @@ async def create_issue(body: CreateIssueRequest):
     # failure in event construction or scheduling.
     if issue.assignee_id is not None:
         try:
-            asyncio.create_task(
-                send_issue_assigned_webhooks(
-                    db,
-                    AssignmentEvent(
-                        issue_id=issue.id,
-                        village_id=getattr(issue, "village_id", None),
-                        issue_type=issue.issue_type,
-                        status=issue.status,
-                        assignee_type=issue.assignee_type,
-                        assignee_id=issue.assignee_id,
-                        tenant_id=tenant_id,
-                        actor_id=current_user_id,
-                    ),
-                )
+            schedule_issue_assigned_webhooks(
+                db,
+                AssignmentEvent(
+                    issue_id=issue.id,
+                    village_id=getattr(issue, "village_id", None),
+                    issue_type=issue.issue_type,
+                    status=issue.status,
+                    assignee_type=issue.assignee_type,
+                    assignee_id=issue.assignee_id,
+                    tenant_id=tenant_id,
+                    actor_id=current_user_id,
+                ),
             )
         except (
             Exception
@@ -693,7 +699,7 @@ async def update_issue(id: int, body: UpdateIssueRequest):
     # Send issue.assigned webhooks asynchronously (fire and forget) when this
     # PATCH actually changed the assignee. Must never delay or fail the
     # update response: building AssignmentEvent and scheduling the task both
-    # happen eagerly on the request path (before asyncio.create_task hands
+    # happen eagerly on the request path (before the task hands
     # off), so both are guarded here, mirroring create_issue above.
     # `getattr` covers issues.village_id being absent from the physical
     # table on DBs built by `alembic upgrade head` (no migration adds it,
@@ -704,20 +710,18 @@ async def update_issue(id: int, body: UpdateIssueRequest):
     # update/commit above or the response below.
     if assignee_changed:
         try:
-            asyncio.create_task(
-                send_issue_assigned_webhooks(
-                    db,
-                    AssignmentEvent(
-                        issue_id=result.id,
-                        village_id=getattr(result, "village_id", None),
-                        issue_type=result.issue_type,
-                        status=result.status,
-                        assignee_type=result.assignee_type,
-                        assignee_id=result.assignee_id,
-                        tenant_id=tenant_id,
-                        actor_id=current_user_id,
-                    ),
-                )
+            schedule_issue_assigned_webhooks(
+                db,
+                AssignmentEvent(
+                    issue_id=result.id,
+                    village_id=getattr(result, "village_id", None),
+                    issue_type=result.issue_type,
+                    status=result.status,
+                    assignee_type=result.assignee_type,
+                    assignee_id=result.assignee_id,
+                    tenant_id=tenant_id,
+                    actor_id=current_user_id,
+                ),
             )
         except (
             Exception

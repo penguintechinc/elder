@@ -7,7 +7,6 @@ InvalidTextRepresentation and the fire-and-forget dispatch silently dies.
 """
 
 from datetime import UTC, datetime, timezone
-from unittest.mock import MagicMock, patch
 
 import pytest
 from quart import current_app
@@ -19,7 +18,7 @@ class TestSendIssueCreatedWebhooks:
     """send_issue_created_webhooks must match enabled WEBHOOK alert configs."""
 
     @pytest.mark.asyncio
-    async def test_matches_webhook_destination_config(self, app):
+    async def test_matches_webhook_destination_config(self, app, webhook_transport):
         """Regression: the WEBHOOK query uses the stored enum member name.
 
         Enum(AlertDestinationType) persists the member NAME, so the pg enum
@@ -50,21 +49,19 @@ class TestSendIssueCreatedWebhooks:
             )
             db.commit()
 
-            with patch("shared.webhooks.issue_webhooks.requests.post") as mock_post:
-                mock_post.return_value = MagicMock(status_code=200, text="ok")
-                results = await send_issue_created_webhooks(
-                    db,
-                    issue_id=1,
-                    issue_title="Test issue",
-                    issue_type="support",
-                    is_incident=0,
-                    organization_id=org_id,
-                )
+            results = await send_issue_created_webhooks(
+                db,
+                issue_id=1,
+                issue_title="Test issue",
+                issue_type="support",
+                is_incident=0,
+                organization_id=org_id,
+            )
 
             # Query must not raise, must find the config, and POST to it.
             assert len(results) == 1
             assert results[0]["success"] is True
-            mock_post.assert_called_once()
+            assert len(webhook_transport.requests) == 1
 
     @pytest.mark.asyncio
     async def test_no_config_returns_empty_without_error(self, app):
