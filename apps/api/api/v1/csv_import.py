@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import csv
 import io
 import json
 import os
@@ -33,6 +32,7 @@ from apps.api.services.csv_import.storage import (
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.tenant_scoping import get_current_tenant_id
+from shared.csv_safety import safe_writer
 
 logger = structlog.get_logger(__name__)
 
@@ -133,7 +133,7 @@ def download_csv_template(resource: str):
         return ApiResponse.not_found("CSV template", resource)
 
     buf = io.StringIO()
-    writer = csv.writer(buf)
+    writer = safe_writer(buf)
     writer.writerow(spec["headers"])
     writer.writerow(spec["example"])
     return Response(
