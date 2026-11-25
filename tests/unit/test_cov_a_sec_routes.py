@@ -93,11 +93,10 @@ class _StubG:
 
 @pytest.fixture
 def flask_g(world):
-    """Patch ``flask.g`` (imported inside the routes) with a stub for the identity.
+    """Patch ``flask.g`` with a stub for the identity.
 
-    The routes import Flask's ``g`` rather than Quart's, which has no app
-    context here (source bug, see test_flask_g_import_breaks_routes); the stub
-    lets the remaining route logic be exercised.
+    The routes now use Quart's ``g``; this patch proves they no longer depend
+    on Flask's (see test_flask_g_import_breaks_routes).
     """
     with patch("flask.g", _StubG(world["identity"])):
         yield
@@ -360,7 +359,8 @@ class TestProviderRoutes:
             world["token"],
             json={"name": "x"},
         )
-        assert status == 400
+        # Unknown and other-tenant providers are indistinguishable: 404
+        assert status == 404
 
     @pytest.mark.asyncio
     async def test_update_requires_body(self, app, world):
@@ -386,10 +386,6 @@ class TestProviderRoutes:
         assert status == 404 and data["error"] == "Provider not found"
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: service.py:579 `del db.secret_providers[id]` unsupported by penguin-dal -> delete route returns 500",
-    )
     async def test_delete_unused_provider_204(self, app, world):
         """Deleting an unused provider returns 204."""
         prov = await _mk_provider(app, world)
@@ -440,10 +436,6 @@ class TestSecretRoutes:
     """Secret endpoints."""
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: routes/secrets.py:77,120,198,244,282,309 import flask.g (not quart.g) -> RuntimeError, secret routes 500",
-    )
     async def test_flask_g_import_breaks_routes(self, app, world):
         """Fetching a secret should not 500 because of a Flask/Quart g mix-up."""
         prov = await _mk_provider(app, world)
@@ -529,7 +521,8 @@ class TestSecretRoutes:
                 "organization_id": world["org"],
             },
         )
-        assert status == 400
+        # Unknown and other-tenant providers are indistinguishable: 404
+        assert status == 404
 
     @pytest.mark.asyncio
     async def test_create_path_missing_in_provider_is_400(self, app, world):
@@ -576,10 +569,6 @@ class TestSecretRoutes:
         assert status == 404
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: service.py:352 `del db.secrets[id]` unsupported by penguin-dal -> delete route returns 500",
-    )
     async def test_delete_secret_204(self, app, world):
         """Deleting a registered secret returns 204."""
         prov = await _mk_provider(app, world)

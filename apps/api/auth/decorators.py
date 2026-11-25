@@ -305,7 +305,24 @@ def require_role(role: str) -> Callable:
     return decorator
 
 
-def resource_role_required(required_role: str, resource_param: str = "id") -> Callable:
+def _role_level_of(user_role: Row, role_hierarchy: dict[str, int]) -> int:
+    """Return the hierarchy level a ``resource_roles`` row grants.
+
+    Prefers the plain ``role`` string; falls back to the ``role_type`` enum,
+    which penguin-dal may return as an enum member or its stored name.
+    """
+    raw = getattr(user_role, "role", None) or getattr(user_role, "role_type", None)
+    if raw is None:
+        return 0
+    value = getattr(raw, "value", raw)
+    return role_hierarchy.get(str(value).lower(), 0)
+
+
+def resource_role_required(
+    required_role: str,
+    resource_param: str = "id",
+    resource_table: str | None = None,
+) -> Callable:
     """
     Decorator to check resource-level role requirements using PyDAL.
 
@@ -320,6 +337,10 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
     Args:
         required_role: Minimum role required (viewer, operator, maintainer)
         resource_param: Name of route parameter containing resource ID
+        resource_table: For routes whose id names a row of another table
+            (e.g. ``certificates``), the table to load it from. The role is then
+            checked on the row's owning organization. The row is resolved within
+            the caller's verified tenant; a missing or foreign row is a 404.
 
     Usage:
         @bp.route('/entities/<int:id>/metadata', methods=['POST'])
@@ -371,6 +392,8 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
             # If not in route params, check request body (for POST/PATCH)
             if not resource_id and request.is_json:
                 data = await request.get_json()
+                if not isinstance(data, dict):
+                    return jsonify({"error": "JSON object body required"}), 400
                 if "entity_id" in data:
                     resource_id = data["entity_id"]
                     resource_type = "entity"
@@ -386,6 +409,25 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
                         ),
                         400,
                     )
+            elif resource_id and resource_table:
+                # Registered resource table: check the role on the owning org
+                from apps.api.utils.tenant_scoping import (
+                    get_current_tenant_id,
+                    get_tenant_scoped,
+                )
+
+                tenant_id = get_current_tenant_id()
+                if not tenant_id:
+                    return jsonify({"error": "Tenant context required"}), 403
+                db = current_app.db
+                table = getattr(db, resource_table)
+                row = get_tenant_scoped(
+                    db, table, resource_id, tenant_id, org_fk="organization_id"
+                )
+                if not row:
+                    return jsonify({"error": "Not found"}), 404
+                resource_id = row.organization_id
+                resource_type = "organization"
             elif resource_id:
                 # Determine resource type from route context
                 # Check if we're in an entity or organization route
@@ -407,15 +449,17 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
             # Check if user has required role on this resource using PyDAL
             db = current_app.db
             try:
+                # resource_type is a Postgres enum storing member NAMES
+                # (ENTITY/ORGANIZATION); a lowercase value never matched.
                 user_roles = db(
                     (db.resource_roles.identity_id == user.id)
-                    & (db.resource_roles.resource_type == resource_type)
+                    & (db.resource_roles.resource_type == resource_type.upper())
                     & (db.resource_roles.resource_id == resource_id)
                 ).select()
 
                 has_role = False
                 for user_role in user_roles:
-                    user_level = role_hierarchy.get(user_role.role, 0)
+                    user_level = _role_level_of(user_role, role_hierarchy)
                     # Check if user's role level meets or exceeds required level
                     if user_level >= required_level:
                         has_role = True

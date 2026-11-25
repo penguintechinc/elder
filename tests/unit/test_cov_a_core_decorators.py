@@ -15,11 +15,6 @@ from quart import g
 from apps.api.auth import decorators as dec
 
 GCU = "apps.api.auth.decorators.get_current_user"
-XF = pytest.mark.xfail(
-    strict=True,
-    reason="bug: decorators.py:413 compares lowercase resource_type to uppercase "
-    "Postgres enum; DataError swallowed -> always 403",
-)
 
 
 def _user(**kw):
@@ -444,8 +439,8 @@ class TestResourceRoleRequired:
     @pytest.mark.parametrize(
         "held,required,allowed",
         [
-            pytest.param("maintainer", "viewer", True, marks=XF),
-            pytest.param("operator", "operator", True, marks=XF),
+            ("maintainer", "viewer", True),
+            ("operator", "operator", True),
             ("viewer", "maintainer", False),
             ("viewer", "operator", False),
         ],
@@ -487,8 +482,8 @@ class TestResourceRoleRequired:
     @pytest.mark.parametrize(
         "body,rtype",
         [
-            pytest.param({"entity_id": 0}, None, marks=XF),
-            pytest.param({"organization_id": 0}, None, marks=XF),
+            ({"entity_id": 0}, None),
+            ({"organization_id": 0}, None),
         ],
     )
     async def test_json_body_resource_resolution(self, app, body, rtype):

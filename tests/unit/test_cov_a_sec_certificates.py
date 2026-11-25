@@ -244,10 +244,6 @@ class TestCertificateCreate:
         assert status == 400
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: certificates.py:170 non-object JSON body passes validate_json_body and crashes (500)",
-    )
     async def test_list_body_is_400(self, app, world):
         """A JSON array body should be a 400, not an unhandled 500."""
         status, _ = await _call(app, "post", BASE, world["token"], json=[1, 2])
@@ -429,10 +425,6 @@ class TestCertificateList:
         assert data["items"][0]["status"] == "expired"
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: certificates.py:100 list query has no tenant_id filter (cross-tenant leak)",
-    )
     async def test_tenant_isolation(self, app, world):
         """Tenant B never sees tenant A's certificates in a listing."""
         c = await _create(app, world, name=f"iso-{world['sfx']}")
@@ -645,10 +637,6 @@ class TestCertificateDelete:
     """DELETE /certificates/<id>."""
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: certificates.py:564 `del db.certificates[id]` unsupported by penguin-dal TableProxy -> 500",
-    )
     async def test_delete_removes_row(self, app, world):
         """Deleting removes the certificate; a later GET is 404."""
         c = await _create(app, world)

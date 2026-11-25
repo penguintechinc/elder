@@ -1092,6 +1092,11 @@ def resolve_ref(
     Returns:
         Dict with id, title, type, module, or None if not found or tenant mismatch
     """
+    # Fail closed: without a verified tenant nothing is resolvable — an
+    # unscoped lookup would read other tenants' rows (gh-237).
+    if not tenant_id:
+        return None
+
     resolvable = get_type(type_name)
     if not resolvable or resolvable.module != module:
         return None
@@ -1116,53 +1121,44 @@ def resolve_ref(
         query_id = int(resource_id)
 
     row = None
-    # Tenant scoping is mandatory for security
-    if tenant_id is not None:
-        if type_name == "tenant":
-            row = db((id_field == query_id) & (table.id == tenant_id)).select().first()
-        elif resolvable.tenant_id_is_string and tenant_col is not None:
-            allowed_strs = _get_tenant_string_values(db, tenant_id)
-            row = (
-                db((id_field == query_id) & (tenant_col.belongs(allowed_strs)))
-                .select()
-                .first()
-            )
-        elif tenant_col is not None:
-            row = (
-                db((id_field == query_id) & (tenant_col == tenant_id)).select().first()
-            )
-        elif org_col is not None:
-            org_ids = _get_tenant_org_ids(db, tenant_id)
-            if not org_ids:
-                return None
-            row = (
-                db((id_field == query_id) & (org_col.belongs(list(org_ids))))
-                .select()
-                .first()
-            )
-        elif resolvable.table == "discovery_jobs":
-            org_ids = _get_tenant_org_ids(db, tenant_id)
-            if not org_ids:
-                return None
-            candidate = db(id_field == query_id).select().first()
-            if candidate is not None:
-                cfg = _parse_json_config(getattr(candidate, "config_json", None))
-                job_org_id = cfg.get("_organization_id")
-                if job_org_id is not None:
-                    try:
-                        if int(job_org_id) in org_ids:
-                            row = candidate
-                    except (TypeError, ValueError):
-                        row = None
-        else:
-            # Table has no tenant_id/organization_id — cannot safely scope by numeric id
+    # Tenant scoping is mandatory for security (tenant_id verified above)
+    if type_name == "tenant":
+        row = db((id_field == query_id) & (table.id == tenant_id)).select().first()
+    elif resolvable.tenant_id_is_string and tenant_col is not None:
+        allowed_strs = _get_tenant_string_values(db, tenant_id)
+        row = (
+            db((id_field == query_id) & (tenant_col.belongs(allowed_strs)))
+            .select()
+            .first()
+        )
+    elif tenant_col is not None:
+        row = db((id_field == query_id) & (tenant_col == tenant_id)).select().first()
+    elif org_col is not None:
+        org_ids = _get_tenant_org_ids(db, tenant_id)
+        if not org_ids:
             return None
+        row = (
+            db((id_field == query_id) & (org_col.belongs(list(org_ids))))
+            .select()
+            .first()
+        )
+    elif resolvable.table == "discovery_jobs":
+        org_ids = _get_tenant_org_ids(db, tenant_id)
+        if not org_ids:
+            return None
+        candidate = db(id_field == query_id).select().first()
+        if candidate is not None:
+            cfg = _parse_json_config(getattr(candidate, "config_json", None))
+            job_org_id = cfg.get("_organization_id")
+            if job_org_id is not None:
+                try:
+                    if int(job_org_id) in org_ids:
+                        row = candidate
+                except (TypeError, ValueError):
+                    row = None
     else:
-        # No tenant_id provided — cannot safely scope unscopable tables
-        if tenant_col is not None or type_name == "tenant":
-            row = db(id_field == query_id).select().first()
-        else:
-            return None
+        # Table has no tenant_id/organization_id — cannot safely scope by numeric id
+        return None
 
     if not row:
         return None

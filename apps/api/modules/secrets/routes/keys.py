@@ -8,8 +8,10 @@ from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
+from apps.api.modules.secrets.routes.tenant_guard import tenant_required
 from apps.api.services.keys import KeysService
 from apps.api.utils.pagination import parse_limit, parse_offset
+from apps.api.utils.tenant_scoping import get_current_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +19,8 @@ bp = Blueprint("keys", __name__)
 
 
 def get_keys_service():
-    """Get KeysService instance with current database."""
-    return KeysService(current_app.db)
+    """Get a KeysService bound to the caller's verified tenant."""
+    return KeysService(current_app.db, tenant_id=get_current_tenant_id())
 
 
 # Key Management Endpoints
@@ -27,6 +29,7 @@ def get_keys_service():
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@tenant_required
 def list_keys():
     """
     List all keys accessible by current user/organization.
@@ -59,6 +62,7 @@ def list_keys():
 @bp.route("/<int:key_id>", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@tenant_required
 def get_key(key_id):
     """
     Get a specific key details.
@@ -81,6 +85,7 @@ def get_key(key_id):
 @bp.route("", methods=["POST"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 async def create_key():
     """
     Create a new encryption key.
@@ -103,7 +108,7 @@ async def create_key():
     try:
         data = await request.get_json()
 
-        if not data:
+        if not data or not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
 
         required = ["provider_id", "key_name"]
@@ -136,6 +141,7 @@ async def create_key():
 @bp.route("/<int:key_id>/enable", methods=["POST"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 def enable_key(key_id):
     """
     Enable a disabled key.
@@ -158,6 +164,7 @@ def enable_key(key_id):
 @bp.route("/<int:key_id>/disable", methods=["POST"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 def disable_key(key_id):
     """
     Disable a key.
@@ -180,6 +187,7 @@ def disable_key(key_id):
 @bp.route("/<int:key_id>/rotate", methods=["POST"])
 @login_required
 @require_scope("secrets:admin")
+@tenant_required
 def rotate_key(key_id):
     """
     Rotate a key (enable automatic rotation or rotate immediately).
@@ -202,6 +210,7 @@ def rotate_key(key_id):
 @bp.route("/<int:key_id>", methods=["DELETE"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 def delete_key(key_id):
     """
     Schedule key deletion.
@@ -232,6 +241,7 @@ def delete_key(key_id):
 @bp.route("/<int:key_id>/encrypt", methods=["POST"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 async def encrypt_data(key_id):
     """
     Encrypt data using this key.
@@ -268,6 +278,7 @@ async def encrypt_data(key_id):
 @bp.route("/<int:key_id>/decrypt", methods=["POST"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 async def decrypt_data(key_id):
     """
     Decrypt data using this key.
@@ -304,6 +315,7 @@ async def decrypt_data(key_id):
 @bp.route("/<int:key_id>/generate-data-key", methods=["POST"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 async def generate_data_key(key_id):
     """
     Generate a data encryption key.
@@ -339,6 +351,7 @@ async def generate_data_key(key_id):
 @bp.route("/<int:key_id>/sign", methods=["POST"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 async def sign_data(key_id):
     """
     Sign data using this key (asymmetric keys only).
@@ -380,6 +393,7 @@ async def sign_data(key_id):
 @bp.route("/<int:key_id>/verify", methods=["POST"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 async def verify_signature(key_id):
     """
     Verify a message signature (asymmetric keys only).
@@ -399,7 +413,7 @@ async def verify_signature(key_id):
     try:
         data = await request.get_json()
 
-        if not data:
+        if not data or not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
 
         required = ["message", "signature", "signing_algorithm"]
@@ -431,6 +445,7 @@ async def verify_signature(key_id):
 @bp.route("/<int:key_id>/access-log", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@tenant_required
 def get_key_access_log(key_id):
     """
     Get access log for a key.
@@ -475,6 +490,7 @@ def get_key_access_log(key_id):
 @bp.route("/providers", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@tenant_required
 def list_key_providers():
     """
     List all key providers.
@@ -500,6 +516,7 @@ def list_key_providers():
 @bp.route("/providers", methods=["POST"])
 @login_required
 @require_scope("secrets:admin")
+@tenant_required
 async def create_key_provider():
     """
     Register a new key provider.
@@ -513,7 +530,8 @@ async def create_key_provider():
                 "access_key_id": "...",
                 "secret_access_key": "..."
             },
-            "description": "Production AWS KMS provider"  // optional
+            "description": "Production AWS KMS provider",  // optional
+            "organization_id": 1  // optional when the tenant has one org
         }
 
     Returns:
@@ -523,7 +541,7 @@ async def create_key_provider():
     try:
         data = await request.get_json()
 
-        if not data:
+        if not data or not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
 
         required = ["name", "provider_type", "config"]
@@ -541,17 +559,21 @@ async def create_key_provider():
             provider_type=data["provider_type"],
             config=data["config"],
             description=data.get("description"),
+            organization_id=data.get("organization_id"),
         )
 
         return jsonify(provider), 201
 
     except Exception as e:
+        if "not found" in str(e).lower():
+            return log_error_and_respond(logger, e, "Failed to process request", 404)
         return log_error_and_respond(logger, e, "Failed to process request", 400)
 
 
 @bp.route("/providers/<int:provider_id>", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@tenant_required
 def get_key_provider(provider_id):
     """
     Get key provider details.
@@ -574,6 +596,7 @@ def get_key_provider(provider_id):
 @bp.route("/providers/<int:provider_id>", methods=["PUT"])
 @login_required
 @require_scope("secrets:admin")
+@tenant_required
 async def update_key_provider(provider_id):
     """
     Update key provider configuration.
@@ -593,7 +616,7 @@ async def update_key_provider(provider_id):
     try:
         data = await request.get_json()
 
-        if not data:
+        if not data or not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
 
         service = get_keys_service()
@@ -617,6 +640,7 @@ async def update_key_provider(provider_id):
 @bp.route("/providers/<int:provider_id>", methods=["DELETE"])
 @login_required
 @require_scope("secrets:admin")
+@tenant_required
 def delete_key_provider(provider_id):
     """
     Delete key provider.
@@ -642,6 +666,7 @@ def delete_key_provider(provider_id):
 @bp.route("/providers/<int:provider_id>/test", methods=["POST"])
 @login_required
 @require_scope("secrets:admin")
+@tenant_required
 def test_key_provider(provider_id):
     """
     Test provider connectivity.

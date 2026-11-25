@@ -279,7 +279,6 @@ class BuiltinSecretsClient(SecretProviderClient):
         except SecretAlreadyExistsException:
             raise
         except Exception as e:
-            self.db.rollback()
             logger.error(f"Failed to create secret '{path}': {str(e)}")
             raise SecretProviderException(f"Failed to create secret: {str(e)}")
 
@@ -335,7 +334,6 @@ class BuiltinSecretsClient(SecretProviderClient):
         except SecretNotFoundException:
             raise
         except Exception as e:
-            self.db.rollback()
             logger.error(f"Failed to update secret '{path}': {str(e)}")
             raise SecretProviderException(f"Failed to update secret: {str(e)}")
 
@@ -361,7 +359,6 @@ class BuiltinSecretsClient(SecretProviderClient):
         except SecretNotFoundException:
             raise
         except Exception as e:
-            self.db.rollback()
             logger.error(f"Failed to delete secret '{path}': {str(e)}")
             raise SecretProviderException(f"Failed to delete secret: {str(e)}")
 

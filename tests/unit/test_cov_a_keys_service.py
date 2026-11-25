@@ -3,9 +3,9 @@
 Reads, updates, deletes and state changes run against the harness' real
 Postgres (rows seeded with the real ``key_providers`` / ``crypto_keys`` /
 ``key_access_log`` columns). Provider SDK clients are patched at the
-``_get_provider_client`` boundary. Writes that the current service cannot
-perform against the real schema (``provider_type``/``description``/``key_hash``
-columns) are documented with strict xfail tests stating the correct behaviour.
+``_get_provider_client`` boundary. Every service call is bound to the seeded
+tenant; real-schema writes (provider/description/key_hash columns) are asserted
+directly.
 """
 
 # flake8: noqa: E501
@@ -95,7 +95,7 @@ async def world(app):
 
     w = await run_in_threadpool(_setup)
     w["sfx"] = sfx
-    w["svc"] = KeysService(db)
+    w["svc"] = KeysService(db, tenant_id=w["tenant"])
     return w
 
 
@@ -124,16 +124,23 @@ class _Table(dict):
 
 
 def _stub_provider(provider_type, config_json=None, **extra):
-    """Build a provider row lacking a DB (has ``provider_type`` like the service expects)."""
+    """Build a provider row lacking a DB (``provider`` is the real column name)."""
     data = {
         "id": 1,
-        "provider_type": provider_type,
+        "provider": provider_type,
         "config_json": config_json,
         **extra,
     }
     row = SimpleNamespace(**data)
     row.as_dict = lambda: {"id": 1, "name": "n", "config_json": config_json}
     return row
+
+
+def _stub_service(table):
+    """KeysService whose tenant-scoped provider lookup reads a stub table."""
+    service = KeysService(None, tenant_id=1)
+    service._provider_row = lambda provider_id: table[provider_id]
+    return service
 
 
 class TestGetProviderClient:
@@ -149,11 +156,9 @@ class TestGetProviderClient:
     )
     def test_dispatch_by_type(self, ptype, cls):
         """The provider type picks the right client class and merges config_json."""
-        db = SimpleNamespace(
-            key_providers=_Table({1: _stub_provider(ptype, {"region": "r1"})})
-        )
+        table = _Table({1: _stub_provider(ptype, {"region": "r1"})})
         with patch(f"{SVC}.{cls}") as client_cls:
-            out = KeysService(db)._get_provider_client(1)
+            out = _stub_service(table)._get_provider_client(1)
         assert out is client_cls.return_value
         cfg = client_cls.call_args.args[0]
         assert cfg["provider_type"] == ptype
@@ -161,28 +166,24 @@ class TestGetProviderClient:
 
     def test_no_config_json(self):
         """A provider without config_json still builds a client."""
-        db = SimpleNamespace(key_providers=_Table({1: _stub_provider("infisical")}))
+        table = _Table({1: _stub_provider("infisical")})
         with patch(f"{SVC}.InfisicalClient") as client_cls:
-            KeysService(db)._get_provider_client(1)
+            _stub_service(table)._get_provider_client(1)
         assert "region" not in client_cls.call_args.args[0]
 
     def test_unsupported_type(self):
         """An unknown type raises."""
-        db = SimpleNamespace(key_providers=_Table({1: _stub_provider("vault")}))
+        table = _Table({1: _stub_provider("vault")})
         with pytest.raises(Exception, match="Unsupported provider type: vault"):
-            KeysService(db)._get_provider_client(1)
+            _stub_service(table)._get_provider_client(1)
 
     def test_missing_provider(self):
         """A missing provider row raises 'not found'."""
-        db = SimpleNamespace(key_providers=_Table())
+        table = _Table()
         with pytest.raises(Exception, match="Key provider not found: 9"):
-            KeysService(db)._get_provider_client(9)
+            _stub_service(table)._get_provider_client(9)
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: service.py:45 reads provider.provider_type but key_providers column is `provider`",
-    )
     async def test_real_row_dispatches_by_provider_column(self, world):
         """A real DB provider row (column ``provider``) resolves to its client."""
         with patch(f"{SVC}.AWSKMSClient") as client_cls:
@@ -204,10 +205,6 @@ class TestProviderReads:
         assert world["secret"] not in str(mine)
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: service.py:78 `enabled is True` evaluates to a bool so `query &= bool` raises AttributeError (enabled_only broken)",
-    )
     async def test_list_enabled_only_excludes_disabled(self, world):
         """enabled_only must return only enabled providers."""
         rows = await _run(world["svc"].list_providers, enabled_only=True)
@@ -257,10 +254,6 @@ class TestProviderWrites:
             await _run(world["svc"].update_provider, 99999999, name="x")
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: service.py:180 writes `description`, but key_providers has no such column",
-    )
     async def test_update_description_persists(self, world):
         """Updating the description must persist (column missing in schema)."""
         out = await _run(
@@ -342,24 +335,25 @@ class TestProviderWrites:
         """The type is lower-cased and the row inserted then read back."""
         db = MagicMock()
         db.key_providers.insert.return_value = 5
-        service = KeysService(db)
+        service = KeysService(db, tenant_id=3)
         with (
             patch(f"{SVC}.KeysService.get_provider", return_value={"id": 5}),
+            patch(f"{SVC}.org_in_tenant", return_value=True) as oit,
             patch("apps.api.utils.village_id.mint_village_id", return_value="v" * 25),
         ):
-            out = service.create_provider("n", "AWS_KMS", {"region": "r"}, "d")
+            out = service.create_provider(
+                "n", "AWS_KMS", {"region": "r"}, "d", organization_id=12
+            )
+        oit.assert_called_once_with(db, 12, 3)
         kwargs = db.key_providers.insert.call_args.kwargs
-        assert kwargs["provider_type"] == "aws_kms"
-        assert kwargs["config_json"] == {"region": "r"}
+        assert kwargs["provider"] == "aws_kms"
+        assert kwargs["organization_id"] == 12
+        assert kwargs["config_json"] == {"region": "r", "description": "d"}
         assert kwargs["enabled"] is True
         db.commit.assert_called_once()
         assert out == {"id": 5}
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: service.py:134 inserts provider_type/description and no organization_id; key_providers has `provider`, no description, org NOT NULL",
-    )
     async def test_create_provider_persists_on_real_db(self, world):
         """create_provider must create a readable provider row on the real schema."""
         out = await _run(
@@ -622,20 +616,16 @@ class TestCryptoOperations:
 class TestCreateKey:
     """create_key registers the provider-created key (stub DB for the insert)."""
 
-    def _db(self, org_id=None):
-        """Build a MagicMock db whose provider row has the given org id."""
+    def _db(self):
+        """Build a MagicMock db whose insert returns key id 77."""
         db = MagicMock()
-        db.key_providers.__getitem__.return_value = SimpleNamespace(
-            organization_id=org_id
-        )
         db.crypto_keys.insert.return_value = 77
         return db
 
-    @pytest.mark.parametrize("org_id", [None, 12])
-    def test_registers_key(self, org_id):
-        """Provider key details are stored and the DB key re-read."""
-        db = self._db(org_id)
-        service = KeysService(db)
+    def test_registers_key(self):
+        """Provider key details are stored under the provider's org and re-read."""
+        db = self._db()
+        service = KeysService(db, tenant_id=3)
         client = MagicMock()
         client.create_key.return_value = {
             "key_id": "pk1",
@@ -644,10 +634,12 @@ class TestCreateKey:
             "algorithm": "AES",
         }
         with (
+            patch.object(
+                KeysService,
+                "_provider_row",
+                return_value=SimpleNamespace(organization_id=12),
+            ),
             patch.object(KeysService, "_get_provider_client", return_value=client),
-            patch(
-                "apps.api.utils.village_id.resolve_tenant_id_for_org", return_value=3
-            ) as res,
             patch(
                 "apps.api.utils.village_id.mint_village_id", return_value="v" * 25
             ) as mint,
@@ -659,10 +651,11 @@ class TestCreateKey:
         client.create_key.assert_called_once_with(
             "kname", "symmetric", "SPEC", "desc", {"t": "v"}
         )
-        res.assert_called_once_with(db, org_id)
         mint.assert_called_once_with(3)
         kwargs = db.crypto_keys.insert.call_args.kwargs
         assert kwargs["provider_key_id"] == "pk1"
+        assert kwargs["organization_id"] == 12
+        assert len(kwargs["key_hash"]) == 64
         assert kwargs["key_state"] == "Enabled"
         assert kwargs["metadata_json"] == {
             "key_spec": "SPEC",
@@ -674,24 +667,18 @@ class TestCreateKey:
         gk.assert_called_once_with(77)
         assert out == {"id": 77}
 
-    def test_provider_without_row(self):
-        """A vanished provider row yields no org id but still registers the key."""
-        db = MagicMock()
-        db.key_providers.__getitem__.return_value = None
-        db.crypto_keys.insert.return_value = 1
+    def test_provider_outside_tenant_registers_nothing(self):
+        """A provider not owned by the caller's tenant is 'not found'; no key is made."""
+        db = self._db()
         client = MagicMock()
-        client.create_key.return_value = {"key_id": "pk"}
         with (
+            patch.object(KeysService, "_provider_row", return_value=None),
             patch.object(KeysService, "_get_provider_client", return_value=client),
-            patch(
-                "apps.api.utils.village_id.resolve_tenant_id_for_org", return_value=1
-            ) as res,
-            patch("apps.api.utils.village_id.mint_village_id", return_value="v" * 25),
-            patch.object(KeysService, "get_key", return_value={}),
+            pytest.raises(Exception, match="Key provider not found: 1"),
         ):
-            KeysService(db).create_key(1, "k")
-        res.assert_called_once_with(db, None)
-        assert db.crypto_keys.insert.call_args.kwargs["key_state"] == "Enabled"
+            KeysService(db, tenant_id=3).create_key(1, "k")
+        client.create_key.assert_not_called()
+        db.crypto_keys.insert.assert_not_called()
 
     def test_provider_failure_inserts_nothing(self):
         """If the provider fails to create the key nothing is registered."""
@@ -699,17 +686,18 @@ class TestCreateKey:
         client = MagicMock()
         client.create_key.side_effect = Exception("quota")
         with (
+            patch.object(
+                KeysService,
+                "_provider_row",
+                return_value=SimpleNamespace(organization_id=12),
+            ),
             patch.object(KeysService, "_get_provider_client", return_value=client),
             pytest.raises(Exception, match="quota"),
         ):
-            KeysService(db).create_key(1, "k")
+            KeysService(db, tenant_id=3).create_key(1, "k")
         db.crypto_keys.insert.assert_not_called()
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: service.py:288 omits crypto_keys.key_hash/organization_id (NOT NULL), so the insert fails on the real schema",
-    )
     async def test_create_key_persists_on_real_db(self, world):
         """create_key must register a key row on the real schema."""
         client = MagicMock()
@@ -748,13 +736,10 @@ class TestAccessLog:
         assert [r["operation"] for r in all_logs] == ["op2", "op1", "op0"]
         first = await _run(world["svc"].get_access_log, world["k_sym"], limit=2)
         assert [r["operation"] for r in first] == ["op2", "op1"]
-        assert await _run(world["svc"].get_access_log, 99999999) == []
+        with pytest.raises(Exception, match="Key not found: 99999999"):
+            await _run(world["svc"].get_access_log, 99999999)
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: service.py:594 limitby=(offset, offset+limit) returns limit+offset rows under penguin-dal (limit=1, offset=1 gives 2)",
-    )
     async def test_get_access_log_offset_window(self, world, app):
         """limit=1/offset=1 must return exactly the second-newest entry."""
         db = app.db
@@ -786,10 +771,6 @@ class TestAccessLog:
         db.commit.assert_called_once()
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: service.py:568 inserts created_at/updated_at which key_access_log does not have",
-    )
     async def test_log_access_persists_on_real_db(self, world):
         """_log_access must write an audit row on the real schema."""
         await _run(world["svc"]._log_access, world["k_sym"], "encrypt", n=1)
