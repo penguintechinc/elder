@@ -783,3 +783,45 @@ def test_bulk_size_is_capped(world):
         world.tokens["admin"],
     )
     assert code == grpc.StatusCode.INVALID_ARGUMENT
+
+
+def test_graph_rpcs_report_node_cap_truncation(world, monkeypatch):
+    """A node-capped graph is reported as truncated, not as a negative result."""
+    from apps.api.grpc.servicers import elder_servicer
+
+    monkeypatch.setattr(elder_servicer, "GRAPH_MAX_NODES", 1)
+    i = world.ids
+    code, resp = _call(
+        world,
+        "FindPath",
+        graph_pb2.FindPathRequest(
+            source_entity_id=i["own_e1"], target_entity_id=i["own_e2"]
+        ),
+        world.tokens["admin"],
+    )
+    assert code == grpc.StatusCode.OK and not resp.path_found
+    assert "truncated" in resp.status.message
+    code, resp = _call(
+        world,
+        "GetEntityImpact",
+        graph_pb2.GetEntityImpactRequest(entity_id=i["own_e1"]),
+        world.tokens["admin"],
+    )
+    assert code == grpc.StatusCode.OK
+    assert "truncated" in resp.status.message
+
+
+def test_analyze_graph_reports_cycle_cap(world, monkeypatch):
+    """Cycle enumeration stopped by the cap is flagged as truncated."""
+    from apps.api.grpc.servicers import elder_servicer
+
+    monkeypatch.setattr(elder_servicer, "ANALYZE_MAX_CYCLES", 0)
+    i = world.ids
+    _dep(world.db, world.own_tenant, i["own_e2"], i["own_e1"])
+    code, resp = _call(
+        world, "AnalyzeGraph", graph_pb2.AnalyzeGraphRequest(), world.tokens["admin"]
+    )
+    assert code == grpc.StatusCode.OK
+    stats = {r.analysis_type: r.statistics for r in resp.results}
+    assert stats["statistics"]["is_acyclic"] == "False"
+    assert stats["circular_dependencies"]["truncated"] == "true"

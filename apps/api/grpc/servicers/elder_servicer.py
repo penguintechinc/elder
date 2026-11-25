@@ -1806,7 +1806,10 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 G.add_edge(dep.source_id, dep.target_id)
 
             cycle_items = []
-            for cycle in itertools.islice(nx.simple_cycles(G), ANALYZE_MAX_CYCLES):
+            # Take one past the cap so a cut-off list is reported as such.
+            cycles = list(itertools.islice(nx.simple_cycles(G), ANALYZE_MAX_CYCLES + 1))
+            cycles_cut = len(cycles) > ANALYZE_MAX_CYCLES
+            for cycle in cycles[:ANALYZE_MAX_CYCLES]:
                 cycle_items.append(
                     graph_pb2.AnalysisItem(
                         item_type="cycle",
@@ -1817,12 +1820,15 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                     )
                 )
 
-            if cycle_items:
+            if cycle_items or cycles_cut:
                 results.append(
                     graph_pb2.GraphAnalysisResult(
                         analysis_type="circular_dependencies",
                         items=cycle_items,
-                        statistics={"count": str(len(cycle_items))},
+                        statistics={
+                            "count": str(len(cycle_items)),
+                            "truncated": str(cycles_cut).lower(),
+                        },
                     )
                 )
 
@@ -1890,7 +1896,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                     )
 
             max_hops, _ = _resolve_depth(request.max_depth or None)
-            entities, dependencies, _ = self._tenant_graph(db, tid)
+            entities, dependencies, truncated = self._tenant_graph(db, tid)
             entity_map = {e.id: e for e in entities}
 
             G = nx.DiGraph()
@@ -1905,10 +1911,16 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             except (nx.NetworkXNoPath, nx.NodeNotFound):
                 path = []
             if not path or len(path) - 1 > max_hops:
+                # A capped graph cannot prove absence, so say so.
+                message = (
+                    "No path found within graph size limits (graph truncated)"
+                    if truncated
+                    else "No path exists"
+                )
                 return graph_pb2.FindPathResponse(
                     paths=[],
                     path_found=False,
-                    status=self._create_status_response(True, "No path exists"),
+                    status=self._create_status_response(True, message),
                 )
 
             path_nodes = [self._graph_node(entity_map[eid]) for eid in path]
@@ -1950,7 +1962,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 )
 
             depth, _ = _resolve_depth(request.max_depth or None)
-            entities, dependencies, _ = self._tenant_graph(db, tid)
+            entities, dependencies, truncated = self._tenant_graph(db, tid)
             entity_map = {e.id: e for e in entities}
 
             G = nx.DiGraph()
@@ -1991,7 +2003,12 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
 
             return graph_pb2.GetEntityImpactResponse(
                 impact=impact,
-                status=self._create_status_response(True, "Impact analysis complete"),
+                status=self._create_status_response(
+                    True,
+                    "Impact analysis truncated at graph size limits"
+                    if truncated
+                    else "Impact analysis complete",
+                ),
             )
         except Exception as e:
             self._handle_exception(context, e, "get_entity_impact")
