@@ -370,9 +370,15 @@ class TestLifecycleAndConfig:
         """Placeholder versions defer to the version file, then to the placeholder."""
         monkeypatch.setenv("APP_VERSION", "0.1.0")
         (tmp_path / ".version").write_text("7.7.7\n", encoding="utf-8")
-        monkeypatch.setattr(mod, "Path", lambda _p: tmp_path / "no-app-version")
+        container_version = tmp_path / "container" / ".version"
+        container_version.parent.mkdir()
+        # Redirect the hard-coded /app/.version candidate into tmp_path so the
+        # result never depends on the host or CI filesystem layout.
+        monkeypatch.setattr(mod, "Path", lambda _p: container_version)
         monkeypatch.setattr(mod, "_REPO_ROOT", tmp_path)
         assert mod._resolve_app_version() == "7.7.7"
+        container_version.write_text("8.8.8\n", encoding="utf-8")
+        assert mod._resolve_app_version() == "8.8.8"
         monkeypatch.setattr(mod, "Path", lambda _p: tmp_path / "missing")
         monkeypatch.setattr(mod, "_REPO_ROOT", tmp_path / "also-missing")
         assert mod._resolve_app_version() == "0.1.0"
