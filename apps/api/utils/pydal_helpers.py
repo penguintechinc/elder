@@ -9,7 +9,7 @@ simplifying the use of run_in_threadpool with database queries.
 
 from typing import Any, List, Optional
 
-from quart import request
+from quart import current_app, request
 
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pagination import MAX_OFFSET, clamp_int, parse_limit
@@ -60,7 +60,8 @@ async def query_select(
     Args:
         query: penguin-dal query object
         orderby: Optional ordering specification
-        limitby: Optional limit tuple (offset, limit)
+        limitby: Optional ``(offset, limit)`` tuple — penguin-dal semantics,
+            NOT PyDAL's ``(start, stop)``
         **kwargs: Additional select parameters
 
     Returns:
@@ -71,7 +72,7 @@ async def query_select(
         rows = await query_select(
             db(query),
             orderby=~db.entities.created_at,
-            limitby=(offset, offset + per_page)
+            limitby=(offset, per_page)
         )
     """
 
@@ -136,8 +137,8 @@ async def update_record(table: Any, record_id: int, **data) -> bool:
     """
 
     def do_update():
-        from flask import current_app
-
+        # Quart's current_app (contextvars are copied into the worker thread by
+        # run_in_threadpool); the legacy flask import raised outside Flask.
         db = current_app.db
         record = table[record_id]
         if not record:
@@ -167,11 +168,11 @@ async def delete_record(table: Any, record_id: int) -> bool:
     """
 
     def do_delete():
-        record = table[record_id]
-        if not record:
-            return False
-        del table[record_id]
-        return True
+        # penguin-dal has no ``del table[id]``; delete through a query set.
+        # This helper is not tenant-aware: callers must resolve the row with
+        # a tenant-scoped lookup first (or use their own scoped delete).
+        db = current_app.db
+        return db(table.id == record_id).delete() > 0
 
     return await run_in_threadpool(do_delete)
 
@@ -261,7 +262,7 @@ class PaginationParams:
             pagination = PaginationParams.from_request()
             rows = await query_select(
                 db(query),
-                limitby=(pagination.offset, pagination.offset + pagination.per_page)
+                limitby=(pagination.offset, pagination.per_page)
             )
         """
         page = clamp_int(request.args.get("page"), 1, 1, MAX_OFFSET)
@@ -320,7 +321,8 @@ async def paginated_query(
     rows = await query_select(
         query,
         orderby=orderby,
-        limitby=(pagination.offset, pagination.offset + pagination.per_page),
+        # penguin-dal limitby is (offset, limit), not PyDAL's (start, stop).
+        limitby=(pagination.offset, pagination.per_page),
     )
 
     return rows, total

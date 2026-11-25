@@ -4,7 +4,7 @@
 
 from datetime import date, datetime
 
-from quart import Blueprint, current_app, request
+from quart import Blueprint, current_app, jsonify, request
 from quart_schema import validate_response
 
 from apps.api.auth.decorators import (
@@ -94,10 +94,13 @@ VALID_CT_LOG_STATUSES = ["logged", "pending", "not_required"]
 async def list_certificates():
     """List certificates with optional filtering."""
     db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant context required"}), 403
     pagination = PaginationParams.from_request()
 
     def get_certificates():
-        query = db.certificates.id > 0
+        query = db.certificates.tenant_id == tenant_id
 
         if request.args.get("organization_id"):
             query &= db.certificates.organization_id == request.args.get(
@@ -123,7 +126,8 @@ async def list_certificates():
         total = db(query).count()
         rows = db(query).select(
             orderby=~db.certificates.created_at,
-            limitby=(pagination.offset, pagination.offset + pagination.per_page),
+            # penguin-dal limitby is (offset, limit), not PyDAL's (start, stop)
+            limitby=(pagination.offset, pagination.per_page),
         )
         return total, rows
 
@@ -169,6 +173,8 @@ async def create_certificate():
     data = await request.get_json()
     if error := validate_json_body(data):
         return error
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object body required"}), 400
 
     if error := validate_required_fields(
         data,
@@ -215,11 +221,17 @@ async def create_certificate():
         ):
             return error
 
+    caller_tenant_id = get_current_tenant_id()
+    if not caller_tenant_id:
+        return jsonify({"error": "Tenant context required"}), 403
+
     org, tenant_id, error = await validate_organization_and_get_tenant(
         data["organization_id"]
     )
     if error:
         return error
+    if int(tenant_id) != int(caller_tenant_id):
+        return ApiResponse.not_found("Organization", data["organization_id"])
 
     # Validate private_key_secret_id if provided, scoped to caller's
     # tenant via the owning organization (gh-237)
@@ -329,6 +341,8 @@ async def get_certificate(id: int):
     """Get a single certificate entry by ID."""
     db = current_app.db
     tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant context required"}), 403
 
     certificate = await run_in_threadpool(
         lambda: get_tenant_scoped(db, db.certificates, id, tenant_id)
@@ -351,16 +365,20 @@ async def get_certificate(id: int):
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
 @require_scope("secrets:write")
-@resource_role_required("maintainer")
+@resource_role_required("maintainer", resource_table="certificates")
 @validate_response(CertificateResponse)
 async def update_certificate(id: int):
     """Update a certificate entry."""
     db = current_app.db
     tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant context required"}), 403
 
     data = await request.get_json()
     if error := validate_json_body(data):
         return error
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object body required"}), 400
 
     if data.get("creator"):
         if error := validate_enum_value(data["creator"], VALID_CREATORS, "creator"):
@@ -403,6 +421,8 @@ async def update_certificate(id: int):
         )
         if error:
             return error
+        if int(org_tenant_id) != int(tenant_id):
+            return ApiResponse.not_found("Organization", data["organization_id"])
 
     if data.get("private_key_secret_id"):
         secret = await run_in_threadpool(
@@ -523,7 +543,9 @@ async def update_certificate(id: int):
             )
 
         if update_dict:
-            db(db.certificates.id == id).update(**update_dict)
+            db(
+                (db.certificates.id == id) & (db.certificates.tenant_id == tenant_id)
+            ).update(**update_dict)
             db.commit()
 
         return db.certificates[id]  # tenant-scope-exempt: verified above
@@ -548,11 +570,13 @@ async def update_certificate(id: int):
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
 @require_scope("secrets:write")
-@resource_role_required("maintainer")
+@resource_role_required("maintainer", resource_table="certificates")
 async def delete_certificate(id: int):
     """Delete a certificate entry."""
     db = current_app.db
     tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant context required"}), 403
 
     certificate = await run_in_threadpool(
         lambda: get_tenant_scoped(db, db.certificates, id, tenant_id)
@@ -561,7 +585,10 @@ async def delete_certificate(id: int):
         return ApiResponse.not_found("Certificate", id)
 
     def delete():
-        del db.certificates[id]  # tenant-scope-exempt: verified above
+        # penguin-dal has no ``del table[id]``; delete through a tenant-scoped set
+        db(
+            (db.certificates.id == id) & (db.certificates.tenant_id == tenant_id)
+        ).delete()
         db.commit()
 
     await run_in_threadpool(delete)

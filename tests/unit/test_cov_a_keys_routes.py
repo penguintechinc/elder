@@ -3,10 +3,9 @@
 Authentication/scope enforcement, validation (400), not-found (404) mapping,
 generic 500 handling (no internal text leaked) and data flow through the real
 Postgres. Provider SDK clients are patched at ``KeysService._get_provider_client``
-and the audit insert (``_log_access``, which does not match the real schema) is
-patched out; both gaps are documented as xfail tests in the service tests.
-Tenant isolation is asserted with strict xfail tests (routes do not scope by
-tenant).
+and the audit insert (``_log_access``, covered by the service tests) is
+patched out. Tenant isolation (cross-tenant ids are 404 and never listed) is
+asserted directly.
 """
 
 # flake8: noqa: E501
@@ -336,10 +335,6 @@ class TestReads:
         assert data["count"] == len(data["providers"])
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: services/keys/service.py:78 `enabled is True` yields a bool, query &= bool raises AttributeError -> 500",
-    )
     async def test_list_providers_enabled_only_param_accepted(self, app, world):
         """enabled_only=true is parsed and the call succeeds."""
         status, data = await _call(
@@ -366,30 +361,18 @@ class TestTenantIsolation:
     """Cross-tenant access must be denied (routes currently do not scope by tenant)."""
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: routes/keys.py:61 + services/keys/service.py:320 fetch keys by id with no tenant filter (cross-tenant read)",
-    )
     async def test_get_other_tenants_key_is_404(self, app, world):
         """Tenant A's token must not read tenant B's key."""
         status, _ = await _call(app, "get", f"{BASE}/{world['key_b']}", world["token"])
         assert status == 404
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: services/keys/service.py:351 list_keys has no tenant filter (lists other tenants' keys)",
-    )
     async def test_list_excludes_other_tenants_keys(self, app, world):
         """Tenant A's listing must not include tenant B's key."""
         _, data = await _call(app, "get", BASE, world["token"])
         assert world["key_b"] not in {k["id"] for k in data["keys"]}
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: services/keys/service.py:97 get_provider has no tenant filter (cross-tenant provider read)",
-    )
     async def test_get_other_tenants_provider_is_404(self, app, world):
         """Tenant A's token must not read tenant B's provider."""
         status, _ = await _call(
@@ -398,10 +381,6 @@ class TestTenantIsolation:
         assert status == 404
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: services/keys/service.py:395 disable_key has no tenant check (cross-tenant mutation)",
-    )
     async def test_disable_other_tenants_key_is_404(self, app, world, provider_client):
         """Tenant A's token must not disable tenant B's key."""
         client, _ = provider_client
@@ -787,7 +766,11 @@ class TestProviderRoutes:
             )
         assert (status, data) == (201, {"id": 9})
         cp.assert_called_once_with(
-            name="n", provider_type="aws_kms", config={"r": 1}, description="d"
+            name="n",
+            provider_type="aws_kms",
+            config={"r": 1},
+            description="d",
+            organization_id=None,
         )
 
         status, data = await _call(

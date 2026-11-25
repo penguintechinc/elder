@@ -2,26 +2,76 @@
 
 # flake8: noqa: E501
 
-from datetime import UTC, datetime, timezone
-from typing import Any, Dict, List, Optional
+import hashlib
+from datetime import UTC, datetime
+from typing import Any
 
 from apps.api.services.keys.aws_client import AWSKMSClient
 from apps.api.services.keys.base import BaseKeyProvider
 from apps.api.services.keys.gcp_client import GCPKMSClient
 from apps.api.services.keys.infisical_client import InfisicalClient
+from apps.api.services.secrets.tenancy import (
+    org_in_tenant,
+    require_tenant,
+    tenant_org_ids,
+)
 
 
 class KeysService:
     """Service layer for key management operations."""
 
-    def __init__(self, db):
+    def __init__(self, db, tenant_id: int | None = None):
         """
         Initialize KeysService.
 
         Args:
-            db: PyDAL database instance
+            db: penguin-dal database instance
+            tenant_id: Caller's tenant, taken from the verified JWT claim.
+                Every method that touches stored providers or keys requires
+                it and raises ``TenantScopeError`` when it is missing.
         """
         self.db = db
+        self.tenant_id = tenant_id
+
+    # Tenant scoping
+
+    def _org_ids(self) -> list[int]:
+        """Return the caller tenant's organization ids (fail closed)."""
+        return tenant_org_ids(self.db, self.tenant_id)
+
+    def _provider_row(self, provider_id: int) -> Any:
+        """Load a key provider owned by the caller's tenant, or None."""
+        db = self.db
+        return (
+            db(
+                (db.key_providers.id == provider_id)
+                & (db.key_providers.organization_id.belongs(self._org_ids()))
+            )
+            .select()
+            .first()
+        )
+
+    def _key_row(self, key_id: int) -> Any:
+        """Load a crypto key owned by the caller's tenant, or raise not found."""
+        db = self.db
+        key = (
+            db(
+                (db.crypto_keys.id == key_id)
+                & (db.crypto_keys.organization_id.belongs(self._org_ids()))
+            )
+            .select()
+            .first()
+        )
+        if not key:
+            raise Exception(f"Key not found: {key_id}")
+        return key
+
+    def _default_org_id(self) -> int:
+        """Return the tenant's only organization; ambiguous tenants must choose."""
+        org_ids = self._org_ids()
+        if len(org_ids) != 1:
+            raise ValueError("organization_id is required")
+        return org_ids[0]
 
     def _get_provider_client(self, provider_id: int) -> BaseKeyProvider:
         """
@@ -36,20 +86,20 @@ class KeysService:
         Raises:
             Exception: If provider not found or invalid type
         """
-        provider = self.db.key_providers[provider_id]
+        provider = self._provider_row(provider_id)
 
         if not provider:
             raise Exception(f"Key provider not found: {provider_id}")
 
         config = provider.as_dict()
-        config["provider_type"] = provider.provider_type
+        config["provider_type"] = provider.provider
 
         # Add config_json fields to config
         if provider.config_json:
             config.update(provider.config_json)
 
         # Create appropriate client
-        provider_type = provider.provider_type.lower()
+        provider_type = str(provider.provider).lower()
 
         if provider_type == "aws_kms":
             return AWSKMSClient(config)
@@ -72,10 +122,10 @@ class KeysService:
         Returns:
             List of provider dictionaries
         """
-        query = self.db.key_providers.id > 0
+        query = self.db.key_providers.organization_id.belongs(self._org_ids())
 
         if enabled_only:
-            query &= self.db.key_providers.enabled is True
+            query &= self.db.key_providers.enabled == True  # noqa: E712
 
         providers = self.db(query).select(orderby=self.db.key_providers.name)
 
@@ -94,7 +144,7 @@ class KeysService:
         Raises:
             Exception: If provider not found
         """
-        provider = self.db.key_providers[provider_id]
+        provider = self._provider_row(provider_id)
 
         if not provider:
             raise Exception(f"Provider not found: {provider_id}")
@@ -107,6 +157,7 @@ class KeysService:
         provider_type: str,
         config: dict[str, Any],
         description: str | None = None,
+        organization_id: int | None = None,
     ) -> dict[str, Any]:
         """
         Create a new key provider.
@@ -115,7 +166,10 @@ class KeysService:
             name: Provider name
             provider_type: Provider type (aws_kms, gcp_kms, infisical)
             config: Provider-specific configuration
-            description: Optional description
+            description: Optional description (kept in ``config_json`` —
+                ``key_providers`` has no description column)
+            organization_id: Owning organization; must belong to the caller's
+                tenant. Optional only when the tenant has exactly one org.
 
         Returns:
             Created provider dictionary
@@ -129,15 +183,24 @@ class KeysService:
 
         from apps.api.utils.village_id import mint_village_id
 
+        if organization_id is None:
+            organization_id = self._default_org_id()
+        elif not org_in_tenant(self.db, organization_id, self.tenant_id):
+            raise Exception(f"Organization not found: {organization_id}")
+
+        stored_config = dict(config or {})
+        if description is not None:
+            stored_config["description"] = description
+
         # Create provider
         now = datetime.now(UTC)
         provider_id = self.db.key_providers.insert(
             name=name,
-            provider_type=provider_type.lower(),
+            provider=provider_type.lower(),
             enabled=True,
-            config_json=config,
-            description=description,
-            village_id=mint_village_id(1),
+            config_json=stored_config,
+            organization_id=int(organization_id),
+            village_id=mint_village_id(require_tenant(self.tenant_id)),
             created_at=now,
             updated_at=now,
         )
@@ -167,7 +230,7 @@ class KeysService:
         Returns:
             Updated provider dictionary
         """
-        provider = self.db.key_providers[provider_id]
+        provider = self._provider_row(provider_id)
 
         if not provider:
             raise Exception(f"Provider not found: {provider_id}")
@@ -175,10 +238,16 @@ class KeysService:
         update_data = {}
         if name is not None:
             update_data["name"] = name
-        if config is not None:
-            update_data["config_json"] = config
-        if description is not None:
-            update_data["description"] = description
+        if config is not None or description is not None:
+            new_config = dict(
+                config if config is not None else (provider.config_json or {})
+            )
+            old_description = (provider.config_json or {}).get("description")
+            if description is not None:
+                new_config["description"] = description
+            elif old_description is not None and "description" not in new_config:
+                new_config["description"] = old_description
+            update_data["config_json"] = new_config
         if enabled is not None:
             update_data["enabled"] = enabled
 
@@ -198,7 +267,7 @@ class KeysService:
         Returns:
             Success message
         """
-        provider = self.db.key_providers[provider_id]
+        provider = self._provider_row(provider_id)
 
         if not provider:
             raise Exception(f"Provider not found: {provider_id}")
@@ -270,24 +339,26 @@ class KeysService:
         Returns:
             Created key dictionary
         """
+        provider = self._provider_row(provider_id)
+        if not provider:
+            raise Exception(f"Key provider not found: {provider_id}")
+
         client = self._get_provider_client(provider_id)
 
         # Create key with provider
         key_data = client.create_key(key_name, key_type, key_spec, description, tags)
 
-        from apps.api.utils.village_id import (
-            mint_village_id,
-            resolve_tenant_id_for_org,
-        )
+        from apps.api.utils.village_id import mint_village_id
 
-        # Register key in database
-        provider = self.db.key_providers[provider_id]
-        org_id = getattr(provider, "organization_id", None) if provider else None
-        tenant_id = resolve_tenant_id_for_org(self.db, org_id)
+        # Register key in database, owned by the provider's organization
         now = datetime.now(UTC)
+        provider_key_id = str(key_data["key_id"])
         key_id = self.db.crypto_keys.insert(
             key_provider_id=provider_id,
-            provider_key_id=key_data["key_id"],
+            provider_key_id=provider_key_id,
+            # Fingerprint of the provider key reference (never key material)
+            key_hash=hashlib.sha256(provider_key_id.encode()).hexdigest(),
+            organization_id=provider.organization_id,
             provider_key_arn=key_data.get("key_arn"),
             name=key_name,
             key_type=key_type,
@@ -298,7 +369,7 @@ class KeysService:
                 "description": description,
                 "tags": tags or {},
             },
-            village_id=mint_village_id(tenant_id),
+            village_id=mint_village_id(require_tenant(self.tenant_id)),
             created_at=now,
             updated_at=now,
         )
@@ -317,16 +388,13 @@ class KeysService:
         Returns:
             Key dictionary
         """
-        key = self.db.crypto_keys[key_id]
-
-        if not key:
-            raise Exception(f"Key not found: {key_id}")
+        key = self._key_row(key_id)
 
         key_dict = key.as_dict()
 
         # Add provider name
         if key.key_provider_id:
-            provider = self.db.key_providers[key.key_provider_id]
+            provider = self._provider_row(key.key_provider_id)
             key_dict["provider_name"] = provider.name if provider else None
 
         return key_dict
@@ -348,7 +416,7 @@ class KeysService:
         Returns:
             List of key dictionaries
         """
-        query = self.db.crypto_keys.id > 0
+        query = self.db.crypto_keys.organization_id.belongs(self._org_ids())
 
         if provider_id:
             query &= self.db.crypto_keys.key_provider_id == provider_id
@@ -367,7 +435,7 @@ class KeysService:
 
             # Add provider name
             if key.key_provider_id:
-                provider = self.db.key_providers[key.key_provider_id]
+                provider = self._provider_row(key.key_provider_id)
                 key_dict["provider_name"] = provider.name if provider else None
 
             result.append(key_dict)
@@ -376,10 +444,7 @@ class KeysService:
 
     def enable_key(self, key_id: int) -> dict[str, Any]:
         """Enable a disabled key."""
-        key = self.db.crypto_keys[key_id]
-
-        if not key:
-            raise Exception(f"Key not found: {key_id}")
+        key = self._key_row(key_id)
 
         client = self._get_provider_client(key.key_provider_id)
         result = client.enable_key(key.provider_key_id)
@@ -394,10 +459,7 @@ class KeysService:
 
     def disable_key(self, key_id: int) -> dict[str, Any]:
         """Disable a key."""
-        key = self.db.crypto_keys[key_id]
-
-        if not key:
-            raise Exception(f"Key not found: {key_id}")
+        key = self._key_row(key_id)
 
         client = self._get_provider_client(key.key_provider_id)
         result = client.disable_key(key.provider_key_id)
@@ -412,10 +474,7 @@ class KeysService:
 
     def delete_key(self, key_id: int, pending_days: int = 30) -> dict[str, Any]:
         """Schedule key deletion."""
-        key = self.db.crypto_keys[key_id]
-
-        if not key:
-            raise Exception(f"Key not found: {key_id}")
+        key = self._key_row(key_id)
 
         client = self._get_provider_client(key.key_provider_id)
         result = client.schedule_key_deletion(key.provider_key_id, pending_days)
@@ -437,10 +496,7 @@ class KeysService:
         self, key_id: int, plaintext: str, context: dict[str, str] | None = None
     ) -> dict[str, Any]:
         """Encrypt data using a key."""
-        key = self.db.crypto_keys[key_id]
-
-        if not key:
-            raise Exception(f"Key not found: {key_id}")
+        key = self._key_row(key_id)
 
         if key.key_state != "Enabled":
             raise Exception(f"Key is not enabled (state: {key.key_state})")
@@ -457,10 +513,7 @@ class KeysService:
         self, key_id: int, ciphertext: str, context: dict[str, str] | None = None
     ) -> dict[str, Any]:
         """Decrypt data using a key."""
-        key = self.db.crypto_keys[key_id]
-
-        if not key:
-            raise Exception(f"Key not found: {key_id}")
+        key = self._key_row(key_id)
 
         if key.key_state != "Enabled":
             raise Exception(f"Key is not enabled (state: {key.key_state})")
@@ -480,10 +533,7 @@ class KeysService:
         context: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Generate a data encryption key."""
-        key = self.db.crypto_keys[key_id]
-
-        if not key:
-            raise Exception(f"Key not found: {key_id}")
+        key = self._key_row(key_id)
 
         if key.key_state != "Enabled":
             raise Exception(f"Key is not enabled (state: {key.key_state})")
@@ -500,10 +550,7 @@ class KeysService:
         self, key_id: int, message: str, signing_algorithm: str = "RSASSA_PSS_SHA_256"
     ) -> dict[str, Any]:
         """Sign a message using an asymmetric key."""
-        key = self.db.crypto_keys[key_id]
-
-        if not key:
-            raise Exception(f"Key not found: {key_id}")
+        key = self._key_row(key_id)
 
         if key.key_type != "asymmetric":
             raise Exception(
@@ -525,10 +572,7 @@ class KeysService:
         self, key_id: int, message: str, signature: str, signing_algorithm: str
     ) -> dict[str, Any]:
         """Verify a message signature."""
-        key = self.db.crypto_keys[key_id]
-
-        if not key:
-            raise Exception(f"Key not found: {key_id}")
+        key = self._key_row(key_id)
 
         if key.key_type != "asymmetric":
             raise Exception(
@@ -547,10 +591,7 @@ class KeysService:
 
     def rotate_key(self, key_id: int) -> dict[str, Any]:
         """Rotate a key."""
-        key = self.db.crypto_keys[key_id]
-
-        if not key:
-            raise Exception(f"Key not found: {key_id}")
+        key = self._key_row(key_id)
 
         client = self._get_provider_client(key.key_provider_id)
         result = client.rotate_key(key.provider_key_id)
@@ -570,8 +611,6 @@ class KeysService:
             operation=operation,
             accessed_at=now,
             metadata_json=kwargs,
-            created_at=now,
-            updated_at=now,
         )
         self.db.commit()
 
@@ -589,9 +628,11 @@ class KeysService:
         Returns:
             List of access log entries
         """
+        self._key_row(key_id)  # raises "Key not found" for foreign/unknown keys
+        # penguin-dal limitby is (offset, limit), not PyDAL's (start, stop)
         logs = self.db(self.db.key_access_log.key_id == key_id).select(
             orderby=~self.db.key_access_log.accessed_at,
-            limitby=(offset, offset + limit),
+            limitby=(offset, limit),
         )
 
         return [log.as_dict() for log in logs]
@@ -621,5 +662,7 @@ class KeysService:
                     config[field] = "***REDACTED***"
 
             sanitized["config_json"] = config
+            if "description" in config and "description" not in sanitized:
+                sanitized["description"] = config["description"]
 
         return sanitized
