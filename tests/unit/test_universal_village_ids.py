@@ -583,6 +583,7 @@ class TestCreationMintingAndSerialization:
             token = jwt.encode(
                 {
                     "sub": str(ident_id),
+                    "type": "access",
                     "tenant": str(tid1),
                     "iat": now_jwt,
                     "exp": now_jwt + timedelta(hours=1),

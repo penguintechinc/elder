@@ -15,7 +15,14 @@ import jwt
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, make_response, request
 
-from apps.api.auth.jwt_handler import carried_auth_time, interactive_auth_time
+from apps.api.auth.jwt_handler import (
+    PORTAL_ACCESS_TOKEN_TYPES,
+    PORTAL_REFRESH_TOKEN_TYPES,
+    PRINCIPAL_PORTAL_USER,
+    carried_auth_time,
+    interactive_auth_time,
+    verify_token,
+)
 from apps.api.auth.portal_cookies import (
     clear_portal_auth_cookies,
     get_access_token_from_cookie,
@@ -66,19 +73,12 @@ def portal_token_required(f):
             return ApiResponse.unauthorized("Token is missing")
 
         try:
-            secret_key = current_app.config.get(
-                "JWT_SECRET_KEY"
-            ) or current_app.config.get("SECRET_KEY")
-            payload = jwt.decode(token, secret_key, algorithms=["HS256"])
-
-            if payload.get("type") != "portal_user":
-                return ApiResponse.unauthorized("Invalid token type")
-
-            request.portal_user = payload
-        except jwt.ExpiredSignatureError:
-            return ApiResponse.unauthorized("Token has expired")
-        except jwt.InvalidTokenError:
-            return ApiResponse.unauthorized("Invalid token")
+            payload = verify_token(token, PORTAL_ACCESS_TOKEN_TYPES)
+        except (TypeError, ValueError):
+            payload = None
+        if not payload:
+            return ApiResponse.unauthorized("Invalid or expired token")
+        request.portal_user = payload
 
         return None
 
@@ -126,6 +126,9 @@ def generate_tokens(user: dict, auth_time: int | None = None) -> dict:
     access_payload = PortalAuthService.generate_jwt_claims(user)
     access_payload["exp"] = now + access_token_expires
     access_payload["iat"] = now
+    access_payload["principal_kind"] = PRINCIPAL_PORTAL_USER
+    access_payload["iss"] = current_app.config.get("JWT_ISSUER", "elder-api")
+    access_payload["aud"] = current_app.config.get("JWT_AUDIENCE", "elder-api")
     if auth_time is not None:
         access_payload["auth_time"] = int(auth_time)
     access_token = jwt.encode(access_payload, secret_key, algorithm="HS256")
@@ -135,6 +138,9 @@ def generate_tokens(user: dict, auth_time: int | None = None) -> dict:
         "sub": str(user["id"]),
         "tenant_id": user["tenant_id"],
         "type": "portal_refresh",
+        "principal_kind": PRINCIPAL_PORTAL_USER,
+        "iss": current_app.config.get("JWT_ISSUER", "elder-api"),
+        "aud": current_app.config.get("JWT_AUDIENCE", "elder-api"),
         "exp": now + refresh_token_expires,
         "iat": now,
     }
@@ -606,13 +612,13 @@ async def refresh_token():
         return ApiResponse.bad_request("refresh_token is required")
 
     try:
-        secret_key = current_app.config.get("JWT_SECRET_KEY") or current_app.config.get(
-            "SECRET_KEY"
-        )
-        payload = jwt.decode(refresh_token_value, secret_key, algorithms=["HS256"])
-
-        if payload.get("type") != "portal_refresh":
-            return ApiResponse.unauthorized("Invalid token type")
+        payload = verify_token(refresh_token_value, PORTAL_REFRESH_TOKEN_TYPES)
+        if not payload:
+            response = await make_response(
+                *ApiResponse.unauthorized("Invalid or expired refresh token")
+            )
+            clear_portal_auth_cookies(response)
+            return response
 
         # Get user: self-lookup via the verified refresh token's own sub
         # claim, never a client param

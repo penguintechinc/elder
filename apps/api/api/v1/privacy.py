@@ -75,7 +75,7 @@ def _token_claims() -> dict[str, Any]:
     token = get_token_from_header()
     if not token:
         return {}
-    return verify_token(token) or {}
+    return verify_token(token, _INTERACTIVE_TOKEN_TYPES) or {}
 
 
 async def _rate_limited(

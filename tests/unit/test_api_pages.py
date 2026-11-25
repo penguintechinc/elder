@@ -110,6 +110,7 @@ class TestPagesAPI:
 
         payload = {
             "sub": str(user_id),
+            "type": "access",
             "iat": datetime.now(UTC),
             "exp": datetime.now(UTC) + timedelta(hours=1),
             "scope": scopes,

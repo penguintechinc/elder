@@ -901,7 +901,7 @@ class TestWebAuth:
             with patch.object(web_auth, "verify_token", return_value=payload) as verify:
                 assert web_auth.get_web_user() == payload
                 assert web_auth.get_web_user() == payload
-            verify.assert_called_once_with(token)
+            verify.assert_called_once_with(token, web_auth.IDENTITY_ACCESS_TOKEN_TYPES)
 
     @pytest.mark.asyncio
     async def test_invalid_cookie_is_anonymous(self, app):

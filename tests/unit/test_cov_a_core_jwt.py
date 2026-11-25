@@ -617,7 +617,9 @@ class TestGetCurrentUserDb:
             "/x", headers={"Authorization": "Bearer placeholder"}
         ):
             with (
-                patch.object(jh, "verify_token", return_value={"sub": "1"}),
+                patch.object(
+                    jh, "verify_token", return_value={"sub": "1", "type": "access"}
+                ),
                 patch.object(jh, "current_app", SimpleNamespace(db=broken)),
             ):
                 assert jh.get_current_user() is None
@@ -702,7 +704,9 @@ class TestMintingValidation:
             id=77, username="cov-user", portal_role=None, tenant_id=4
         )
         async with app.app_context():
-            refresh = jh.verify_token(jh.generate_token(identity, "refresh"))
+            refresh = jh.verify_token(
+                jh.generate_token(identity, "refresh"), jh.IDENTITY_REFRESH_TOKEN_TYPES
+            )
             access = jh.verify_token(jh.generate_token(identity))
             delta = app.config["JWT_REFRESH_TOKEN_EXPIRES"].total_seconds()
         assert refresh["type"] == "refresh"
