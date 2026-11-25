@@ -6,6 +6,7 @@ another type (refresh, portal, service, coderun, or a missing/unknown type)
 must be rejected, never treated as an identity access token.
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
@@ -112,7 +113,8 @@ async def _run_verifier(app, verifier: str, token: str):
     )
     from apps.api.grpc.servicers.elder_servicer import ElderServicer
 
-    grpc_self = SimpleNamespace(jwt_secret=_secret(app), jwt_algorithm=_algorithm(app))
+    # The gRPC verifier pushes its own app context on a worker thread.
+    grpc_self = SimpleNamespace(app=app)
     async with app.app_context():
         if verifier == "api_bearer":
             return verify_token(token)
@@ -132,9 +134,13 @@ async def _run_verifier(app, verifier: str, token: str):
             )
             return verify_token(token, allowed)
         if verifier == "grpc_access":
-            return ElderServicer._verify_jwt_token(grpc_self, token)
+            return await asyncio.to_thread(
+                ElderServicer._verify_jwt_token, grpc_self, token
+            )
         if verifier == "grpc_refresh":
-            return ElderServicer._verify_jwt_token(grpc_self, token, "refresh")
+            return await asyncio.to_thread(
+                ElderServicer._verify_jwt_token, grpc_self, token, "refresh"
+            )
     if verifier == "web_session":
         async with app.test_request_context(
             "/", headers={"Cookie": f"{COOKIE_NAME}={token}"}
