@@ -1149,9 +1149,15 @@ class PortalAuthService:
                 "status_code": 400,
             }
 
-        matched = _match_totp_counter(_load_totp_secret(user), normalized_code, now)
-        if matched is None:
-            return {"error": "Invalid verification code", "status_code": 400}
+        # No pending enrolment: this checks the ACTIVE factor, so it goes
+        # through the hardened path (attempt budget, lockout, replay
+        # tracking) -- otherwise it would be an unthrottled code oracle.
+        result = PortalAuthService.verify_mfa(user.id, normalized_code)
+        if "error" in result:
+            return {
+                "error": result["error"],
+                "status_code": result.get("status_code", 400),
+            }
 
         return {"verified": True}
 

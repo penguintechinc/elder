@@ -1,7 +1,7 @@
 """Harden MFA material at rest: sealed TOTP secrets, hashed backup codes.
 
-Revision ID: 053
-Revises: 052
+Revision ID: 056
+Revises: 053, 054 (also merges those two heads)
 Create Date: 2026-11-24
 
 What it does:
@@ -57,8 +57,9 @@ from apps.api.utils.mfa_crypto import (
     open_totp_secret,
 )
 
-revision = "053"
-down_revision = "052"
+revision = "056"
+# Joins the two release heads (053 webhooks, 054 privacy) into one.
+down_revision = ("053", "054")
 branch_labels = None
 depends_on = None
 

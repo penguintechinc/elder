@@ -32,19 +32,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **UI & Workflow Upgrades** (#416–#418, #420–#421): Pure-browser PNG/JPG/SVG export and versioned JSON backup/import for Diagrams and Playbooks; centralized Executions audit log (`All` / `Playbooks` / `CodeRuns` / `Webhooks`); reorganized sidebar (`Workstreams`, `Work Management`, `Relationships`, `Infrastructure`, `Software`, `Security`, `Documents`, plus `Administration → Workers`).
 - **Official SDKs, Rust CLI & Hosted MCP** (#381, #383–#384, #395–#396, #398): Added official Python SDK (`sdk/python`), pure-rustls Rust SDK (`crates/elder-sdk`), pure-rustls Rust CLI (`cli/elder-cli`), and hosted caller-scoped `hub-mcp` Deployment.
 
-### 🔐 Portal MFA Hardening (migration 053 — run it WITH the deploy)
+### 🔐 Portal MFA Hardening (migration 056 — run it WITH the deploy)
 
 - **MFA secrets and backup codes are protected at rest**: TOTP secrets are stored as an AES-256-GCM envelope (`v1:<kid>:<nonce>:<ciphertext>`), backup codes as salted hashes. A TOTP code is accepted once, and the second-factor step locks for 30 minutes after 5 failed attempts.
 - **Login MFA step is bound to the password step**: `POST /api/v1/portal-auth/login` returns an opaque `mfaChallenge` (5 minutes, single-use) instead of a user id, and `POST /api/v1/portal-auth/mfa/verify` takes `mfa_challenge` + `totp_code`. **Breaking for API clients**: the former `user_id` + `totp_code` body is no longer accepted. Sending `mfaCode` together with the credentials to `/login` also works.
 - **MFA enforcement is applied server-side**: once a tenant's grace period has expired, a user without MFA receives only an enrolment-scoped token (`mfaEnrollmentRequired: true`) that can reach `/mfa/enable`, `/mfa/confirm` and `/logout`. Token refresh is refused in that state.
-- **SSO sign-ins follow the same MFA policy**: SAML ACS and the OIDC callback return the enrolment-only response instead of a session when the user's MFA grace period has expired.
+- **SSO sign-ins follow the same MFA policy**: for a user with TOTP enrolled, SAML ACS and the OIDC callback return an `mfaChallenge` (completed via `/mfa/verify`) instead of a session; when the user's MFA grace period has expired they return the enrolment-only response. **Behaviour change** for SSO clients of enrolled users.
+- `/mfa/confirm` against an already-active factor uses the same attempt limit, lockout and single-use rule as login.
 - **MFA login challenges are bounded**: expired challenges are pruned table-wide and each user keeps at most 5 live challenges (oldest evicted).
 - **Enrolment is pending until confirmed**: `/mfa/enable` no longer changes the active factor; `/mfa/confirm` activates it (a pending setup expires after 10 minutes). Re-enrolling, disabling MFA and regenerating backup codes require a current TOTP or backup code (`current_code`).
 - **Upgrade steps (required)**:
-  1. Run Alembic revision `053` (`./scripts/migrate.sh upgrade head`) as part of the deploy — `hub-api` does not add columns to existing tables at startup, and the new code needs them. It also converts existing rows.
+  1. Run Alembic revision `056` (`./scripts/migrate.sh upgrade head`) as part of the deploy — `hub-api` does not add columns to existing tables at startup, and the new code needs them. It also converts existing rows.
   2. Run it with the **same** `SECRET_KEY` (or `MFA_ENCRYPTION_KEY`) as `hub-api`, e.g. from inside a `hub-api` pod. With MFA rows present and no key in the environment the migration aborts.
   3. Optional: set a dedicated `MFA_ENCRYPTION_KEY`. Before changing it (or `SECRET_KEY` while it is the MFA key) put the previous value in `MFA_ENCRYPTION_OLD_KEYS`, otherwise enrolled users cannot sign in. Rotation procedure: `apps/api/utils/mfa_crypto.py`.
-- **Downgrade** of `053` decrypts secrets back and clears backup codes (users regenerate them).
+- **Downgrade** of `056` decrypts secrets back and clears backup codes (users regenerate them).
 
 ### ✨ Merged Product Lines
 

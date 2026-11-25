@@ -24,6 +24,7 @@ from uuid import uuid4
 
 import pytest
 from quart import current_app
+from webhook_http import ENGINE_HTTP, WebhookPostRecorder
 
 
 def _make_tenant(db, name: str) -> int:
@@ -79,7 +80,7 @@ def _event(tenant_id, **overrides):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_org_unit_only_filter_matches_org_unit_assignment(mock_post, app):
     mock_post.return_value = MagicMock(status_code=200, text="ok")
     async with app.app_context():
@@ -98,7 +99,7 @@ async def test_org_unit_only_filter_matches_org_unit_assignment(mock_post, app):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_issue_type_and_assignee_combo_filter(mock_post, app):
     mock_post.return_value = MagicMock(status_code=200, text="ok")
     async with app.app_context():
@@ -128,7 +129,7 @@ async def test_issue_type_and_assignee_combo_filter(mock_post, app):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_empty_filter_matches_all_assignments_in_tenant(mock_post, app):
     mock_post.return_value = MagicMock(status_code=200, text="ok")
     async with app.app_context():
@@ -158,7 +159,7 @@ async def test_empty_filter_matches_all_assignments_in_tenant(mock_post, app):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_multiple_configs_each_fire_independently(mock_post, app):
     mock_post.return_value = MagicMock(status_code=200, text="ok")
     async with app.app_context():
@@ -193,7 +194,7 @@ async def test_multiple_configs_each_fire_independently(mock_post, app):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_tenant_isolation_webhook_never_fires_cross_tenant(mock_post, app):
     async with app.app_context():
         from apps.api.services.webhooks.assignment import send_issue_assigned_webhooks
@@ -212,7 +213,7 @@ async def test_tenant_isolation_webhook_never_fires_cross_tenant(mock_post, app)
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_signature_matches_expected_hmac(mock_post, app):
     mock_post.return_value = MagicMock(status_code=200, text="ok")
     async with app.app_context():
@@ -241,7 +242,7 @@ async def test_signature_matches_expected_hmac(mock_post, app):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 async def test_inactive_webhook_never_fires(mock_post, app):
     async with app.app_context():
         from apps.api.services.webhooks.assignment import send_issue_assigned_webhooks

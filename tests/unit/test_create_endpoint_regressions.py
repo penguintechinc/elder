@@ -196,7 +196,7 @@ class TestCreateDependencyRegression:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_create_dependency_returns_201(
-        self, mock_get_user, async_client, app
+        self, mock_get_user, async_client, generate_token, app
     ):
         async with app.app_context():
             db = current_app.db
@@ -216,10 +216,13 @@ class TestCreateDependencyRegression:
             "dependency_type": "depends_on",
         }
 
+        # The tenant now comes only from the verified token's claim, so the
+        # request carries a real token for the org's tenant.
+        token = generate_token(tenant_id=tenant_id, scopes=["infrastructure:write"])
         response = await async_client.post(
             "/api/v1/dependencies",
             json=payload,
-            headers={"Authorization": "Bearer fake-token"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
         body = await response.get_data()

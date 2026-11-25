@@ -63,7 +63,9 @@ def _assert_portal_auth_cookies(response) -> None:
 
 class TestSamlAcsSetsHttpOnlyCookies:
     @pytest.mark.asyncio
-    @patch("apps.api.api.v1.sso._sso_mfa_locked_out", return_value=False)
+    @patch(
+        "apps.api.api.v1.sso._sso_mfa_gate", new_callable=AsyncMock, return_value=None
+    )
     @patch("apps.api.api.v1.sso.generate_tokens", return_value=dict(_TOKENS))
     @patch("apps.api.api.v1.sso.SAMLService.process_saml_response")
     async def test_saml_acs_carries_auth_cookies(
@@ -99,7 +101,9 @@ class TestSamlAcsSetsHttpOnlyCookies:
 
 class TestOidcCallbackSetsHttpOnlyCookies:
     @pytest.mark.asyncio
-    @patch("apps.api.api.v1.sso._sso_mfa_locked_out", return_value=False)
+    @patch(
+        "apps.api.api.v1.sso._sso_mfa_gate", new_callable=AsyncMock, return_value=None
+    )
     @patch("apps.api.api.v1.sso.generate_tokens", return_value=dict(_TOKENS))
     @patch("apps.api.api.v1.sso.OIDCService.jit_provision_user")
     @patch("apps.api.api.v1.sso.OIDCService.get_idp_config")
@@ -159,7 +163,9 @@ class TestAuthLoginSetsHttpOnlyCookies:
             ),
             patch(
                 "apps.api.api.v1.auth.generate_token",
-                side_effect=lambda _identity, token_type="access": f"{token_type}-tok",
+                side_effect=lambda _identity, token_type="access", **_kw: (
+                    f"{token_type}-tok"
+                ),
             ),
         ):
             resp = await async_client.post(

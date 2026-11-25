@@ -27,7 +27,7 @@ Rotation procedure:
    was in use) to ``MFA_ENCRYPTION_OLD_KEYS``; roll the API.
 2. Rows are re-sealed under the new key on each user's next successful MFA
    verification. To force it, re-run the envelope pass of Alembic revision
-   053 (it re-seals any row whose ``kid`` is not the current one).
+   056 (it re-seals any row whose ``kid`` is not the current one).
 3. Once no row carries the old ``kid`` (``mfa_secret NOT LIKE 'v1:<new>:%'``
    returns nothing), drop the old secret from ``MFA_ENCRYPTION_OLD_KEYS``.
 
@@ -263,7 +263,7 @@ def open_totp_secret(stored: str, keyring: MfaKeyring, *, aad: str) -> str:
     """Return the usable TOTP secret for a stored value of either generation.
 
     Envelopes are decrypted; a pre-encryption plaintext value is returned
-    as-is so rows written before Alembic revision 053 keep working until
+    as-is so rows written before Alembic revision 056 keep working until
     they are re-sealed.
     """
     if is_encrypted(stored):
@@ -312,7 +312,7 @@ def match_backup_code(stored_codes: list[Any], candidate: str) -> int | None:
     """Return the index of the stored entry matching ``candidate``, if any.
 
     Hashed entries are checked with the KDF verifier; legacy plaintext
-    entries (pre-revision-053 rows) with a constant-time comparison.
+    entries (pre-revision-056 rows) with a constant-time comparison.
     """
     matched: int | None = None
     for idx, stored in enumerate(stored_codes):

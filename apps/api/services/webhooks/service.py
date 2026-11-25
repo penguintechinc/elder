@@ -2,16 +2,22 @@
 
 # flake8: noqa: E501
 
+import asyncio
 import hashlib
 import hmac
 import json
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from uuid import uuid4
+from uuid import NAMESPACE_OID, uuid4, uuid5
 
-import requests
+import structlog
 from penguin_dal import DAL
 from sqlalchemy.exc import IntegrityError
+
+from shared.utils.env import env_float, env_int
+from shared.webhooks import delivery as _delivery
+
+logger = structlog.get_logger(__name__)
 
 #: Sentinel to distinguish "field absent from request" from "field present with null value".
 #: Used in update_webhook to allow clearing filters (null) vs skipping them (absent).
@@ -83,6 +89,98 @@ def generate_signature(secret: str, payload: str) -> str:
     return hmac.new(
         secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
     ).hexdigest()
+
+
+#: Outbox states of a webhook_deliveries row. ``pending`` is written before
+#: any network I/O and ``retrying`` after each failed attempt, so a delivery
+#: interrupted by a restart is visible and can be resumed; ``success``,
+#: ``failed`` and ``expired`` are terminal.
+DELIVERY_PENDING = "pending"
+DELIVERY_RETRYING = "retrying"
+DELIVERY_SUCCESS = "success"
+DELIVERY_FAILED = "failed"
+DELIVERY_EXPIRED = "expired"
+_RESUMABLE_STATUSES = (DELIVERY_PENDING, DELIVERY_RETRYING)
+
+# tenant id -> opaque reference. Tenants are few and the reference is
+# immutable, but the map is still bounded so it can never grow unchecked.
+_TENANT_REF_CACHE_MAX = 4096
+_tenant_refs: dict[int, str] = {}
+
+
+def _fallback_tenant_ref(tenant_id: Any) -> str:
+    """Return a stable opaque reference for a tenant with no stored UUID.
+
+    Derived (UUIDv5) rather than the raw numeric key so that logs never
+    carry an enumerable internal identifier.
+    """
+    return uuid5(NAMESPACE_OID, f"elder-tenant-{tenant_id}").hex
+
+
+def tenant_ref_nowait(tenant_id: Any) -> str:
+    """Return the tenant's cached reference without touching the database.
+
+    For synchronous scheduling points on the event loop: a cache miss
+    yields the derived fallback (still unique per tenant, so capacity
+    accounting stays correct) instead of a blocking query.
+    """
+    cached = _tenant_refs.get(tenant_id)
+    return cached if cached is not None else _fallback_tenant_ref(tenant_id)
+
+
+def tenant_ref(db: Any, tenant_id: Any) -> str:
+    """Return the tenant's opaque UUID reference (blocking on a cache miss).
+
+    The reference keys per-tenant delivery capacity and is the only tenant
+    identifier allowed into delivery logs. Never raises: a failed lookup
+    falls back to the derived reference.
+    """
+    cached = _tenant_refs.get(tenant_id)
+    if cached is not None:
+        return cached
+    reference = None
+    try:
+        row = db(db.tenants.id == tenant_id).select().first()
+        reference = getattr(row, "village_id", None) if row else None
+    except Exception as exc:
+        logger.debug("webhook_tenant_ref_lookup_failed", error=type(exc).__name__)
+    if not reference:
+        return _fallback_tenant_ref(tenant_id)
+    if len(_tenant_refs) >= _TENANT_REF_CACHE_MAX:
+        _tenant_refs.clear()
+    _tenant_refs[tenant_id] = str(reference)
+    return str(reference)
+
+
+async def resolve_tenant_ref(db: Any, tenant_id: Any) -> str:
+    """Async form of :func:`tenant_ref`: off-loop lookup only on a cache miss."""
+    cached = _tenant_refs.get(tenant_id)
+    if cached is not None:
+        return cached
+    return await _delivery.run_in_io_pool(tenant_ref, db, tenant_id)
+
+
+def _as_utc(value: Any) -> datetime:
+    """Return ``value`` as an aware UTC datetime (naive values are UTC).
+
+    Some backends hand timestamps back naive; comparing those with an aware
+    cutoff would raise, so they are normalised first.
+    """
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    return datetime.now(UTC)
+
+
+def delivery_idempotency_key(webhook_id: Any, delivery_id: Any) -> str:
+    """Return the stable ``Idempotency-Key`` of one outbox delivery row.
+
+    Derived from the row identity instead of generated per send, so a
+    delivery resumed after a restart (possibly by another replica) carries
+    the same key as the interrupted attempt and receivers can de-duplicate.
+    """
+    return uuid5(
+        NAMESPACE_OID, f"elder-webhook-delivery:{webhook_id}:{delivery_id}"
+    ).hex
 
 
 def _is_village_id_conflict(exc: IntegrityError) -> bool:
@@ -487,20 +585,17 @@ class WebhookService:
     # Webhook Delivery Methods
     # ===========================
 
-    def deliver_webhook(
+    def _prepare_delivery(
         self, webhook_id: int, tenant_id: int, event_type: str, payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        """
-        Deliver a webhook event.
+    ) -> tuple[int, Any, dict[str, Any]]:
+        """Validate the webhook and insert its pending delivery row.
 
-        Args:
-            webhook_id: Webhook id
-            tenant_id: Owning tenant (from the caller's validated JWT)
-            event_type: Event type (e.g., "issue.assigned")
-            payload: Event payload
+        The synchronous, database-only half of a delivery, split out so the
+        row exists (and can be reported as queued) before any network I/O
+        is scheduled off the request path.
 
-        Returns:
-            Delivery result dictionary
+        Raises:
+            Exception: If the webhook is missing, disabled or not subscribed
         """
         webhook = (
             self.db(
@@ -536,44 +631,203 @@ class WebhookService:
             webhook_id=webhook_id,
             event_type=event_type,
             request_payload=delivery_payload,
+            status=DELIVERY_PENDING,
             attempt_count=0,
             created_at=now,
         )
         self.db.commit()
+        return delivery_id, webhook, delivery_payload
 
-        return self._attempt_delivery(delivery_id, webhook, delivery_payload)
+    def _insert_event_delivery(
+        self, webhook_id: int, event_type: str, payload: dict[str, Any]
+    ) -> int:
+        """Insert the pending outbox row for an already-matched event webhook.
 
-    def _attempt_delivery(
-        self, delivery_id: int, webhook: Any, payload: dict[str, Any]
+        Used by the event dispatchers (issue.assigned, user.created) that
+        select their webhooks themselves. The stored payload is exactly the
+        body that is signed and sent, so a resumed delivery is byte-identical.
+        """
+        delivery_id = self.db.webhook_deliveries.insert(
+            webhook_id=webhook_id,
+            event_type=event_type,
+            request_payload=payload,
+            status=DELIVERY_PENDING,
+            attempt_count=0,
+            created_at=datetime.now(UTC),
+        )
+        self.db.commit()
+        return int(delivery_id)
+
+    async def deliver_event(
+        self,
+        webhook: Any,
+        event_type: str,
+        payload: dict[str, Any],
+        *,
+        kind: str,
+    ) -> dict[str, Any]:
+        """Record and deliver one internally-triggered event to ``webhook``.
+
+        The single path for event dispatchers: outbox row first, then the
+        pinned, retrying engine - so they share SSRF vetting, retry policy,
+        signing and telemetry with native deliveries. Never raises: a
+        bookkeeping failure is returned as a failed result.
+        """
+        try:
+            delivery_id = await _delivery.run_in_io_pool(
+                self._insert_event_delivery, webhook.id, event_type, payload
+            )
+        except Exception as exc:
+            logger.error(
+                "webhook_delivery_record_failed",
+                webhook_id=getattr(webhook, "id", None),
+                event_type=event_type,
+                error=_delivery.scrub_error(exc),
+            )
+            return {"success": False, "error": _delivery.scrub_error(exc)}
+        return await self._attempt_delivery(
+            delivery_id,
+            webhook,
+            payload,
+            kind=kind,
+            idempotency_key=delivery_idempotency_key(webhook.id, delivery_id),
+        )
+
+    async def deliver_webhook(
+        self,
+        webhook_id: int,
+        tenant_id: int,
+        event_type: str,
+        payload: dict[str, Any],
+        *,
+        max_attempts: int | None = None,
+        kind: str = "native",
     ) -> dict[str, Any]:
         """
-        Attempt to deliver a webhook, HMAC-signed if a secret is configured.
+        Deliver a webhook event and wait for the outcome without blocking the loop.
+
+        Args:
+            webhook_id: Webhook id
+            tenant_id: Owning tenant (from the caller's validated JWT)
+            event_type: Event type (e.g., "issue.assigned")
+            payload: Event payload
+            max_attempts: Attempt cap; None uses the configured retry budget
+            kind: Bounded metric label for this delivery
+
+        Returns:
+            Delivery result dictionary
+
+        Raises:
+            DeliveryShedError: If the pending-delivery cap is reached (the
+                caller is waiting on this send, so it is told to back off)
+        """
+        tenant = await resolve_tenant_ref(self.db, tenant_id)
+        slot = _delivery.reserve_slots_or_raise(tenant)[0]
+        try:
+            delivery_id, webhook, delivery_payload = await _delivery.run_in_io_pool(
+                self._prepare_delivery, webhook_id, tenant_id, event_type, payload
+            )
+            return await self._attempt_delivery(
+                delivery_id,
+                webhook,
+                delivery_payload,
+                max_attempts=max_attempts,
+                kind=kind,
+                idempotency_key=delivery_idempotency_key(webhook_id, delivery_id),
+            )
+        finally:
+            _delivery.release_slot(slot)
+
+    def _record_delivery_progress(
+        self, delivery_id: int, attempt_base: int, result: "_delivery.DeliveryResult"
+    ) -> None:
+        """Mark a delivery ``retrying`` after a failed attempt (outbox state).
+
+        Written before the backoff sleep so a process that dies mid-retry
+        leaves an accurate, resumable row. Advancing attempt_count on every
+        attempt also acts as the liveness signal the recovery pass checks
+        before taking a delivery over. Blocking: run off-loop.
+        """
+        fields: dict[str, Any] = {
+            "status": DELIVERY_RETRYING,
+            "attempt_count": attempt_base + max(result.attempts, 1),
+            "error_message": (result.error or result.outcome)[:500],
+        }
+        if result.status_code is not None:
+            fields["http_status"] = result.status_code
+        self.db(self.db.webhook_deliveries.id == delivery_id).update(**fields)
+        self.db.commit()
+
+    def _record_delivery_result(
+        self,
+        delivery_id: int,
+        result: "_delivery.DeliveryResult",
+        attempt_base: int = 0,
+    ) -> None:
+        """Persist a finished delivery's outcome on its webhook_deliveries row.
+
+        Blocking database work: always run off-loop so the event loop keeps
+        serving requests. attempt_count is ``attempt_base`` (attempts made
+        before this send - non-zero for redeliveries and resumed rows) plus
+        this send's attempts. Only a status code and a short, sanitized
+        excerpt are stored - never response headers, and no response text at
+        all for a private-network target (see shared.webhooks.delivery).
+        """
+        fields: dict[str, Any] = {
+            "attempt_count": attempt_base + max(result.attempts, 1),
+            "status": DELIVERY_SUCCESS if result.success else DELIVERY_FAILED,
+        }
+        if result.status_code is not None:
+            fields["http_status"] = result.status_code
+            fields["response_body"] = (
+                _delivery.PRIVATE_TARGET_EXCERPT
+                if result.private_target
+                else _delivery.sanitize_excerpt(result.response_excerpt)
+            )
+        if result.success:
+            fields["delivered_at"] = datetime.now(UTC)
+        else:
+            fields["error_message"] = (result.error or result.outcome)[:500]
+        self.db(self.db.webhook_deliveries.id == delivery_id).update(**fields)
+        self.db.commit()
+
+    async def _attempt_delivery(
+        self,
+        delivery_id: int,
+        webhook: Any,
+        payload: dict[str, Any],
+        *,
+        max_attempts: int | None = None,
+        kind: str = "native",
+        attempt_base: int = 0,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Deliver a webhook through the shared engine, HMAC-signed if a secret is set.
+
+        attempt_base is the number of attempts already recorded on the row;
+        idempotency_key, when given, is the row's stable key (omitted for a
+        manual redelivery, which is a deliberate new send).
+
+        Non-blocking: HTTP runs on the event loop via httpx with timeouts,
+        retry/backoff and SSRF vetting (see shared.webhooks.delivery) and
+        the result row is written in a worker thread. Never raises - a
+        failure is recorded on the row and returned.
 
         Args:
             delivery_id: Delivery id (row already inserted by the caller)
             webhook: Webhook row
             payload: Delivery payload
+            max_attempts: Attempt cap; None uses the configured retry budget
+            kind: Bounded metric label for this delivery
 
         Returns:
             Delivery result
         """
-        # penguin-dal's FieldProxy doesn't support pydal's
-        # `table.field + 1` update-expression syntax (see
-        # apps/api/modules/flows/routes/hooks.py's identical
-        # `(webhook.trigger_count or 0) + 1` pattern) — read the current
-        # count and increment it in Python instead.
-        current_delivery = self.db.webhook_deliveries[delivery_id]
-        next_attempt_count = (
-            current_delivery.attempt_count if current_delivery else 0
-        ) or 0
-        next_attempt_count += 1
-
         try:
-            # Serialize once — this exact string is both signed and posted
-            # as the raw body. `requests`' own `json=` re-serialization
-            # doesn't preserve key order/formatting, so signing this string
-            # while posting `json=payload` would sign different bytes than
-            # a receiver actually gets and the HMAC would never verify.
+            # Serialize once — this exact string is both signed and sent as
+            # the raw body, so the HMAC a receiver computes over the bytes
+            # it gets always matches.
             payload_str = json.dumps(payload, sort_keys=True)
 
             headers = {
@@ -585,59 +839,77 @@ class WebhookService:
                 headers.update(_parse_json_column(webhook.headers))
 
             if webhook.secret:
-                signature = generate_signature(webhook.secret, payload_str)
-                headers["X-Elder-Signature"] = signature
+                headers["X-Elder-Signature"] = generate_signature(
+                    webhook.secret, payload_str
+                )
 
-            response = requests.post(
-                webhook.url,
-                data=payload_str.encode("utf-8"),
-                headers=headers,
-                timeout=30,
+            tenant = await resolve_tenant_ref(
+                self.db, getattr(webhook, "tenant_id", None)
             )
 
-            success = 200 <= response.status_code < 300
+            async def _progress(partial: "_delivery.DeliveryResult") -> None:
+                """Persist the retrying state before the engine backs off."""
+                await _delivery.run_in_io_pool(
+                    self._record_delivery_progress, delivery_id, attempt_base, partial
+                )
 
-            self.db(self.db.webhook_deliveries.id == delivery_id).update(
-                attempt_count=next_attempt_count,
-                status="success" if success else "failed",
-                http_status=response.status_code,
-                response_body=response.text[:1000],
-                delivered_at=datetime.now(UTC) if success else None,
+            result = await _delivery.deliver(
+                _delivery.DeliveryRequest(
+                    url=webhook.url,
+                    body=payload_str.encode("utf-8"),
+                    headers=headers,
+                    kind=kind,
+                    idempotency_key=idempotency_key,
+                    tenant=tenant,
+                    # Adds X-Elder-Timestamp + X-Elder-Signature-V2 per
+                    # attempt; the legacy header above is left untouched.
+                    signing_secret=webhook.secret or None,
+                ),
+                policy=_delivery.default_policy(max_attempts=max_attempts),
+                on_retry=_progress,
             )
-            self.db.commit()
-
-            return {
-                "delivery_id": delivery_id,
-                "success": success,
-                "status_code": response.status_code,
-            }
-
         except Exception as e:
-            self.db(self.db.webhook_deliveries.id == delivery_id).update(
-                attempt_count=next_attempt_count,
-                status="failed",
-                error_message=str(e)[:500],
+            result = _delivery.DeliveryResult(
+                success=False,
+                attempts=1,
+                outcome="error",
+                idempotency_key="",
+                error=_delivery.scrub_error(e),
             )
-            self.db.commit()
 
-            return {"delivery_id": delivery_id, "success": False, "error": str(e)}
+        try:
+            await _delivery.run_in_io_pool(
+                self._record_delivery_result, delivery_id, result, attempt_base
+            )
+        except Exception as e:
+            # The HTTP outcome is already known; a bookkeeping failure must
+            # be loud in logs but must not turn into a raised delivery.
+            logger.error(
+                "webhook_delivery_record_failed",
+                delivery_id=delivery_id,
+                error=_delivery.scrub_error(e),
+            )
 
-    def redeliver_webhook(
+        response: dict[str, Any] = {
+            "delivery_id": delivery_id,
+            "success": result.success,
+            "attempts": result.attempts,
+        }
+        if result.status_code is not None:
+            response["status_code"] = result.status_code
+        if not result.success:
+            response["error"] = result.error or result.outcome
+        return response
+
+    def _load_redelivery(
         self, webhook_id: int, tenant_id: int, delivery_id: int
-    ) -> dict[str, Any]:
-        """
-        Retry a failed webhook delivery.
+    ) -> tuple[Any, dict[str, Any], int]:
+        """Load a tenant-scoped webhook, one delivery's payload and attempt count.
 
-        Args:
-            webhook_id: Webhook id
-            tenant_id: Owning tenant (from the caller's validated JWT)
-            delivery_id: Delivery id
-
-        Returns:
-            Redelivery result
+        Blocking database half of a redelivery; always run off the event loop.
 
         Raises:
-            Exception: If webhook or delivery not found
+            Exception: If the webhook or delivery is missing or mismatched
         """
         webhook = (
             self.db(
@@ -659,9 +931,49 @@ class WebhookService:
                 f"Delivery {delivery_id} does not belong to webhook {webhook_id}"
             )
 
-        payload = _parse_json_column(delivery.request_payload) or {}
+        return (
+            webhook,
+            _parse_json_column(delivery.request_payload) or {},
+            int(delivery.attempt_count or 0),
+        )
 
-        return self._attempt_delivery(delivery_id, webhook, payload)
+    async def redeliver_webhook(
+        self, webhook_id: int, tenant_id: int, delivery_id: int
+    ) -> dict[str, Any]:
+        """
+        Retry a failed webhook delivery.
+
+        Args:
+            webhook_id: Webhook id
+            tenant_id: Owning tenant (from the caller's validated JWT)
+            delivery_id: Delivery id
+
+        Returns:
+            Redelivery result
+
+        Raises:
+            Exception: If webhook or delivery not found
+            DeliveryShedError: If the pending-delivery cap is reached
+        """
+        tenant = await resolve_tenant_ref(self.db, tenant_id)
+        slot = _delivery.reserve_slots_or_raise(tenant)[0]
+        try:
+            webhook, payload, attempt_base = await _delivery.run_in_io_pool(
+                self._load_redelivery, webhook_id, tenant_id, delivery_id
+            )
+
+            # Interactive: the caller waits for the answer, so a single
+            # attempt (no backoff sleeps holding the HTTP request open).
+            return await self._attempt_delivery(
+                delivery_id,
+                webhook,
+                payload,
+                max_attempts=1,
+                kind="redelivery",
+                attempt_base=attempt_base,
+            )
+        finally:
+            _delivery.release_slot(slot)
 
     def get_webhook_deliveries(
         self,
@@ -715,7 +1027,13 @@ class WebhookService:
                 "request_payload": (
                     _parse_json_column(d.request_payload) if d.request_payload else None
                 ),
-                "response_body": d.response_body,
+                # Rows written before the excerpt cap may hold more text;
+                # the same cap is applied on the way out.
+                "response_body": (
+                    _delivery.sanitize_excerpt(d.response_body)
+                    if d.response_body
+                    else d.response_body
+                ),
                 "error_message": d.error_message,
                 "attempt_count": d.attempt_count,
                 "delivered_at": d.delivered_at.isoformat() if d.delivered_at else None,
@@ -724,7 +1042,7 @@ class WebhookService:
             for d in deliveries
         ]
 
-    def test_webhook(self, webhook_id: int, tenant_id: int) -> dict[str, Any]:
+    async def test_webhook(self, webhook_id: int, tenant_id: int) -> dict[str, Any]:
         """
         Send a test event to webhook (uses its first subscribed event type).
 
@@ -738,13 +1056,15 @@ class WebhookService:
         Raises:
             Exception: If webhook not found in this tenant
         """
-        webhook = (
-            self.db(
-                (self.db.webhooks.id == webhook_id)
-                & (self.db.webhooks.tenant_id == tenant_id)
+        webhook = await _delivery.run_in_io_pool(
+            lambda: (
+                self.db(
+                    (self.db.webhooks.id == webhook_id)
+                    & (self.db.webhooks.tenant_id == tenant_id)
+                )
+                .select()
+                .first()
             )
-            .select()
-            .first()
         )
 
         if not webhook:
@@ -759,7 +1079,9 @@ class WebhookService:
         events = _parse_json_column(webhook.events) or []
         event_type = events[0] if events else "test.event"
 
-        return self.deliver_webhook(webhook_id, tenant_id, event_type, test_payload)
+        return await self.deliver_webhook(
+            webhook_id, tenant_id, event_type, test_payload, max_attempts=1, kind="test"
+        )
 
     # ===========================
     # Notification Rule Methods
@@ -1022,11 +1344,13 @@ class WebhookService:
 
         return {"message": "Notification rule deleted successfully"}
 
-    def test_notification_rule(
+    async def test_notification_rule(
         self, rule_id: int, tenant_id: int | None = None
     ) -> dict[str, Any]:
         """Send a test notification for a rule."""
-        rule = self._get_scoped_notification_rule_row(rule_id, tenant_id)
+        rule = await _delivery.run_in_io_pool(
+            self._get_scoped_notification_rule_row, rule_id, tenant_id
+        )
 
         test_payload = {
             "test": True,
@@ -1034,26 +1358,47 @@ class WebhookService:
             "message": f"This is a test notification from Elder via {rule.channel}",
         }
 
-        return self._send_notification(rule, test_payload)
+        tenant = (
+            await resolve_tenant_ref(self.db, tenant_id)
+            if tenant_id is not None
+            else None
+        )
+        slot = _delivery.reserve_slots_or_raise(tenant)[0]
+        try:
+            return await self._send_notification(rule, test_payload, max_attempts=1)
+        finally:
+            _delivery.release_slot(slot)
 
-    def _send_notification(self, rule: Any, payload: dict[str, Any]) -> dict[str, Any]:
-        """Send notification via configured channel."""
+    async def _send_notification(
+        self, rule: Any, payload: dict[str, Any], *, max_attempts: int | None = None
+    ) -> dict[str, Any]:
+        """Send a notification via the rule's channel without blocking the loop.
+
+        Never raises: an unsupported channel or bad config is returned as a
+        failed result so one rule cannot break a broadcast.
+        """
         try:
             config = _parse_json_column(rule.config_json) or {}
 
             if rule.channel == "email":
                 return self._send_email_notification(config, payload)
             elif rule.channel == "slack":
-                return self._send_slack_notification(config, payload)
+                return await self._send_chat_notification(
+                    "slack", config, payload, max_attempts
+                )
             elif rule.channel == "teams":
-                return self._send_teams_notification(config, payload)
+                return await self._send_chat_notification(
+                    "teams", config, payload, max_attempts
+                )
             elif rule.channel == "pagerduty":
-                return self._send_pagerduty_notification(config, payload)
+                return await self._send_pagerduty_notification(
+                    config, payload, max_attempts
+                )
             else:
                 raise Exception(f"Unsupported channel: {rule.channel}")
 
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": _delivery.scrub_error(e)}
 
     # ===========================
     # Alert Configuration Methods
@@ -1237,82 +1582,306 @@ class WebhookService:
             "message": "Email notification would be sent in production",
         }
 
-    def _send_slack_notification(
-        self, config: dict[str, Any], payload: dict[str, Any]
+    async def _post_notification(
+        self,
+        channel: str,
+        url: str,
+        body: dict[str, Any],
+        expected_status: int,
+        max_attempts: int | None,
     ) -> dict[str, Any]:
-        """Send Slack notification."""
+        """POST a channel notification through the shared delivery engine.
+
+        One code path for Slack/Teams/PagerDuty so each gets the same
+        timeouts, retry/backoff and SSRF vetting. The hook URL is itself the
+        credential for Slack/Teams, so the result carries no URL.
+        """
+        result = await _delivery.deliver(
+            _delivery.DeliveryRequest(
+                url=url,
+                body=json.dumps(body).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                kind="notification",
+            ),
+            policy=_delivery.default_policy(max_attempts=max_attempts),
+        )
+        response: dict[str, Any] = {
+            "success": result.status_code == expected_status,
+            "channel": channel,
+        }
+        if result.status_code is not None:
+            response["status_code"] = result.status_code
+        else:
+            response["error"] = result.error or result.outcome
+        return response
+
+    async def _send_chat_notification(
+        self,
+        channel: str,
+        config: dict[str, Any],
+        payload: dict[str, Any],
+        max_attempts: int | None = None,
+    ) -> dict[str, Any]:
+        """Send a Slack or Microsoft Teams incoming-webhook notification.
+
+        Both channels take the same `{"text": ...}` body and answer 200.
+        """
         webhook_url = config.get("webhook_url")
         if not webhook_url:
-            raise Exception("Slack webhook_url is required in config")
+            raise Exception(f"{channel.capitalize()} webhook_url is required in config")
 
-        try:
-            response = requests.post(
-                webhook_url, json={"text": json.dumps(payload, indent=2)}, timeout=10
-            )
-            return {
-                "success": response.status_code == 200,
-                "channel": "slack",
-                "status_code": response.status_code,
-            }
-        except Exception as e:
-            return {"success": False, "channel": "slack", "error": str(e)}
+        return await self._post_notification(
+            channel,
+            webhook_url,
+            {"text": json.dumps(payload, indent=2)},
+            200,
+            max_attempts,
+        )
 
-    def _send_teams_notification(
-        self, config: dict[str, Any], payload: dict[str, Any]
+    async def _send_pagerduty_notification(
+        self,
+        config: dict[str, Any],
+        payload: dict[str, Any],
+        max_attempts: int | None = None,
     ) -> dict[str, Any]:
-        """Send Microsoft Teams notification."""
-        webhook_url = config.get("webhook_url")
-        if not webhook_url:
-            raise Exception("Teams webhook_url is required in config")
-
-        try:
-            response = requests.post(
-                webhook_url, json={"text": json.dumps(payload, indent=2)}, timeout=10
-            )
-            return {
-                "success": response.status_code == 200,
-                "channel": "teams",
-                "status_code": response.status_code,
-            }
-        except Exception as e:
-            return {"success": False, "channel": "teams", "error": str(e)}
-
-    def _send_pagerduty_notification(
-        self, config: dict[str, Any], payload: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Send PagerDuty notification."""
+        """Send a PagerDuty Events v2 trigger (accepted with HTTP 202)."""
         routing_key = config.get("routing_key")
         if not routing_key:
             raise Exception("PagerDuty routing_key is required in config")
 
-        try:
-            response = requests.post(
-                "https://events.pagerduty.com/v2/enqueue",
-                json={
-                    "routing_key": routing_key,
-                    "event_action": "trigger",
-                    "payload": {
-                        "summary": "Elder Notification",
-                        "source": "elder",
-                        "severity": "info",
-                        "custom_details": payload,
-                    },
+        return await self._post_notification(
+            "pagerduty",
+            "https://events.pagerduty.com/v2/enqueue",
+            {
+                "routing_key": routing_key,
+                "event_action": "trigger",
+                "payload": {
+                    "summary": "Elder Notification",
+                    "source": "elder",
+                    "severity": "info",
+                    "custom_details": payload,
                 },
-                timeout=10,
+            },
+            202,
+            max_attempts,
+        )
+
+    # Outbox recovery: resume deliveries a previous process left unfinished.
+
+    def _find_resumable_deliveries(
+        self, min_age: float, batch: int
+    ) -> list[tuple[int, int, Any]]:
+        """Return ``(id, attempt_count, created_at)`` of old unfinished rows.
+
+        Only rows older than ``min_age`` seconds qualify, so a delivery a
+        live process queued moments ago is never mistaken for an orphan;
+        oldest first, at most ``batch`` rows. Blocking: run off-loop.
+        """
+        table = self.db.webhook_deliveries
+        cutoff = datetime.now(UTC) - timedelta(seconds=min_age)
+        rows = self.db(
+            table.status.belongs(_RESUMABLE_STATUSES)
+            & (table.created_at < cutoff)
+            & self._unclaimed(min_age)
+        ).select(orderby=table.created_at, limitby=(0, batch))
+        return [(int(r.id), int(r.attempt_count or 0), r.created_at) for r in rows]
+
+    def _unclaimed(self, min_age: float) -> Any:
+        """Rows no recovery pass has claimed within the last ``min_age`` seconds.
+
+        A claim stamps ``claimed_at``; until it ages out, the row is in
+        flight with some replica and must not be observed as an orphan.
+        """
+        table = self.db.webhook_deliveries
+        stale = datetime.now(UTC) - timedelta(seconds=min_age)
+        return (table.claimed_at == None) | (table.claimed_at < stale)  # noqa: E711
+
+    def _transition_delivery(
+        self,
+        delivery_id: int,
+        seen_attempts: int,
+        min_age: float = 0.0,
+        **fields: Any,
+    ) -> bool:
+        """Atomically move a resumable row on, if nobody else has touched it.
+
+        A single conditional UPDATE (compare-and-swap on status and
+        attempt_count): of several replicas racing for the same row exactly
+        one sees a row count of 1 and owns it; the rest back off. A row a
+        live process is still working on has advanced its attempt_count
+        since it was observed, so the swap fails there too.
+        """
+        table = self.db.webhook_deliveries
+        # Rows written before the outbox may hold NULL instead of 0.
+        attempts_match = (
+            (table.attempt_count == seen_attempts)
+            if seen_attempts
+            else ((table.attempt_count == 0) | (table.attempt_count == None))  # noqa: E711
+        )
+        changed = self.db(
+            (table.id == delivery_id)
+            & table.status.belongs(_RESUMABLE_STATUSES)
+            & attempts_match
+            & self._unclaimed(min_age)
+        ).update(**fields)
+        self.db.commit()
+        return changed == 1
+
+    def _load_claimed_delivery(self, delivery_id: int) -> tuple[Any, Any]:
+        """Return ``(delivery, webhook)`` for a claimed row (webhook may be None)."""
+        delivery = self.db.webhook_deliveries[delivery_id]
+        webhook = None
+        if delivery is not None:
+            webhook = (
+                self.db(self.db.webhooks.id == delivery.webhook_id).select().first()
             )
-            return {
-                "success": response.status_code == 202,
-                "channel": "pagerduty",
-                "status_code": response.status_code,
-            }
-        except Exception as e:
-            return {"success": False, "channel": "pagerduty", "error": str(e)}
+        return delivery, webhook
+
+    def _fail_delivery(self, delivery_id: int, reason: str) -> None:
+        """Mark a claimed row terminally failed with a short reason."""
+        self.db(self.db.webhook_deliveries.id == delivery_id).update(
+            status=DELIVERY_FAILED, error_message=reason[:500]
+        )
+        self.db.commit()
+
+    async def _resume_delivery(
+        self, delivery_id: int, seen_attempts: int, min_age: float = 0.0
+    ) -> str:
+        """Claim one orphaned row and deliver it; return the outcome label.
+
+        The claim is taken immediately before sending (not for the whole
+        batch up front) so the time a claimed row sits idle - during which
+        another starting replica could not tell it from an orphan - stays
+        as short as one delivery.
+        """
+        claimed = await _delivery.run_in_io_pool(
+            lambda: self._transition_delivery(
+                delivery_id,
+                seen_attempts,
+                min_age,
+                status=DELIVERY_RETRYING,
+                attempt_count=seen_attempts + 1,
+                claimed_at=datetime.now(UTC),
+            )
+        )
+        if not claimed:
+            return "skipped"
+        delivery, webhook = await _delivery.run_in_io_pool(
+            self._load_claimed_delivery, delivery_id
+        )
+        if delivery is None or webhook is None or not webhook.is_active:
+            await _delivery.run_in_io_pool(
+                self._fail_delivery, delivery_id, "webhook disabled or deleted"
+            )
+            return "failed"
+        tenant = await resolve_tenant_ref(self.db, webhook.tenant_id)
+        slot = _delivery.reserve_slot(tenant, host=_delivery.target_host(webhook.url))
+        if slot is None:
+            # Shed: the row stays ``retrying`` and a later pass resumes it.
+            return "shed"
+        try:
+            await self._attempt_delivery(
+                delivery_id,
+                webhook,
+                _parse_json_column(delivery.request_payload) or {},
+                kind="recovery",
+                attempt_base=seen_attempts,
+                idempotency_key=delivery_idempotency_key(webhook.id, delivery_id),
+            )
+        finally:
+            _delivery.release_slot(slot)
+        return "resumed"
+
+    async def recover_pending_deliveries(
+        self, *, sleep: Any = asyncio.sleep
+    ) -> dict[str, int]:
+        """Resume or expire deliveries left ``pending``/``retrying`` by a restart.
+
+        Startup pass over the webhook_deliveries outbox. Bounded
+        (``WEBHOOK_RECOVERY_BATCH`` rows, 0 disables) and safe with several
+        replicas: candidates are observed, the pass waits
+        ``WEBHOOK_RECOVERY_OBSERVE_SECONDS`` (longer than one attempt plus
+        backoff, so a live owner advances the row meanwhile), then each row
+        is taken with an atomic compare-and-swap and delivered with its
+        original Idempotency-Key. Rows older than
+        ``WEBHOOK_RECOVERY_MAX_AGE_SECONDS`` are marked ``expired`` instead:
+        a stale event is worse than a missing one. Delivery remains
+        at-least-once; receivers de-duplicate on the key. Never raises.
+        """
+        counts = {"candidates": 0, "resumed": 0, "expired": 0, "skipped": 0}
+        counts.update({"failed": 0, "shed": 0})
+        batch = env_int("WEBHOOK_RECOVERY_BATCH", 100, minimum=0, maximum=5000)
+        if batch == 0:
+            return counts
+        min_age = env_float(
+            "WEBHOOK_RECOVERY_MIN_AGE_SECONDS", 300.0, minimum=0.0, maximum=86400.0
+        )
+        max_age = env_float(
+            "WEBHOOK_RECOVERY_MAX_AGE_SECONDS", 86400.0, minimum=60.0, maximum=2592000.0
+        )
+        observe = env_float(
+            "WEBHOOK_RECOVERY_OBSERVE_SECONDS", 120.0, minimum=0.0, maximum=3600.0
+        )
+        try:
+            candidates = await _delivery.run_in_io_pool(
+                self._find_resumable_deliveries, min_age, batch
+            )
+            counts["candidates"] = len(candidates)
+            if not candidates:
+                return counts
+            await sleep(observe)
+
+            expiry_cutoff = datetime.now(UTC) - timedelta(seconds=max_age)
+            queue: asyncio.Queue[tuple[int, int, Any]] = asyncio.Queue()
+            for candidate in candidates:
+                queue.put_nowait(candidate)
+
+            async def _worker() -> None:
+                """Drain the candidate queue, one claim-and-send at a time."""
+                while True:
+                    try:
+                        delivery_id, seen, created_at = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        return
+                    try:
+                        if _as_utc(created_at) < expiry_cutoff:
+                            expired = await _delivery.run_in_io_pool(
+                                lambda d=delivery_id, a=seen: self._transition_delivery(
+                                    d,
+                                    a,
+                                    min_age,
+                                    status=DELIVERY_EXPIRED,
+                                    error_message="expired before delivery",
+                                )
+                            )
+                            counts["expired" if expired else "skipped"] += 1
+                        else:
+                            counts[
+                                await self._resume_delivery(delivery_id, seen, min_age)
+                            ] += 1
+                    except Exception as exc:
+                        counts["failed"] += 1
+                        logger.error(
+                            "webhook_delivery_recovery_row_failed",
+                            delivery_id=delivery_id,
+                            error=_delivery.scrub_error(exc),
+                        )
+
+            workers = env_int("WEBHOOK_RECOVERY_WORKERS", 4, minimum=1, maximum=32)
+            await asyncio.gather(*(_worker() for _ in range(workers)))
+        except Exception as exc:
+            logger.error(
+                "webhook_delivery_recovery_failed", error=_delivery.scrub_error(exc)
+            )
+        log = logger.info if counts["candidates"] else logger.debug
+        log("webhook_delivery_recovery_finished", **counts)
+        return counts
 
     # ===========================
     # Event Broadcasting Methods
     # ===========================
 
-    def broadcast_event(
+    async def broadcast_event(
         self,
         event_type: str,
         payload: dict[str, Any],
@@ -1331,8 +1900,18 @@ class WebhookService:
                 never trigger delivery to another tenant's webhooks by
                 supplying a foreign organization_id (cross-tenant IDOR fix)
 
+        Deliveries are queued, not awaited: each matching webhook gets its
+        pending delivery row here and is then delivered (with retry and
+        backoff) by a background task, so a slow or dead receiver can never
+        delay or fail the broadcasting request. Outcomes land on the
+        webhook_deliveries rows (GET /webhooks/<id>/deliveries).
+
         Returns:
-            Broadcast result with counts
+            Broadcast result with queued counts and delivery ids
+
+        Raises:
+            DeliveryShedError: If the fan-out does not fit under the global
+                or per-tenant pending-delivery cap (nothing is queued)
         """
         # Webhook half: reconciled to the real `is_active` column (was
         # `enabled`, compared with the always-false `is True` identity
@@ -1341,54 +1920,111 @@ class WebhookService:
         # event_types/channels/is_active) — that table's drift is a
         # separate, out-of-scope follow-up (see Task 1's model docstring);
         # left unchanged here.
-        webhooks = self.db(
-            (self.db.webhooks.organization_id == organization_id)
-            & (self.db.webhooks.tenant_id == tenant_id)
-            & (self.db.webhooks.is_active == True)  # noqa: E712
-        ).select()
+        webhooks = await _delivery.run_in_io_pool(
+            lambda: self.db(
+                (self.db.webhooks.organization_id == organization_id)
+                & (self.db.webhooks.tenant_id == tenant_id)
+                & (self.db.webhooks.is_active == True)  # noqa: E712
+            ).select()
+        )
 
-        webhook_results = []
-        for webhook in webhooks:
-            events = _parse_json_column(webhook.events) or []
-            if event_type in events:
-                try:
-                    result = self.deliver_webhook(
-                        webhook.id, webhook.tenant_id, event_type, payload
-                    )
-                    webhook_results.append(result)
-                except Exception as e:
-                    webhook_results.append(
-                        {"webhook_id": webhook.id, "success": False, "error": str(e)}
-                    )
+        rules = await _delivery.run_in_io_pool(
+            lambda: self.db(
+                (self.db.notification_rules.organization_id == organization_id)
+                & (self.db.notification_rules.enabled == True)  # noqa: E712
+            ).select()
+        )
 
-        # Find notification rules for this event
-        rules = self.db(
-            (self.db.notification_rules.organization_id == organization_id)
-            & (self.db.notification_rules.enabled == True)  # noqa: E712
-        ).select()
-
-        notification_results = []
+        matched_webhooks = [
+            webhook
+            for webhook in webhooks
+            if event_type in (_parse_json_column(webhook.events) or [])
+        ]
+        matched_rules = []
         for rule in rules:
             raw_events = getattr(rule, "events", None)
             if raw_events is None:
                 raw_events = getattr(rule, "events_json", None)
-            events = _parse_json_column(raw_events) or []
-            if event_type in events:
-                try:
-                    result = self._send_notification(rule, payload)
-                    notification_results.append(result)
-                except Exception as e:
-                    notification_results.append(
-                        {"rule_id": rule.id, "success": False, "error": str(e)}
-                    )
+            if event_type in (_parse_json_column(raw_events) or []):
+                matched_rules.append(rule)
+
+        # Admission is all-or-nothing and happens before any row is written:
+        # a broadcast that does not fit under the pending caps is refused
+        # whole (429 at the route) rather than half-queued, so the caller
+        # can retry it without duplicating the part that got through.
+        tenant = await resolve_tenant_ref(self.db, tenant_id)
+        fan_out = len(matched_webhooks) + len(matched_rules)
+        slots = _delivery.reserve_slots_or_raise(tenant, fan_out) if fan_out else []
+
+        webhook_results = []
+        for webhook in matched_webhooks:
+            slot = slots.pop()
+            try:
+                delivery_id, row, delivery_payload = await _delivery.run_in_io_pool(
+                    self._prepare_delivery,
+                    webhook.id,
+                    webhook.tenant_id,
+                    event_type,
+                    payload,
+                )
+                _delivery.schedule_background(
+                    self._attempt_delivery(
+                        delivery_id,
+                        row,
+                        delivery_payload,
+                        idempotency_key=delivery_idempotency_key(
+                            webhook.id, delivery_id
+                        ),
+                    ),
+                    name="webhook-broadcast-delivery",
+                    slot=slot,
+                    host=_delivery.target_host(row.url),
+                    delivery_id=delivery_id,
+                )
+                webhook_results.append(
+                    {
+                        "webhook_id": webhook.id,
+                        "delivery_id": delivery_id,
+                        "queued": True,
+                    }
+                )
+            except Exception as e:
+                _delivery.release_slot(slot)
+                webhook_results.append(
+                    {
+                        "webhook_id": webhook.id,
+                        "queued": False,
+                        "error": _delivery.scrub_error(e),
+                    }
+                )
+
+        notification_results = []
+        for rule in matched_rules:
+            slot = slots.pop()
+            try:
+                _delivery.schedule_background(
+                    self._send_notification(rule, payload),
+                    name="webhook-broadcast-notification",
+                    slot=slot,
+                )
+                notification_results.append({"rule_id": rule.id, "queued": True})
+            except Exception as e:
+                _delivery.release_slot(slot)
+                notification_results.append(
+                    {
+                        "rule_id": rule.id,
+                        "queued": False,
+                        "error": _delivery.scrub_error(e),
+                    }
+                )
 
         return {
             "event_type": event_type,
             "webhooks_triggered": len(webhook_results),
-            "webhooks_successful": sum(1 for r in webhook_results if r.get("success")),
+            "webhooks_queued": sum(1 for r in webhook_results if r.get("queued")),
             "notifications_triggered": len(notification_results),
-            "notifications_successful": sum(
-                1 for r in notification_results if r.get("success")
+            "notifications_queued": sum(
+                1 for r in notification_results if r.get("queued")
             ),
             "webhook_results": webhook_results,
             "notification_results": notification_results,

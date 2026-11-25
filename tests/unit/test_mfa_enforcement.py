@@ -19,6 +19,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from types import ModuleType, SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import jwt
 import penguin_dal
@@ -54,6 +55,7 @@ except ImportError:
 from apps.api.api.v1.portal_auth import bp as portal_auth_bp
 from apps.api.api.v1.tenants import bp as tenants_bp
 from apps.api.services.portal_auth import (
+    PortalAuthService,
     compute_user_mfa_status,
     user_has_mfa_enrolled,
 )
@@ -490,19 +492,30 @@ class TestMfaDisableAndConfirm:
         client = app.test_client()
 
         valid_code = pyotp.TOTP(secret).now()
-        resp_ok = await client.post(
-            "/api/v1/portal-auth/mfa/confirm",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"totp_code": valid_code},
-        )
-        assert resp_ok.status_code == 200
-        assert (await resp_ok.get_json()) == {"verified": True}
 
-        resp_bad = await client.post(
-            "/api/v1/portal-auth/mfa/confirm",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"totp_code": "000000"},
-        )
+        # Confirming the ACTIVE factor goes through the attempt-capped
+        # verify_mfa, whose atomic reservation UPDATE this in-memory DB
+        # cannot express; the cap itself is tested against real Postgres in
+        # test_mfa_totp_encryption.py. Here only the route contract matters.
+        def _verify(uid: int, code: str) -> dict:
+            if code == valid_code:
+                return {"id": uid}
+            return {"error": "Invalid MFA code"}
+
+        with patch.object(PortalAuthService, "verify_mfa", side_effect=_verify):
+            resp_ok = await client.post(
+                "/api/v1/portal-auth/mfa/confirm",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"totp_code": valid_code},
+            )
+            assert resp_ok.status_code == 200
+            assert (await resp_ok.get_json()) == {"verified": True}
+
+            resp_bad = await client.post(
+                "/api/v1/portal-auth/mfa/confirm",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"totp_code": "000000"},
+            )
         assert resp_bad.status_code == 400
         bad_body = await resp_bad.get_json()
         assert bad_body["verified"] is False

@@ -140,6 +140,35 @@ def sqlite_db(tmp_path: Path):
         created_at=now,
         updated_at=now,
     )
+    # Operator (system) tenant with a super-admin, plus a superuser who is NOT
+    # in the system tenant (global_role admin homed in tenant 1).
+    db.tenants.insert(
+        id=2,
+        name="System",
+        slug="system",
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+    for ident_id, tenant, username in (
+        (3, 2, "super_admin"),
+        (4, 1, "tenant_superuser"),
+    ):
+        db.identities.insert(
+            id=ident_id,
+            tenant_id=tenant,
+            username=username,
+            email=f"{username}@example.test",
+            identity_type="human",
+            auth_provider="local",
+            portal_role="admin",
+            is_active=True,
+            is_superuser=True,
+            mfa_enabled=False,
+            must_change_password=False,
+            created_at=now,
+            updated_at=now,
+        )
     db.commit()
     yield db
     db.close()
@@ -374,7 +403,8 @@ class TestAdminWorkersCRUDAndAuth:
         asyncio.run(_run())
 
     def test_heartbeat_provisioned_token_live_config_and_jwt_handler(self, app) -> None:
-        admin_token = _make_user_jwt(user_id=1, role="admin")
+        # Platform-wide workers can only be minted/managed by a super-admin.
+        admin_token = _make_user_jwt(user_id=3, tenant_id=2, role="admin")
 
         async def _run() -> None:
             client = app.test_client()
@@ -386,10 +416,13 @@ class TestAdminWorkersCRUDAndAuth:
                     "worker_type": "runworker",
                     "cluster": "edge-west",
                     "config": {"max_concurrent": 4},
+                    "platform_wide": True,
                 },
             )
             assert create_resp.status_code == 201
             created = await create_resp.get_json()
+            assert created["worker"]["kind"] == "platform_wide"
+            assert created["worker"]["tenant_id"] is None
             worker_id = created["worker"]["worker_id"]
             worker_pk = created["worker"]["id"]
             token = created["token"]
@@ -448,6 +481,7 @@ class TestAdminWorkersCRUDAndAuth:
 
     def test_heartbeat_in_cluster_service_worker_jwt_auto_upserts(self, app) -> None:
         admin_token = _make_user_jwt(user_id=1, role="admin")
+        super_token = _make_user_jwt(user_id=3, tenant_id=2, role="admin")
         sw_jwt = _make_service_worker_jwt("svc-runworker")
         scanner_jwt = _make_service_worker_jwt("svc-scanner")
 
@@ -480,10 +514,12 @@ class TestAdminWorkersCRUDAndAuth:
             )
             assert hb2.status_code == 200
 
-            # Both appear as online in GET /api/v1/admin/workers
+            # Both appear as online in GET /api/v1/admin/workers for a
+            # super-admin; platform (null-tenant) workers are hidden from
+            # tenant admins.
             list_resp = await client.get(
                 "/api/v1/admin/workers?status=online&cluster=dal2-alpha",
-                headers={"Authorization": f"Bearer {admin_token}"},
+                headers={"Authorization": f"Bearer {super_token}"},
             )
             assert list_resp.status_code == 200
             listing = await list_resp.get_json()
@@ -491,6 +527,12 @@ class TestAdminWorkersCRUDAndAuth:
             assert listing["counts_by_status"]["online"] == 2
             types = {item["worker_type"] for item in listing["items"]}
             assert types == {"runworker", "scanner"}
+
+            tenant_view = await client.get(
+                "/api/v1/admin/workers?cluster=dal2-alpha",
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+            assert (await tenant_view.get_json())["total"] == 0
 
         asyncio.run(_run())
 
@@ -616,6 +658,463 @@ class TestAdminWorkersCRUDAndAuth:
             assert hb_resp.status_code == 403
 
         asyncio.run(_run())
+
+
+class TestWorkerKindsAndTenantScoping:
+    """Platform-wide vs tenant-scoped worker minting, management, and auth."""
+
+    @staticmethod
+    async def _create(client: Any, token: str, **body: Any) -> Any:
+        """POST a runworker onboarding request with ``body`` overrides."""
+        payload = {"name": "rw", "worker_type": "runworker", **body}
+        return await client.post(
+            "/api/v1/admin/workers",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+        )
+
+    def test_tenant_admin_cannot_mint_platform_wide_and_defaults_to_own_tenant(
+        self, app
+    ) -> None:
+        admin_token = _make_user_jwt(user_id=1, role="admin")
+
+        async def _run() -> None:
+            client = app.test_client()
+            denied = await self._create(client, admin_token, platform_wide=True)
+            assert denied.status_code == 403
+
+            resp = await self._create(client, admin_token)
+            assert resp.status_code == 201
+            created = await resp.get_json()
+            assert created["worker"]["kind"] == "tenant"
+            assert created["worker"]["tenant_id"] == 1
+
+            whoami = await client.get(
+                "/api/v1/test/whoami-worker",
+                headers={"Authorization": f"Bearer {created['token']}"},
+            )
+            assert whoami.status_code == 200
+            assert (await whoami.get_json())["is_system_service_worker"] is False
+
+        asyncio.run(_run())
+
+    def test_superuser_outside_system_tenant_cannot_mint_platform_wide(
+        self, app
+    ) -> None:
+        token = _make_user_jwt(user_id=4, tenant_id=1, role="admin")
+
+        async def _run() -> None:
+            client = app.test_client()
+            denied = await self._create(client, token, platform_wide=True)
+            assert denied.status_code == 403
+            # Superusers must be explicit: no silent platform-wide default.
+            implicit = await self._create(client, token)
+            assert implicit.status_code == 400
+            scoped = await self._create(client, token, tenant_id=1)
+            assert scoped.status_code == 201
+            assert (await scoped.get_json())["worker"]["kind"] == "tenant"
+            # Not a super-admin: may not provision for another tenant (M1).
+            other = await self._create(client, token, tenant_id=2)
+            assert other.status_code == 403
+
+        asyncio.run(_run())
+
+    def test_super_admin_mints_platform_wide_explicitly(self, app) -> None:
+        token = _make_user_jwt(user_id=3, tenant_id=2, role="admin")
+
+        async def _run() -> None:
+            client = app.test_client()
+            implicit = await self._create(client, token)
+            assert implicit.status_code == 400
+            both = await self._create(client, token, platform_wide=True, tenant_id=1)
+            assert both.status_code == 400
+            bad_type = await self._create(client, token, platform_wide="yes")
+            assert bad_type.status_code == 400
+
+            resp = await self._create(client, token, platform_wide=True)
+            assert resp.status_code == 201
+            created = await resp.get_json()
+            assert created["worker"]["kind"] == "platform_wide"
+            assert created["worker"]["tenant_id"] is None
+            whoami = await client.get(
+                "/api/v1/test/whoami-worker",
+                headers={"Authorization": f"Bearer {created['token']}"},
+            )
+            assert (await whoami.get_json())["is_system_service_worker"] is True
+
+        asyncio.run(_run())
+
+    def test_tenant_admin_cannot_manage_platform_wide_worker(
+        self, app, sqlite_db
+    ) -> None:
+        super_token = _make_user_jwt(user_id=3, tenant_id=2, role="admin")
+        admin_token = _make_user_jwt(user_id=1, role="admin")
+
+        async def _run() -> None:
+            client = app.test_client()
+            created = await (
+                await self._create(client, super_token, platform_wide=True)
+            ).get_json()
+            pk = created["worker"]["id"]
+            headers = {"Authorization": f"Bearer {admin_token}"}
+
+            rotate = await client.post(
+                f"/api/v1/admin/workers/{pk}/rotate-token", headers=headers
+            )
+            assert rotate.status_code == 404
+            put = await client.put(
+                f"/api/v1/admin/workers/{pk}",
+                headers=headers,
+                json={"is_enabled": False},
+            )
+            assert put.status_code == 404
+            delete = await client.delete(f"/api/v1/admin/workers/{pk}", headers=headers)
+            assert delete.status_code == 404
+
+            row = sqlite_db(sqlite_db.remote_workers.id == pk).select().first()
+            assert row.token_hash == hash_worker_token(created["token"])
+            assert row.is_enabled
+            assert row.revoked_at is None
+
+            # The super-admin still can.
+            rotate_ok = await client.post(
+                f"/api/v1/admin/workers/{pk}/rotate-token",
+                headers={"Authorization": f"Bearer {super_token}"},
+            )
+            assert rotate_ok.status_code == 200
+
+        asyncio.run(_run())
+
+    def test_tenant_scoped_scanner_is_not_a_system_worker(self, app) -> None:
+        admin_token = _make_user_jwt(user_id=1, role="admin")
+
+        async def _run() -> None:
+            client = app.test_client()
+            created = await (
+                await client.post(
+                    "/api/v1/admin/workers",
+                    headers={"Authorization": f"Bearer {admin_token}"},
+                    json={"name": "scan", "worker_type": "scanner"},
+                )
+            ).get_json()
+            whoami = await client.get(
+                "/api/v1/test/whoami-worker",
+                headers={"Authorization": f"Bearer {created['token']}"},
+            )
+            body = await whoami.get_json()
+            assert body["username"] == "svc-scanner"
+            # Scanner/integration internal endpoints gate on this: still refused.
+            assert body["is_system_service_worker"] is False
+
+        asyncio.run(_run())
+
+    def test_legacy_null_tenant_worker_still_works_and_warns_once(
+        self, app, sqlite_db, monkeypatch, caplog
+    ) -> None:
+        import logging
+
+        from apps.api.auth import jwt_handler
+
+        monkeypatch.setattr(jwt_handler, "_legacy_platform_worker_warned", set())
+        token = "ewk_legacy_platform_worker_token_value_0001"
+        now = datetime.now(UTC)
+        sqlite_db.remote_workers.insert(
+            worker_id="wrk-legacy-1",
+            tenant_id=None,
+            worker_type="runworker",
+            name="Legacy",
+            token_hash=hash_worker_token(token),
+            token_prefix=token[:12],
+            config_json={},
+            capabilities_json={},
+            is_enabled=True,
+            created_at=now,
+            updated_at=now,
+        )
+        sqlite_db.commit()
+
+        async def _run() -> None:
+            client = app.test_client()
+            for _ in range(3):
+                hb = await client.post(
+                    "/api/v1/admin/workers/heartbeat",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={},
+                )
+                assert hb.status_code == 200
+            whoami = await client.get(
+                "/api/v1/test/whoami-worker",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert (await whoami.get_json())["is_system_service_worker"] is True
+            listing = await client.get(
+                "/api/v1/admin/workers",
+                headers={
+                    "Authorization": f"Bearer {_make_user_jwt(user_id=3, tenant_id=2)}"
+                },
+            )
+            kinds = {
+                item["worker_id"]: item["kind"]
+                for item in (await listing.get_json())["items"]
+            }
+            assert kinds["wrk-legacy-1"] == "platform_wide"
+
+        with caplog.at_level(logging.WARNING, logger=jwt_handler.logger.name):
+            asyncio.run(_run())
+        legacy = [
+            r
+            for r in caplog.records
+            if "platform_wide_worker_legacy" in r.getMessage()
+            and "wrk-legacy-1" in r.getMessage()
+        ]
+        assert len(legacy) == 1
+
+
+class TestWorkerAdminTenantBoundaries:
+    """Cross-tenant and tenant-less callers of the Admin Workers API (M1/M2/L2)."""
+
+    @staticmethod
+    def _auth(token: str) -> dict[str, str]:
+        """Build a Bearer Authorization header."""
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_non_super_admin_superuser_confined_to_own_tenant(
+        self, app, sqlite_db
+    ) -> None:
+        super_token = _make_user_jwt(user_id=3, tenant_id=2, role="admin")
+        outsider = _make_user_jwt(user_id=4, tenant_id=1, role="admin")
+
+        async def _run() -> None:
+            client = app.test_client()
+            resp = await client.post(
+                "/api/v1/admin/workers",
+                headers=self._auth(super_token),
+                json={"name": "sys-tenant", "worker_type": "runworker", "tenant_id": 2},
+            )
+            assert resp.status_code == 201
+            pk = (await resp.get_json())["worker"]["id"]
+
+            listing = await (
+                await client.get("/api/v1/admin/workers", headers=self._auth(outsider))
+            ).get_json()
+            assert pk not in {item["id"] for item in listing["items"]}
+            for method, path in (
+                ("GET", f"/api/v1/admin/workers/{pk}"),
+                ("PUT", f"/api/v1/admin/workers/{pk}"),
+                ("POST", f"/api/v1/admin/workers/{pk}/rotate-token"),
+                ("DELETE", f"/api/v1/admin/workers/{pk}"),
+            ):
+                r = await client.open(
+                    path,
+                    method=method,
+                    headers=self._auth(outsider),
+                    json={"is_enabled": False} if method == "PUT" else None,
+                )
+                assert r.status_code == 404, (method, path)
+            row = sqlite_db(sqlite_db.remote_workers.id == pk).select().first()
+            assert row.is_enabled and row.revoked_at is None
+
+        asyncio.run(_run())
+
+    def test_tenantless_non_super_admin_fails_closed(self, app) -> None:
+        now = datetime.now(UTC)
+        token = jwt.encode(
+            {
+                "sub": "1",
+                "type": "access",
+                "iat": now,
+                "exp": now + timedelta(hours=1),
+                "roles": ["admin"],
+                "scope": ["settings:read", "settings:write"],
+                "iss": "elder-api",
+                "aud": "elder-api",
+            },
+            JWT_SECRET,
+            algorithm="HS256",
+        )
+
+        async def _run() -> None:
+            client = app.test_client()
+            r_list = await client.get(
+                "/api/v1/admin/workers", headers=self._auth(token)
+            )
+            assert r_list.status_code == 403
+            r_create = await client.post(
+                "/api/v1/admin/workers",
+                headers=self._auth(token),
+                json={"name": "x", "worker_type": "runworker", "tenant_id": 1},
+            )
+            assert r_create.status_code == 403
+
+        asyncio.run(_run())
+
+    def test_platform_tenant_slug_is_pinned_and_default_fallback_opt_in(
+        self, app, sqlite_db
+    ) -> None:
+        super_token = _make_user_jwt(user_id=3, tenant_id=2, role="admin")
+        body = {"name": "pw", "worker_type": "runworker", "platform_wide": True}
+
+        async def _run() -> None:
+            client = app.test_client()
+            # Pinned slug that does not exist: nobody is a super-admin.
+            app.config["PLATFORM_TENANT_SLUG"] = "ops"
+            r = await client.post(
+                "/api/v1/admin/workers", headers=self._auth(super_token), json=body
+            )
+            assert r.status_code == 403
+
+            # Deployment bootstrapped with only a "default" tenant.
+            sqlite_db(sqlite_db.tenants.id == 2).update(slug="default")
+            sqlite_db.commit()
+            app.config["PLATFORM_TENANT_SLUG"] = "system"
+            r = await client.post(
+                "/api/v1/admin/workers", headers=self._auth(super_token), json=body
+            )
+            assert r.status_code == 403  # fallback is opt-in only
+
+            app.config["PLATFORM_TENANT_ALLOW_DEFAULT_FALLBACK"] = True
+            r = await client.post(
+                "/api/v1/admin/workers", headers=self._auth(super_token), json=body
+            )
+            assert r.status_code == 201
+
+        asyncio.run(_run())
+
+    def test_in_cluster_heartbeat_cannot_hijack_provisioned_record(self, app) -> None:
+        admin_token = _make_user_jwt(user_id=1, role="admin")
+        sw_jwt = _make_service_worker_jwt("svc-runworker")
+
+        async def _run() -> None:
+            client = app.test_client()
+            created = await (
+                await client.post(
+                    "/api/v1/admin/workers",
+                    headers=self._auth(admin_token),
+                    json={
+                        "name": "t1",
+                        "worker_type": "runworker",
+                        "worker_id": "wrk-t1-fixed",
+                    },
+                )
+            ).get_json()
+            assert created["worker"]["kind"] == "tenant"
+            hb = await client.post(
+                "/api/v1/admin/workers/heartbeat",
+                headers=self._auth(sw_jwt),
+                json={"worker_id": "wrk-t1-fixed", "hostname": "evil"},
+            )
+            assert hb.status_code == 403
+
+        asyncio.run(_run())
+
+
+class TestServiceWorkerDecoratorBypasses:
+    """Only platform service workers get the decorator bypasses (L1)."""
+
+    def test_role_and_resource_bypass_limited_to_system_workers(self, app) -> None:
+        from apps.api.auth.decorators import (
+            login_required,
+            resource_role_required,
+            role_required,
+        )
+
+        @app.route("/api/v1/test/global-op", methods=["POST"])
+        @login_required
+        @role_required("admin", allow_service_worker_scopes=("discovery:read",))
+        async def global_op():
+            return jsonify({"ok": True}), 200
+
+        @app.route("/api/v1/test/resource/<int:id>", methods=["GET"])
+        @login_required
+        @resource_role_required("viewer", resource_param="id")
+        async def resource_op(id: int):
+            return jsonify({"ok": True}), 200
+
+        admin_token = _make_user_jwt(user_id=1, role="admin")
+        system_scanner = _make_service_worker_jwt("svc-scanner")
+
+        async def _run() -> None:
+            client = app.test_client()
+            tenant_scanner = (
+                await (
+                    await client.post(
+                        "/api/v1/admin/workers",
+                        headers={"Authorization": f"Bearer {admin_token}"},
+                        json={"name": "scan", "worker_type": "scanner"},
+                    )
+                ).get_json()
+            )["token"]
+
+            for token, expected in ((system_scanner, 200), (tenant_scanner, 403)):
+                r = await client.post(
+                    "/api/v1/test/global-op",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                assert r.status_code == expected
+            ok = await client.get(
+                "/api/v1/test/resource/1",
+                headers={"Authorization": f"Bearer {system_scanner}"},
+            )
+            assert ok.status_code == 200
+            denied = await client.get(
+                "/api/v1/test/resource/1",
+                headers={"Authorization": f"Bearer {tenant_scanner}"},
+            )
+            assert denied.status_code != 200
+
+        asyncio.run(_run())
+
+
+class TestSuperuserGrantPaths:
+    """Non-superusers cannot mint or grant superuser (POST /api/v1/users, gRPC)."""
+
+    def test_tenant_admin_cannot_create_superuser_or_cross_tenant_user(
+        self, app, sqlite_db
+    ) -> None:
+        from apps.api.api.v1 import users as users_routes
+
+        app.register_blueprint(users_routes.bp, url_prefix="/api/v1/users")
+        admin_token = _make_user_jwt(user_id=1, role="admin")
+
+        async def _run() -> None:
+            client = app.test_client()
+            headers = {"Authorization": f"Bearer {admin_token}"}
+            base = {"username": "mallory", "password": "Pw-123456789!"}
+            r = await client.post(
+                "/api/v1/users", headers=headers, json={**base, "is_superuser": True}
+            )
+            assert r.status_code == 403
+            r = await client.post(
+                "/api/v1/users", headers=headers, json={**base, "tenant_id": 2}
+            )
+            assert r.status_code == 403
+            r = await client.post(
+                "/api/v1/users", headers=headers, json={**base, "is_superuser": "yes"}
+            )
+            assert r.status_code == 400
+            assert (
+                sqlite_db(sqlite_db.identities.username == "mallory").select().first()
+                is None
+            )
+
+        asyncio.run(_run())
+
+    def test_grpc_update_identity_refuses_superuser_change(
+        self, app, sqlite_db
+    ) -> None:
+        import grpc
+
+        from apps.api.grpc.generated import auth_pb2
+        from apps.api.grpc.servicers.elder_servicer import ElderServicer
+
+        servicer = ElderServicer(app)
+        context = MagicMock()
+        servicer.UpdateIdentity(
+            auth_pb2.UpdateIdentityRequest(id=2, is_superuser=True), context
+        )
+        context.set_code.assert_called_with(grpc.StatusCode.PERMISSION_DENIED)
+        row = sqlite_db(sqlite_db.identities.id == 2).select().first()
+        assert not row.is_superuser
 
 
 class TestRunWorkerHeartbeatSender:

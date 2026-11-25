@@ -5,8 +5,6 @@ create, HMAC signature generation, and delivery recording. requests.post is
 mocked — no real network calls.
 """
 
-from unittest.mock import MagicMock, patch
-
 import pytest
 from quart import current_app
 
@@ -75,10 +73,7 @@ async def test_get_webhook_cross_tenant_not_found(app):
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.service.requests.post")
-async def test_deliver_webhook_signs_and_records_delivery(mock_post, app):
-    mock_post.return_value = MagicMock(status_code=200, text="ok")
-
+async def test_deliver_webhook_signs_and_records_delivery(webhook_transport, app):
     async with app.app_context():
         from apps.api.services.webhooks.service import WebhookService
 
@@ -92,22 +87,23 @@ async def test_deliver_webhook_signs_and_records_delivery(mock_post, app):
             secret="s3cr3t",
         )
 
-        result = service.deliver_webhook(
+        result = await service.deliver_webhook(
             webhook["id"], tenant_id=1, event_type="issue.assigned", payload={"x": 1}
         )
 
         assert result["success"] is True
-        sent_headers = mock_post.call_args.kwargs["headers"]
+        assert len(webhook_transport.requests) == 1
+        sent_headers = webhook_transport.requests[0].headers
         assert "X-Elder-Signature" in sent_headers
 
-        # Recompute the signature over the ACTUAL bytes posted (mock_post's
-        # `data=` kwarg), not just assert the header is present — a
+        # Recompute the signature over the ACTUAL bytes posted (the request
+        # body the transport received), not just assert the header is present — a
         # presence-only check doesn't catch signing different bytes than
         # were sent (e.g. signing json.dumps(payload) but posting
         # json=payload, which requests re-serializes differently).
         from apps.api.services.webhooks.service import generate_signature
 
-        sent_body = mock_post.call_args.kwargs["data"]
+        sent_body = webhook_transport.requests[0].content
         assert isinstance(sent_body, bytes)
         expected_signature = generate_signature("s3cr3t", sent_body.decode("utf-8"))
         assert sent_headers["X-Elder-Signature"] == expected_signature

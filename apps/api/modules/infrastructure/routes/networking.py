@@ -20,6 +20,28 @@ logger = logging.getLogger(__name__)
 
 bp = Blueprint("networking", __name__, url_prefix="/api/v1/networking")
 
+MISSING_TENANT = ({"error": "Missing tenant claim in token"}, 403)
+
+
+def _caller_tenant() -> int | None:
+    """Return the caller's tenant id from the verified token, or None.
+
+    Every route below maps None to a 403 before touching the service; the
+    service resolves ids only inside this tenant, so foreign ids surface as
+    404 exactly like missing ones.
+    """
+    return get_current_tenant_id()
+
+
+def _positive_ints(data: dict, keys: tuple[str, ...]) -> bool:
+    """Return True when every ``keys`` value in ``data`` is a positive int (not bool)."""
+    return all(
+        isinstance(data.get(k), int)
+        and not isinstance(data.get(k), bool)
+        and data[k] > 0
+        for k in keys
+    )
+
 
 # Networking Resources Endpoints
 
@@ -30,6 +52,9 @@ bp = Blueprint("networking", __name__, url_prefix="/api/v1/networking")
 def list_networks():
     """List networking resources with filters."""
     try:
+        tenant_id = _caller_tenant()
+        if not tenant_id:
+            return jsonify(MISSING_TENANT[0]), MISSING_TENANT[1]
         service = NetworkingService()
 
         organization_id = request.args.get("organization_id", type=int)
@@ -40,6 +65,7 @@ def list_networks():
         offset = parse_offset(request.args)
 
         result = service.list_networks(
+            tenant_id=tenant_id,
             organization_id=organization_id,
             network_type=network_type,
             parent_id=parent_id,
@@ -60,8 +86,11 @@ def list_networks():
 def get_network(network_id):
     """Get networking resource by ID."""
     try:
+        tenant_id = _caller_tenant()
+        if not tenant_id:
+            return jsonify(MISSING_TENANT[0]), MISSING_TENANT[1]
         service = NetworkingService()
-        network = service.get_network(network_id)
+        network = service.get_network(network_id, tenant_id=tenant_id)
         return jsonify(network), 200
 
     except ValueError as e:
@@ -81,10 +110,14 @@ async def create_network():
         if not data:
             return jsonify({"error": "Request body required"}), 400
 
+        tenant_id = _caller_tenant()
+        if not tenant_id:
+            return jsonify(MISSING_TENANT[0]), MISSING_TENANT[1]
         body = CreateNetworkRequest.model_validate(data)
         service = NetworkingService()
 
         network, created = service.create_or_update_network(
+            tenant_id=tenant_id,
             name=body.name,
             network_type=body.network_type,
             organization_id=body.organization_id,
@@ -118,6 +151,8 @@ async def create_network():
         )
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
+    except ValueError as e:
+        return log_error_and_respond(logger, e, "Failed to process request", 404)
     except Exception as e:
         logger.error(f"Create network error: {str(e)}")
         return log_error_and_respond(logger, e, "Failed to process request", 500)
@@ -134,16 +169,21 @@ async def update_network(network_id):
         if not data:
             return jsonify({"error": "Request body required"}), 400
 
+        tenant_id = _caller_tenant()
+        if not tenant_id:
+            return jsonify(MISSING_TENANT[0]), MISSING_TENANT[1]
         body = UpdateNetworkRequest.model_validate(data)
         service = NetworkingService()
 
         network = service.update_network(
-            network_id=network_id,
+            network_id,
+            tenant_id=tenant_id,
             name=body.name,
             description=body.description,
             gateway=body.gateway,
             vlan_id=body.vlan_id,
             mtu=body.mtu,
+            is_active=body.is_active,
         )
 
         return jsonify(network), 200
@@ -165,8 +205,13 @@ def delete_network(network_id):
     try:
         hard_delete = request.args.get("hard", "false").lower() == "true"
 
+        tenant_id = _caller_tenant()
+        if not tenant_id:
+            return jsonify(MISSING_TENANT[0]), MISSING_TENANT[1]
         service = NetworkingService()
-        result = service.delete_network(network_id, hard_delete=hard_delete)
+        result = service.delete_network(
+            network_id, tenant_id=tenant_id, hard_delete=hard_delete
+        )
 
         return jsonify(result), 200
 
@@ -186,12 +231,16 @@ def delete_network(network_id):
 def list_topology_connections():
     """List topology connections."""
     try:
+        tenant_id = _caller_tenant()
+        if not tenant_id:
+            return jsonify(MISSING_TENANT[0]), MISSING_TENANT[1]
         service = NetworkingService()
 
         network_id = request.args.get("network_id", type=int)
         connection_type = request.args.get("connection_type")
 
         connections = service.list_topology_connections(
+            tenant_id=tenant_id,
             network_id=network_id,
             connection_type=connection_type,
         )
@@ -209,8 +258,11 @@ def list_topology_connections():
 def get_topology_connection(connection_id):
     """Get topology connection by ID."""
     try:
+        tenant_id = _caller_tenant()
+        if not tenant_id:
+            return jsonify(MISSING_TENANT[0]), MISSING_TENANT[1]
         service = NetworkingService()
-        connection = service.get_topology_connection(connection_id)
+        connection = service.get_topology_connection(connection_id, tenant_id=tenant_id)
         return jsonify(connection), 200
 
     except ValueError as e:
@@ -238,10 +290,16 @@ async def create_topology_connection():
                 jsonify({"error": f"Missing required fields: {', '.join(missing)}"}),
                 400,
             )
+        if not _positive_ints(data, ("source_network_id", "target_network_id")):
+            return jsonify({"error": "Network ids must be positive integers"}), 400
 
+        tenant_id = _caller_tenant()
+        if not tenant_id:
+            return jsonify(MISSING_TENANT[0]), MISSING_TENANT[1]
         service = NetworkingService()
 
         connection = service.create_topology_connection(
+            tenant_id=tenant_id,
             source_network_id=data["source_network_id"],
             target_network_id=data["target_network_id"],
             connection_type=data["connection_type"],
@@ -265,8 +323,11 @@ async def create_topology_connection():
 def delete_topology_connection(connection_id):
     """Delete a topology connection."""
     try:
+        tenant_id = _caller_tenant()
+        if not tenant_id:
+            return jsonify(MISSING_TENANT[0]), MISSING_TENANT[1]
         service = NetworkingService()
-        result = service.delete_topology_connection(connection_id)
+        result = service.delete_topology_connection(connection_id, tenant_id=tenant_id)
         return jsonify(result), 200
 
     except ValueError as e:
@@ -285,6 +346,9 @@ def delete_topology_connection(connection_id):
 def list_entity_mappings():
     """List entity-network mappings."""
     try:
+        tenant_id = _caller_tenant()
+        if not tenant_id:
+            return jsonify(MISSING_TENANT[0]), MISSING_TENANT[1]
         service = NetworkingService()
 
         network_id = request.args.get("network_id", type=int)
@@ -292,6 +356,7 @@ def list_entity_mappings():
         relationship_type = request.args.get("relationship_type")
 
         mappings = service.list_entity_mappings(
+            tenant_id=tenant_id,
             network_id=network_id,
             entity_id=entity_id,
             relationship_type=relationship_type,
@@ -310,8 +375,11 @@ def list_entity_mappings():
 def get_entity_mapping(mapping_id):
     """Get entity-network mapping by ID."""
     try:
+        tenant_id = _caller_tenant()
+        if not tenant_id:
+            return jsonify(MISSING_TENANT[0]), MISSING_TENANT[1]
         service = NetworkingService()
-        mapping = service.get_entity_mapping(mapping_id)
+        mapping = service.get_entity_mapping(mapping_id, tenant_id=tenant_id)
         return jsonify(mapping), 200
 
     except ValueError as e:
@@ -339,10 +407,16 @@ async def create_entity_mapping():
                 jsonify({"error": f"Missing required fields: {', '.join(missing)}"}),
                 400,
             )
+        if not _positive_ints(data, ("network_id", "entity_id")):
+            return jsonify({"error": "Ids must be positive integers"}), 400
 
+        tenant_id = _caller_tenant()
+        if not tenant_id:
+            return jsonify(MISSING_TENANT[0]), MISSING_TENANT[1]
         service = NetworkingService()
 
         mapping = service.map_entity_to_network(
+            tenant_id=tenant_id,
             network_id=data["network_id"],
             entity_id=data["entity_id"],
             relationship_type=data["relationship_type"],
@@ -364,8 +438,11 @@ async def create_entity_mapping():
 def delete_entity_mapping(mapping_id):
     """Delete an entity-network mapping."""
     try:
+        tenant_id = _caller_tenant()
+        if not tenant_id:
+            return jsonify(MISSING_TENANT[0]), MISSING_TENANT[1]
         service = NetworkingService()
-        result = service.delete_entity_mapping(mapping_id)
+        result = service.delete_entity_mapping(mapping_id, tenant_id=tenant_id)
         return jsonify(result), 200
 
     except ValueError as e:
@@ -394,7 +471,7 @@ def get_topology_graph():
 
         # The organization must belong to the caller's tenant; a mismatch is
         # reported as not found so other tenants' ids cannot be enumerated.
-        tenant_id = get_current_tenant_id()
+        tenant_id = _caller_tenant()
         if not tenant_id:
             return jsonify({"error": "Missing tenant claim in token"}), 403
         db = current_app.db_read
@@ -404,11 +481,14 @@ def get_topology_graph():
         service = NetworkingService()
         graph = service.get_network_topology_graph(
             organization_id=organization_id,
+            tenant_id=tenant_id,
             include_entities=include_entities,
         )
 
         return jsonify(graph), 200
 
+    except ValueError as e:
+        return log_error_and_respond(logger, e, "Failed to process request", 404)
     except Exception as e:
         logger.error(f"Get topology graph error: {str(e)}")
         return log_error_and_respond(logger, e, "Failed to process request", 500)

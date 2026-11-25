@@ -129,3 +129,33 @@ async def test_missing_user_row_gets_no_session(mock_tokens, _row, flow, async_c
     resp = await flow(async_client)
     assert resp.status_code == 401
     mock_tokens.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flow", [_saml, _oidc], ids=["saml", "oidc"])
+@patch(
+    "apps.api.api.v1.sso.PortalAuthService.create_mfa_challenge",
+    return_value="opaque-challenge",
+)
+@patch(
+    "apps.api.api.v1.sso._load_portal_user",
+    return_value=SimpleNamespace(**{**vars(_ROW), "mfa_secret": "v1:k:sealed"}),
+)
+@patch("apps.api.api.v1.sso.generate_tokens", return_value=dict(_TOKENS))
+async def test_enrolled_user_gets_mfa_challenge_not_session(
+    mock_tokens, _row, mock_challenge, flow, async_client
+):
+    """SSO does not skip the second factor for a user with TOTP enrolled."""
+    resp = await flow(async_client)
+
+    assert resp.status_code == 200
+    body = await resp.get_json()
+    assert body["mfaRequired"] is True
+    assert body["mfa_challenge"] == "opaque-challenge"
+    assert "access_token" not in body
+    assert "refresh_token" not in body
+    assert "user" not in body
+    mock_tokens.assert_not_called()
+    assert mock_challenge.call_args.args[:2] == (7, 1)
+    joined = "\n".join(resp.headers.get_all("Set-Cookie"))
+    assert "acc-jwt" not in joined and "ref-jwt" not in joined

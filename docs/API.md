@@ -367,6 +367,58 @@ Webhook payloads include:
 }
 ```
 
+### Verifying webhook signatures
+
+When a webhook has a secret, every delivery carries these headers:
+
+| Header | Value |
+|---|---|
+| `X-Elder-Signature` | Hex HMAC-SHA256 of the raw request body (legacy, unchanged) |
+| `X-Elder-Timestamp` | Unix time in seconds when this attempt was signed |
+| `X-Elder-Signature-V2` | `t=<timestamp>,v1=<hex HMAC-SHA256 of "<timestamp>.<raw body>">` |
+| `Idempotency-Key` | Stable per delivery; identical on every retry |
+
+Prefer `X-Elder-Signature-V2`: the legacy header has no timestamp, so a captured
+delivery could be replayed later. To verify:
+
+1. Read the **raw** request body bytes (before any JSON parsing).
+2. Parse `t` and `v1` from `X-Elder-Signature-V2`.
+3. Reject the request if `t` is more than **5 minutes** (300 s) from your clock.
+4. Compute `HMAC-SHA256(secret, "<t>." + raw_body)` and compare it with `v1`
+   using a constant-time comparison.
+5. De-duplicate on `Idempotency-Key`: a retry (or a delivery resumed after a
+   restart) is re-signed with a fresh timestamp but keeps the same key.
+   Delivery is at-least-once.
+
+```python
+import hashlib, hmac, time
+
+def verify(secret: str, signature_v2: str, raw_body: bytes, tolerance: int = 300) -> bool:
+    parts = dict(p.split("=", 1) for p in signature_v2.split(",") if "=" in p)
+    try:
+        ts = int(parts["t"])
+    except (KeyError, ValueError):
+        return False
+    if abs(time.time() - ts) > tolerance:
+        return False
+    expected = hmac.new(secret.encode(), f"{ts}.".encode() + raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, parts.get("v1", ""))
+```
+
+### Webhook delivery limits
+
+- Delivery is retried with exponential backoff on timeouts, connection errors,
+  5xx, 408 and 429; other 4xx responses and redirects are final.
+- Pending deliveries are capped per deployment (`WEBHOOK_MAX_PENDING`, default
+  2000) and per tenant (`WEBHOOK_MAX_PENDING_PER_TENANT`, default 200). When a
+  cap is reached, the explicit send endpoints (`/test`, `/redeliver`,
+  `/broadcast`, notification-rule test) answer `429` with a `Retry-After`
+  header; event-triggered deliveries are dropped and logged, and never fail
+  the request that produced the event.
+- Delivery history keeps the response status and at most 256 characters of the
+  response body (none for receivers on an operator-allowlisted private network).
+- Delivery status values: `pending`, `retrying`, `success`, `failed`, `expired`.
+
 ## SDKs, CLI & MCP Server
 
 Official clients and agent interfaces live in this repository and expose the full v4.0.x API surface, including CodeRuns and the Remote Workers Fleet (`/api/v1/admin/workers`):

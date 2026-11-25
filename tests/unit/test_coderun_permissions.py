@@ -730,7 +730,7 @@ class TestMigration050:
 
 
 class TestClaimWorkerScopeAndAnomalies:
-    """Only platform (system) workers claim; unusual claims are flagged."""
+    """Malformed worker tenants are refused; unusual platform claims are flagged."""
 
     async def _queue_run(self, client: Any, name: str) -> None:
         """Create a function and queue one execution as the active user."""
@@ -812,9 +812,10 @@ class TestClaimWorkerScopeAndAnomalies:
         await _queue(1, "fn-a")
         await _queue(2, "fn-b")
 
-        # A worker token scoped to any single tenant is refused: it can claim
-        # neither another tenant's executions nor its own.
-        for tenant in ("1", "2", "3", "", "abc"):
+        # A worker token with a malformed or non-positive tenant is refused.
+        # (Well-formed tenant-scoped workers are accepted but confined to their
+        # tenant: see TestTenantScopedRunWorker.)
+        for tenant in ("", "abc", "0", "-1"):
             resp = await _claim(tenant)
             assert resp.status_code in (401, 403), tenant
         assert warnings == []
@@ -875,3 +876,185 @@ class TestClaimWorkerScopeAndAnomalies:
 
         monkeypatch.setenv("RUNS_CLAIM_RATE_WARN_THRESHOLD", raw)
         assert runs_routes._claim_rate_warn_threshold() == expected
+
+
+class TestTenantScopedRunWorker:
+    """Tenant-scoped svc-runworker tokens are confined to their own tenant's runs."""
+
+    class _MockUser:
+        """Minimal tenant user used to queue executions."""
+
+        def __init__(self, tenant_id: int) -> None:
+            self.id = 10
+            self.username = "tester"
+            self.is_active = True
+            self.is_superuser = False
+            self.tenant_id = tenant_id
+
+    def _wire(self, app: Quart) -> dict[str, Any]:
+        """Install a before_request hook driven by the returned auth state dict."""
+        state: dict[str, Any] = {"user": None, "claims": {}, "worker": ""}
+
+        @app.before_request
+        async def _inject_test_auth() -> None:
+            if state["user"] is not None:
+                g.current_user = state["user"]
+                g.claims = dict(state["claims"])
+            elif state["worker"]:
+                payload = verify_token(state["worker"])
+                if payload is not None:
+                    g.claims = payload
+
+        return state
+
+    async def _queue(
+        self, client: Any, state: dict[str, Any], tenant_id: int, name: str
+    ) -> str:
+        """Create a function in ``tenant_id`` and queue one execution; return its id."""
+        state["user"] = self._MockUser(tenant_id)
+        state["claims"] = {
+            "sub": "10",
+            "tenant": str(tenant_id),
+            "scope": ["runs:read", "runs:write", "runs:invoke"],
+        }
+        resp = await client.post(
+            "/api/v1/runs",
+            json={"name": name, "runtime": "python", "code": "print(1)"},
+        )
+        assert resp.status_code == 201
+        func_id = (await resp.get_json())["id"]
+        resp = await client.post(f"/api/v1/runs/{func_id}/invoke", json={})
+        assert resp.status_code == 202
+        execution_id = (await resp.get_json())["execution_id"]
+        state["user"] = None
+        state["claims"] = {}
+        return execution_id
+
+    def _as_worker(self, app: Quart, state: dict[str, Any], tenant: str) -> str:
+        """Switch the request auth to a service worker token for ``tenant``."""
+        token = _mint_service_worker_token(app, tenant=tenant)
+        state["worker"] = token
+        return token
+
+    @pytest.mark.asyncio
+    async def test_tenant_worker_claims_only_its_tenant_and_platform_claims_all(
+        self, tmp_path: Path
+    ) -> None:
+        app = _make_test_app(tmp_path)
+        state = self._wire(app)
+        client = app.test_client()
+        await self._queue(client, state, 1, "t1-a")
+        await self._queue(client, state, 2, "t2-a")
+        await self._queue(client, state, 1, "t1-b")
+
+        token = self._as_worker(app, state, "1")
+        resp = await client.get(
+            "/api/v1/runs/internal/pending?limit=10&worker_id=wk-t1",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        body = await resp.get_json()
+        assert body["count"] == 2
+        assert {item["tenant_id"] for item in body["items"]} == {1}
+
+        # Nothing left for tenant 1; tenant 2's run is untouched by it.
+        resp = await client.get(
+            "/api/v1/runs/internal/pending?limit=10&worker_id=wk-t1",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert (await resp.get_json())["count"] == 0
+
+        token = self._as_worker(app, state, "system")
+        resp = await client.get(
+            "/api/v1/runs/internal/pending?limit=10&worker_id=wk-sys",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        body = await resp.get_json()
+        assert body["count"] == 1
+        assert body["items"][0]["tenant_id"] == 2
+
+    @pytest.mark.asyncio
+    async def test_platform_worker_claims_every_tenant(self, tmp_path: Path) -> None:
+        app = _make_test_app(tmp_path)
+        state = self._wire(app)
+        client = app.test_client()
+        await self._queue(client, state, 1, "t1")
+        await self._queue(client, state, 2, "t2")
+
+        token = self._as_worker(app, state, "system")
+        resp = await client.get(
+            "/api/v1/runs/internal/pending?limit=10",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        body = await resp.get_json()
+        assert sorted(item["tenant_id"] for item in body["items"]) == [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_cross_tenant_result_and_log_submission_rejected(
+        self, tmp_path: Path
+    ) -> None:
+        app = _make_test_app(tmp_path)
+        state = self._wire(app)
+        client = app.test_client()
+        execution_id = await self._queue(client, state, 1, "t1")
+
+        token = self._as_worker(app, state, "1")
+        resp = await client.get(
+            "/api/v1/runs/internal/pending?limit=1",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert (await resp.get_json())["count"] == 1
+
+        # Tenant 2's worker cannot write logs or a result for tenant 1's run.
+        token = self._as_worker(app, state, "2")
+        resp = await client.post(
+            f"/api/v1/runs/internal/executions/{execution_id}/logs",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"logs": "forged"},
+        )
+        assert resp.status_code == 404
+        resp = await client.post(
+            f"/api/v1/runs/internal/executions/{execution_id}/result",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"status": "completed", "exit_code": 0, "output_data": "forged"},
+        )
+        assert resp.status_code == 404
+        db = app.db  # type: ignore[attr-defined]
+        row = db(db.run_executions.execution_id == execution_id).select().first()
+        assert row.status == "running"
+        assert row.stdout_log != "forged"
+        assert row.output_json != "forged"
+
+        # The owning tenant's worker can.
+        token = self._as_worker(app, state, "1")
+        resp = await client.post(
+            f"/api/v1/runs/internal/executions/{execution_id}/logs",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"logs": "hello"},
+        )
+        assert resp.status_code == 200
+        assert (await resp.get_json())["updated"] is True
+        resp = await client.post(
+            f"/api/v1/runs/internal/executions/{execution_id}/result",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"status": "completed", "exit_code": 0},
+        )
+        assert resp.status_code == 200
+        assert (await resp.get_json())["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_tenant_scoped_non_runworker_sub_refused(
+        self, tmp_path: Path
+    ) -> None:
+        app = _make_test_app(tmp_path)
+        state = self._wire(app)
+        client = app.test_client()
+        token = _mint_service_worker_token(
+            app, sub="svc-scanner", tenant="1", scopes=["discovery:read"]
+        )
+        state["worker"] = token
+        resp = await client.get(
+            "/api/v1/runs/internal/pending",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code in (401, 403)

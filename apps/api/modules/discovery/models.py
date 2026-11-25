@@ -42,6 +42,11 @@ class DiscoveryJob(Base, IDMixin, VillageIDMixin, TimestampMixin):
     credential_mapping = Column(JSON, nullable=True)
     last_run_at = Column(DateTime(timezone=True), nullable=True)
     next_run_at = Column(DateTime(timezone=True), nullable=True)
+    # Scanner claim: SHA-256 of the claimant's token and its lease deadline.
+    # Both are NULL unless a scanner currently holds the job. Kept separate
+    # from next_run_at so scheduling state can never be mistaken for a lease.
+    claim_token_hash = Column(String(64), nullable=True)
+    claim_expires_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class DiscoveryHistory(Base, IDMixin):

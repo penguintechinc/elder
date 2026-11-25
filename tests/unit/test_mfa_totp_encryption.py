@@ -10,7 +10,7 @@ Covers:
 - TOTP replay rejection (last accepted time step) and second-factor lockout
 - backup codes stored hashed and single-use
 - the secret never appearing in API responses after setup, logs, or repr
-- Alembic revision 053 upgrade / idempotent re-run / downgrade
+- Alembic revision 056 upgrade / idempotent re-run / downgrade
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ MIGRATION_PATH = (
     Path(__file__).resolve().parents[2]
     / "alembic"
     / "versions"
-    / "053_mfa_secret_at_rest_hardening.py"
+    / "056_mfa_secret_at_rest_hardening.py"
 )
 
 
@@ -375,6 +375,20 @@ def _token(app: Quart, user: Any) -> str:
 class TestServiceAccessors:
     """Encrypt-on-write / decrypt-on-read through the service layer."""
 
+    async def test_confirm_on_active_factor_is_attempt_capped(self, ctx: Quart) -> None:
+        """confirm_mfa without a pending enrolment cannot brute-force the code."""
+        user = _seed_user(ctx)
+        secret = _enroll(ctx, user.id)["secret"]
+        good = _code(secret)
+        wrong = "000000" if good != "000000" else "111111"
+
+        for _ in range(PortalAuthService.MAX_MFA_ATTEMPTS):
+            assert "error" in PortalAuthService.confirm_mfa(user.id, wrong)
+
+        locked = PortalAuthService.confirm_mfa(user.id, good)
+        assert locked["status_code"] == 429
+        assert "verified" not in locked
+
     async def test_round_trip_verify_and_confirm(self, ctx: Quart) -> None:
         """A code from the setup secret verifies against the sealed row."""
         user = _seed_user(ctx)
@@ -384,6 +398,11 @@ class TestServiceAccessors:
             "verified": True
         }
         assert PortalAuthService.confirm_mfa(user.id, "000000")["status_code"] == 400
+        # Confirming against the active factor consumes the time step too.
+        assert "error" in PortalAuthService.verify_mfa(user.id, _code(secret))
+        ctx.db(ctx.db.portal_users.id == user.id).update(  # type: ignore[attr-defined]
+            mfa_last_totp_counter=None
+        )
 
         result = PortalAuthService.verify_mfa(user.id, _code(secret))
         assert result["id"] == user.id
@@ -1362,8 +1381,8 @@ class TestGraceExpiryEnforcement:
 
 
 def _load_migration() -> ModuleType:
-    """Import Alembic revision 053 from its file (the name starts with a digit)."""
-    spec = importlib.util.spec_from_file_location("mfa_migration_053", MIGRATION_PATH)
+    """Import Alembic revision 056 from its file (the name starts with a digit)."""
+    spec = importlib.util.spec_from_file_location("mfa_migration_056", MIGRATION_PATH)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -1383,7 +1402,7 @@ def _run(engine: sa.Engine, fn_name: str) -> None:
 
 @pytest.fixture
 def legacy_engine(tmp_path: Path) -> Iterator[sa.Engine]:
-    """Create a pre-053 schema (no MFA state columns) in a throwaway SQLite DB."""
+    """Create a pre-056 schema (no MFA state columns) in a throwaway SQLite DB."""
     engine = sa.create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
     with engine.begin() as conn:
         conn.execute(
@@ -1409,14 +1428,14 @@ def _fetch(engine: sa.Engine, table: str, row_id: int, column: str) -> Any:
         ).scalar_one()
 
 
-class TestMigration053:
-    """Alembic revision 053: seal, hash, idempotency, downgrade, key handling."""
+class TestMigration056:
+    """Alembic revision 056: seal, hash, idempotency, downgrade, key handling."""
 
     def test_revision_chain(self) -> None:
-        """053 sits directly on top of 052."""
+        """056 sits on top of both release heads, 053 and 054."""
         module = _load_migration()
-        assert module.revision == "053"
-        assert module.down_revision == "052"
+        assert module.revision == "056"
+        assert module.down_revision == ("053", "054")
 
     def test_upgrade_seals_and_hashes_then_is_idempotent(
         self, legacy_engine: sa.Engine, monkeypatch: pytest.MonkeyPatch

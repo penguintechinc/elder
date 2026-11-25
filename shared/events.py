@@ -9,6 +9,8 @@ the request path.
 from __future__ import annotations
 
 import json
+import os
+import re
 from datetime import UTC, datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -16,6 +18,34 @@ from uuid import uuid4
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+# Cap (entries) for each elder:events:{domain} stream. Event streams have no
+# consumer group -- nothing acknowledges entries -- so approximate MAXLEN
+# trimming of the oldest events cannot strand un-acked work.
+DEFAULT_EVENTS_STREAM_MAXLEN = 100_000
+
+
+def events_stream_maxlen(domain: str) -> int:
+    """Return the entry cap for a domain's event stream.
+
+    ``ELDER_EVENTS_MAXLEN_<DOMAIN>`` overrides ``ELDER_EVENTS_MAXLEN``
+    (default 100k). Invalid or non-positive values fall back to the default
+    instead of raising, so a bad deployment value cannot break emission.
+    """
+    suffix = re.sub(r"[^A-Z0-9]+", "_", domain.upper()).strip("_")
+    for name in (f"ELDER_EVENTS_MAXLEN_{suffix}", "ELDER_EVENTS_MAXLEN"):
+        raw = (os.environ.get(name) or "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            logger.warning("events_invalid_maxlen_env", name=name)
+            continue
+        if value > 0:
+            return value
+        logger.warning("events_invalid_maxlen_env", name=name)
+    return DEFAULT_EVENTS_STREAM_MAXLEN
 
 
 async def emit_event(
@@ -57,7 +87,12 @@ async def emit_event(
         # Connect and emit to stream
         r = redis.from_url(redis_url)
         stream_key = f"elder:events:{domain}"
-        r.xadd(stream_key, {"event": json.dumps(envelope)})
+        r.xadd(
+            stream_key,
+            {"event": json.dumps(envelope)},
+            maxlen=events_stream_maxlen(domain),
+            approximate=True,
+        )
 
         logger.debug(
             "event_emitted",

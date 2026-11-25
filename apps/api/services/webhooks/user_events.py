@@ -10,18 +10,19 @@ and ``portal_users``) and each builds a :class:`UserCreatedEvent` and calls
 from __future__ import annotations
 
 import asyncio
-import json
-import time
-from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-import requests
 import structlog
 
-from apps.api.services.webhooks.service import _parse_json_column, generate_signature
-from shared.observability import get_meter, get_tracer
+from apps.api.services.webhooks.service import (
+    WebhookService,
+    _parse_json_column,
+    tenant_ref_nowait,
+)
+from shared.webhooks import delivery as _delivery
+from shared.webhooks.delivery import scrub_error
 
 logger = structlog.get_logger(__name__)
 
@@ -32,22 +33,9 @@ USER_CREATED_EVENT_TYPES = (
     ADMIN_USER_CREATED_EVENT_TYPE,
 )
 
-# Keep strong references to fire-and-forget tasks until they finish so the
-# event loop's weak-ref task table cannot garbage-collect them mid-flight.
-_background_tasks: set[asyncio.Task[Any]] = set()
-
-_tracer = get_tracer("elder")
-_meter = get_meter("elder")
-_delivery_counter = _meter.create_counter(
-    name="elder.webhook.deliveries",
-    description="Total outbound webhook delivery attempts",
-    unit="1",
-)
-_delivery_duration_ms = _meter.create_histogram(
-    name="elder.webhook.delivery.duration_ms",
-    description="Duration of outbound webhook HTTP delivery attempts in ms",
-    unit="ms",
-)
+# The delivery engine owns the strong references to fire-and-forget tasks
+# (and their admission accounting); this alias keeps the historical name.
+_background_tasks = _delivery._background_tasks
 
 
 def is_admin_user(
@@ -167,45 +155,6 @@ def extract_actor_id(user: Any) -> int | None:
     return None
 
 
-def _record_delivery_telemetry(
-    event_type: str, success: bool, duration_ms: float
-) -> None:
-    """Emit OTel metrics for a delivery attempt without ever raising."""
-    try:
-        attrs = {"event_type": event_type, "success": str(success).lower()}
-        _delivery_counter.add(1, attributes=attrs)
-        _delivery_duration_ms.record(duration_ms, attributes=attrs)
-    except Exception:
-        pass
-
-
-def _set_span_attributes(span: Any, attrs: dict[str, Any]) -> None:
-    """Safely attach span attributes without raising if telemetry is inactive."""
-    if span is None:
-        return
-    try:
-        for key, value in attrs.items():
-            span.set_attribute(key, value)
-    except Exception:
-        pass
-
-
-def _update_delivery_record(
-    db: Any, webhook_id: Any, delivery_id: Any, **fields: Any
-) -> None:
-    """Persist a webhook_deliveries status update without raising."""
-    try:
-        db(db.webhook_deliveries.id == delivery_id).update(**fields)
-        db.commit()
-    except Exception as exc:
-        logger.warning(
-            "user_created_webhook_delivery_update_failed",
-            webhook_id=webhook_id,
-            delivery_id=delivery_id,
-            error=str(exc)[:200],
-        )
-
-
 def _build_payload_safe(
     event: UserCreatedEvent, event_type: str
 ) -> dict[str, Any] | None:
@@ -241,173 +190,63 @@ def _dispatch_failure_result(
     }
 
 
-def _dispatch_user_webhook(
+async def _dispatch_user_webhook(
     db: Any, webhook: Any, event_type: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
-    """Deliver ``payload`` to one webhook synchronously and record the attempt.
+    """Deliver ``payload`` to one webhook through the shared delivery engine.
 
-    Serializes ``payload`` once with ``sort_keys=True`` and sends those exact
-    bytes as ``data=`` so ``X-Elder-Signature`` verifies against the raw body.
-    Never raises — delivery or persistence failures are captured and returned.
+    Delegates to :meth:`WebhookService.deliver_event`: the outbox row is
+    written first, the target is resolved once and the connection is pinned
+    to the vetted address (so a changed DNS answer cannot steer it to an
+    internal host), and retries, timeouts, signing and logs/metrics/traces
+    are the engine's. Never raises - failures are captured and returned.
     """
-    payload_str = json.dumps(payload, sort_keys=True)
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "Elder-Webhook/1.2.0",
+    outcome = await WebhookService(db).deliver_event(
+        webhook, event_type, payload, kind="user_created"
+    )
+    result: dict[str, Any] = {
+        "webhook_id": webhook.id,
+        "event_type": event_type,
+        "success": bool(outcome.get("success")),
     }
-    if webhook.headers:
-        parsed_headers = _parse_json_column(webhook.headers)
-        if parsed_headers:
-            headers.update(parsed_headers)
-    if webhook.secret:
-        headers["X-Elder-Signature"] = generate_signature(webhook.secret, payload_str)
-
-    now = datetime.now(UTC)
-    try:
-        delivery_id = db.webhook_deliveries.insert(
+    if "delivery_id" in outcome:
+        result["delivery_id"] = outcome["delivery_id"]
+    if "status_code" in outcome:
+        result["http_status"] = outcome["status_code"]
+    if result["success"]:
+        logger.info(
+            "user_created_webhook_delivered",
             webhook_id=webhook.id,
+            delivery_id=result.get("delivery_id"),
             event_type=event_type,
-            request_payload=payload,
-            attempt_count=1,
-            created_at=now,
+            http_status=result.get("http_status"),
         )
-        db.commit()
-    except Exception as exc:
+    else:
+        result["error"] = outcome.get("error")
         logger.warning(
-            "user_created_webhook_delivery_record_failed",
-            webhook_id=getattr(webhook, "id", None),
+            "user_created_webhook_delivery_failed",
+            webhook_id=webhook.id,
+            delivery_id=result.get("delivery_id"),
             event_type=event_type,
-            error=str(exc)[:200],
+            error=str(result["error"])[:200],
         )
-        return {
-            "webhook_id": getattr(webhook, "id", None),
-            "event_type": event_type,
-            "success": False,
-            "error": str(exc),
-        }
-
-    try:
-        span_ctx = _tracer.start_as_current_span("webhook.user_created.dispatch")
-    except Exception:
-        span_ctx = nullcontext()
-
-    start = time.monotonic()
-    with span_ctx as span:
-        _set_span_attributes(
-            span,
-            {
-                "webhook.id": int(webhook.id),
-                "webhook.event_type": event_type,
-                "webhook.tenant_id": int(payload["tenant_id"]),
-            },
-        )
-
-        try:
-            response = requests.post(
-                webhook.url,
-                data=payload_str.encode("utf-8"),
-                headers=headers,
-                timeout=30,
-            )
-            duration_ms = (time.monotonic() - start) * 1000.0
-            success = 200 <= response.status_code < 300
-            _set_span_attributes(
-                span,
-                {
-                    "http.status_code": int(response.status_code),
-                    "webhook.success": success,
-                },
-            )
-            _record_delivery_telemetry(event_type, success, duration_ms)
-
-            _update_delivery_record(
-                db,
-                webhook.id,
-                delivery_id,
-                status="success" if success else "failed",
-                http_status=response.status_code,
-                response_body=response.text[:1000],
-                delivered_at=datetime.now(UTC) if success else None,
-            )
-
-            logger.info(
-                "user_created_webhook_delivered",
-                webhook_id=webhook.id,
-                delivery_id=delivery_id,
-                event_type=event_type,
-                http_status=response.status_code,
-                success=success,
-            )
-            return {
-                "webhook_id": webhook.id,
-                "delivery_id": delivery_id,
-                "event_type": event_type,
-                "success": success,
-                "http_status": response.status_code,
-            }
-        except Exception as exc:
-            duration_ms = (time.monotonic() - start) * 1000.0
-            _set_span_attributes(span, {"webhook.success": False})
-            _record_delivery_telemetry(event_type, False, duration_ms)
-            _update_delivery_record(
-                db,
-                webhook.id,
-                delivery_id,
-                status="failed",
-                error_message=str(exc)[:500],
-            )
-            logger.warning(
-                "user_created_webhook_delivery_failed",
-                webhook_id=webhook.id,
-                delivery_id=delivery_id,
-                event_type=event_type,
-                error=str(exc)[:200],
-            )
-            return {
-                "webhook_id": webhook.id,
-                "delivery_id": delivery_id,
-                "event_type": event_type,
-                "success": False,
-                "error": str(exc),
-            }
+    return result
 
 
 def dispatch_user_created_webhooks_sync(
     db: Any, event: UserCreatedEvent
 ) -> list[dict[str, Any]]:
-    """Synchronously match and deliver user-created webhooks without raising."""
+    """Match and deliver user-created webhooks from synchronous code.
+
+    Sync bridge for call sites with no running event loop: drives the same
+    async engine on a private loop (see ``run_blocking``) instead of
+    keeping a second, unpinned HTTP path. Never raises for delivery
+    failures; calling it from a running loop is a programming error and
+    fails loudly there.
+    """
     if not event.tenant_id:
         return []
-
-    results: list[dict[str, Any]] = []
-    for event_type in event_types_for_user(event):
-        try:
-            matched = find_matching_user_webhooks(db, event.tenant_id, event_type)
-        except Exception as exc:
-            logger.warning(
-                "user_created_webhook_match_failed",
-                event_type=event_type,
-                tenant_id=event.tenant_id,
-                error=str(exc)[:200],
-            )
-            continue
-
-        if not matched:
-            continue
-
-        payload = _build_payload_safe(event, event_type)
-        if payload is None:
-            continue
-
-        for webhook in matched:
-            try:
-                result = _dispatch_user_webhook(db, webhook, event_type, payload)
-            except (
-                Exception
-            ) as exc:  # pragma: no cover - _dispatch_user_webhook catches
-                result = _dispatch_failure_result(webhook, event_type, exc)
-            results.append(result)
-    return results
+    return _delivery.run_blocking(send_user_created_webhooks(db, event))
 
 
 async def send_user_created_webhooks(
@@ -420,7 +259,7 @@ async def send_user_created_webhooks(
     results: list[dict[str, Any]] = []
     for event_type in event_types_for_user(event):
         try:
-            matched = await asyncio.to_thread(
+            matched = await _delivery.run_in_io_pool(
                 find_matching_user_webhooks, db, event.tenant_id, event_type
             )
         except Exception as exc:
@@ -441,9 +280,7 @@ async def send_user_created_webhooks(
 
         for webhook in matched:
             try:
-                result = await asyncio.to_thread(
-                    _dispatch_user_webhook, db, webhook, event_type, payload
-                )
+                result = await _dispatch_user_webhook(db, webhook, event_type, payload)
             except (
                 Exception
             ) as exc:  # pragma: no cover - _dispatch_user_webhook catches
@@ -455,17 +292,18 @@ async def send_user_created_webhooks(
 def schedule_user_created_webhooks(db: Any, event: UserCreatedEvent) -> None:
     """Schedule non-blocking user-created webhook delivery when possible.
 
-    When called inside an active asyncio event loop (async Quart routes/services),
-    schedules :func:`send_user_created_webhooks` via ``loop.create_task``. When
-    called from a synchronous context without a running loop (sync Quart routes
-    or synchronous unit tests), dispatches directly via
+    Inside a running event loop (async Quart routes/services) delivery is
+    queued through the engine's admission control: if the global or the
+    tenant's pending cap is reached the event is shed (WARN log + metric)
+    and user creation carries on. With no running loop (sync call sites,
+    synchronous unit tests) it is delivered inline via
     :func:`dispatch_user_created_webhooks_sync`. Never raises.
     """
     if not event.tenant_id:
         return
 
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         try:
             dispatch_user_created_webhooks_sync(db, event)
@@ -473,17 +311,19 @@ def schedule_user_created_webhooks(db: Any, event: UserCreatedEvent) -> None:
             logger.warning(
                 "user_created_webhook_sync_dispatch_failed",
                 tenant_id=event.tenant_id,
-                error=str(exc)[:200],
+                error=scrub_error(exc)[:200],
             )
         return
 
     try:
-        task = loop.create_task(send_user_created_webhooks(db, event))
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
+        _delivery.schedule_background(
+            send_user_created_webhooks(db, event),
+            name="webhook-user-created",
+            tenant=tenant_ref_nowait(event.tenant_id),
+        )
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning(
             "user_created_webhook_schedule_failed",
             tenant_id=event.tenant_id,
-            error=str(exc)[:200],
+            error=scrub_error(exc)[:200],
         )

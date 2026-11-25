@@ -129,11 +129,29 @@ To enable it with any of them the operator must set:
 
 ## Worker tenant scope
 
-Run workers are platform-wide: the internal claim endpoints accept only
-workers with no tenant (`tenant_id` null). A worker token therefore carries
-access to every tenant's run queue; store it only in a Secret and rotate it
-(`POST /api/v1/admin/workers/<id>/rotate`) if exposure is suspected. Per-tenant
-worker scoping is planned work.
+Run workers come in two kinds (`kind` in the Admin Workers API):
+
+| Kind | `tenant_id` | Claims | Who can provision / manage it |
+|---|---|---|---|
+| `tenant` | the tenant | only that tenant's runs; result/log posts for other tenants' runs return 404 | that tenant's admins (default when `tenant_id` is omitted), or a super-admin |
+| `platform_wide` | null | every tenant's runs | super-admin only, with an explicit `"platform_wide": true` |
+
+A super-admin is a superuser whose verified token tenant is the platform
+tenant: slug `ELDER_PLATFORM_TENANT_SLUG` (default `system`). Deployments
+bootstrapped without a `system` tenant have only `default`; set
+`ELDER_PLATFORM_TENANT_SLUG=default`, or opt in to the fallback with
+`ELDER_PLATFORM_TENANT_ALLOW_DEFAULT_FALLBACK=true` (hub-api logs
+`platform_tenant_default_fallback_enabled` at startup while it is on).
+Superusers in any other tenant manage only their own tenant's workers.
+
+Workers created before tenant scoping (null tenant) keep working as
+platform-wide and log `platform_wide_worker_legacy` once per worker per
+process at heartbeat/claim so operators can review them. Tenant-scoped
+workers are refused by the scanner/integration internal endpoints and by the
+service-worker bypasses in `resource_role_required`/`role_required`. A
+worker token carries access to its run queue(s); store it only in a Secret
+and rotate it (`POST /api/v1/admin/workers/<id>/rotate-token`) if exposure is
+suspected.
 
 Unusual claims are flagged with the structured warning `run_claim_anomaly`
 and the counter `elder.runs.claim_anomalies` (`reason` = `new_tenant` when a
