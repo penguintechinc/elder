@@ -65,7 +65,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v6
 
     # Temporarily disabled while linux/arm64 builds are paused
     # - name: Set up QEMU (for arm64 emulation)
@@ -81,18 +81,18 @@ jobs:
 
     - name: Set up Docker Buildx (dal2alpha remote buildkit)
       if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' && github.base_ref != 'main' && github.event_name != 'pull_request'
-      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4
       with:
         driver: remote
         endpoint: tcp://buildkitd.buildkit.svc.cluster.local:1234
 
     - name: Set up Docker Buildx (hosted)
       if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request'
-      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4
 
     - name: Log in to Container Registry
       if: github.event_name != 'pull_request'
-      uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4
+      uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
@@ -118,7 +118,7 @@ jobs:
 
     - name: Build and push platform image
       id: build
-      uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
       with:
         context: ${{ matrix.service.context }}
         file: ${{ matrix.service.dockerfile }}
@@ -153,7 +153,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v6
 
     - name: Verify buildkitd reachable (dal2alpha cluster path)
       if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' && github.base_ref != 'main' && github.event_name != 'pull_request'
@@ -165,17 +165,17 @@ jobs:
 
     - name: Set up Docker Buildx (dal2alpha remote buildkit)
       if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' && github.base_ref != 'main' && github.event_name != 'pull_request'
-      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4
       with:
         driver: remote
         endpoint: tcp://buildkitd.buildkit.svc.cluster.local:1234
 
     - name: Set up Docker Buildx (hosted)
       if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request'
-      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4
 
     - name: Log in to Container Registry
-      uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4
+      uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550  # v4
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
@@ -241,7 +241,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v6
       with:
         fetch-depth: 0
 
