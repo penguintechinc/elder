@@ -16,11 +16,36 @@ from apps.api.common.modules.licensing import (
     get_matched_bypass_domain,
     is_bypass_domain,
 )
+from apps.api.grpc.auth import GrpcAuthInterceptor
 from apps.api.grpc.generated import elder_pb2, elder_pb2_grpc
 from apps.api.grpc.servicers.elder_servicer import ElderServicer
 from apps.api.licensing_fallback import get_license_client
 
 logger = structlog.get_logger(__name__)
+
+
+def create_server(app, max_workers: int = 10) -> grpc.Server:
+    """Build the Elder gRPC server with caller authentication wired in.
+
+    Every ElderService RPC other than Login/RefreshToken/HealthCheck passes
+    through ``GrpcAuthInterceptor``, which rejects calls without a valid
+    bearer JWT with UNAUTHENTICATED. The caller still has to bind a port
+    and start the server.
+    """
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=max_workers),
+        interceptors=[GrpcAuthInterceptor(app)],
+        options=[
+            ("grpc.max_send_message_length", 100 * 1024 * 1024),  # 100MB
+            ("grpc.max_receive_message_length", 100 * 1024 * 1024),  # 100MB
+            ("grpc.keepalive_time_ms", 30000),  # 30 seconds
+            ("grpc.keepalive_timeout_ms", 10000),  # 10 seconds
+            ("grpc.http2.max_pings_without_data", 0),
+            ("grpc.http2.min_time_between_pings_ms", 10000),
+        ],
+    )
+    elder_pb2_grpc.add_ElderServiceServicer_to_server(ElderServicer(app), server)
+    return server
 
 
 def serve(
@@ -87,21 +112,8 @@ def serve(
                 logger.error("grpc_server_license_error", error=str(e))
                 sys.exit(1)
 
-    # Create gRPC server
-    server = grpc.server(
-        futures.ThreadPoolExecutor(max_workers=max_workers),
-        options=[
-            ("grpc.max_send_message_length", 100 * 1024 * 1024),  # 100MB
-            ("grpc.max_receive_message_length", 100 * 1024 * 1024),  # 100MB
-            ("grpc.keepalive_time_ms", 30000),  # 30 seconds
-            ("grpc.keepalive_timeout_ms", 10000),  # 10 seconds
-            ("grpc.http2.max_pings_without_data", 0),
-            ("grpc.http2.min_time_between_pings_ms", 10000),
-        ],
-    )
-
-    # Add servicer to server
-    elder_pb2_grpc.add_ElderServiceServicer_to_server(ElderServicer(app), server)
+    # Create gRPC server (authentication interceptor + servicer)
+    server = create_server(app, max_workers=max_workers)
 
     # Enable reflection for grpcurl/grpcui
     service_names = (
