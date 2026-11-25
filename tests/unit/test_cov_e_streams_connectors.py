@@ -668,6 +668,10 @@ class TestDiscoverConnectors:
         assert creg.discover_connectors() == 1
         assert nr.NodeRegistry.is_registered(f"action_{cid}_a")
 
-    def test_real_manifests_load(self, registry_guard):
+    def test_real_manifests_load(self, registry_guard, monkeypatch):
         """The shipped manifests all parse and generate nodes."""
+        # Start from a clean slate so an earlier discovery in the session
+        # (which sets the idempotency flag) cannot turn this into a no-op.
+        monkeypatch.setattr(creg, "_CONNECTORS_INITIALIZED", False)
+        registry_guard._registry.clear()
         assert creg.discover_connectors() > 0

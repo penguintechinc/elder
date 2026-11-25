@@ -9,17 +9,68 @@ from __future__ import annotations
 import tests.unit.conftest_worker_stubs  # noqa: F401  isort: skip
 
 import asyncio
+import contextlib
 import importlib
+import logging
+import sys
 import threading
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import structlog
 
-from apps.worker import main as wmain
+import apps.worker
 from apps.worker.config.settings import settings
 from shared.jobbus import JobEnvelope
+
+
+@contextlib.contextmanager
+def _preserve_logging():
+    """Keep process-global logging/structlog state intact across a block.
+
+    ``apps.worker.main`` runs ``configure_logging()`` at import time, which
+    replaces the structlog pipeline and root handlers. Left in place it
+    reroutes structlog output for every later test in the session.
+    """
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    was_configured = structlog.is_configured()
+    cfg = structlog.get_config()
+    try:
+        yield
+    finally:
+        root.handlers = handlers
+        root.setLevel(level)
+        if was_configured:
+            structlog.configure(**cfg)
+        else:
+            structlog.reset_defaults()
+
+
+wmain: Any = None  # bound by the module-scoped fixture below
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _worker_main_module():
+    """Import ``apps.worker.main`` for this module only, leaving no trace.
+
+    Importing it runs ``configure_logging()`` as a side effect, and other
+    suites rely on that import happening for the first time in *their* own
+    run. So when we are the first importer we undo the logging changes and
+    evict the module afterwards, keeping session-wide state unchanged.
+    """
+    global wmain
+    already = "apps.worker.main" in sys.modules
+    with _preserve_logging():
+        wmain = importlib.import_module("apps.worker.main")
+    yield
+    if not already:
+        sys.modules.pop("apps.worker.main", None)
+        if hasattr(apps.worker, "main"):
+            delattr(apps.worker, "main")
+    wmain = None
 
 
 @pytest.fixture
@@ -107,11 +158,13 @@ def test_otel_metrics_initialised() -> None:
 def test_otel_failure_at_import_is_tolerated() -> None:
     """A metrics init error at import leaves _otel_metrics as None."""
     try:
-        with patch("shared.observability.get_meter", side_effect=RuntimeError("x")):
-            importlib.reload(wmain)
+        with _preserve_logging():
+            with patch("shared.observability.get_meter", side_effect=RuntimeError("x")):
+                importlib.reload(wmain)
         assert wmain._otel_metrics is None
     finally:
-        importlib.reload(wmain)
+        with _preserve_logging():
+            importlib.reload(wmain)
     assert wmain._otel_metrics is not None
 
 
