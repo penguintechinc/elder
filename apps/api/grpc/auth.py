@@ -161,7 +161,7 @@ def resolve_caller(app: Any, token: str | None) -> GrpcCaller | None:
     if not token or token.startswith(WORKER_TOKEN_PREFIX):
         return None
 
-    payload = run_in_app_context(app, verify_token, token)
+    payload = run_in_app_context(app, verify_token, token, ACCEPTED_TOKEN_TYPES)
     if not payload:
         return None
 

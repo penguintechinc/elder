@@ -276,11 +276,18 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self.app, generate_token, identity, token_type, auth_time
         )
 
-    def _verify_jwt_token(self, token: str) -> dict | None:
-        """Verify a token with the REST API's shared verifier."""
+    def _verify_jwt_token(
+        self, token: str, expected_type: str = "access"
+    ) -> dict | None:
+        """Verify an identity JWT of exactly ``expected_type`` (shared verifier).
+
+        Fails closed: tokens of any other type never resolve here.
+        """
         if not token:
             return None
-        return run_in_app_context(self.app, verify_token, token)
+        return run_in_app_context(
+            self.app, verify_token, token, frozenset({expected_type})
+        )
 
     def _access_expires_in(self) -> int:
         """Return the configured access-token lifetime in seconds."""
@@ -364,7 +371,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 return auth_pb2.RefreshTokenResponse()
 
             # Verify refresh token
-            payload = self._verify_jwt_token(request.refresh_token)
+            payload = self._verify_jwt_token(
+                request.refresh_token, expected_type="refresh"
+            )
             if not payload or payload.get("type") != "refresh":
                 context.set_code(grpc.StatusCode.UNAUTHENTICATED)
                 context.set_details("Invalid refresh token")

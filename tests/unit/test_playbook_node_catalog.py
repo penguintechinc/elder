@@ -61,6 +61,7 @@ def _token(app, tenant_id: int, identity_id: int, scopes=None) -> str:
     now = datetime.now(UTC)
     payload = {
         "sub": str(identity_id),
+        "type": "access",
         "iat": now,
         "exp": now + timedelta(hours=1),
         "scope": scopes,

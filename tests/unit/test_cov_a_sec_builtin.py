@@ -28,6 +28,7 @@ def _tok(app, tenant_id, identity_id, scopes):
     """Mint a signed JWT for an existing identity with the given scopes."""
     payload = {
         "sub": str(identity_id),
+        "type": "access",
         "iat": datetime.now(UTC),
         "exp": datetime.now(UTC) + timedelta(hours=1),
         "scope": scopes,

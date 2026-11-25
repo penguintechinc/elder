@@ -4,7 +4,7 @@ from functools import wraps
 
 from quart import g, redirect, request, url_for
 
-from apps.api.auth.jwt_handler import verify_token
+from apps.api.auth.jwt_handler import IDENTITY_ACCESS_TOKEN_TYPES, verify_token
 
 COOKIE_NAME = "elder_session"
 COOKIE_MAX_AGE = 60 * 60 * 8  # 8 hours, matching access token lifetime
@@ -18,7 +18,7 @@ def get_web_user():
     if not token:
         g._web_user = None
         return None
-    payload = verify_token(token)
+    payload = verify_token(token, IDENTITY_ACCESS_TOKEN_TYPES)
     g._web_user = payload
     return payload
 
