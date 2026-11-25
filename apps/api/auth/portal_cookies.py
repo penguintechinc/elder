@@ -77,6 +77,37 @@ def set_portal_auth_cookies(
     return csrf_token
 
 
+def set_mfa_enrollment_cookies(
+    response, enrollment_token: str, max_age: int, secure: bool = True
+) -> str:
+    """Attach the cookies for an MFA enrolment-only session.
+
+    The enrolment token rides in the access-token cookie (it is rejected by
+    every route except MFA setup) together with a CSRF cookie; no refresh
+    cookie is ever issued for it. Returns the CSRF token value.
+    """
+    response.set_cookie(
+        ACCESS_COOKIE_NAME,
+        enrollment_token,
+        max_age=max_age,
+        httponly=True,
+        secure=secure,
+        samesite="Strict",
+        path="/",
+    )
+    csrf_token = secrets.token_urlsafe(32)
+    response.set_cookie(
+        CSRF_COOKIE_NAME,
+        csrf_token,
+        max_age=max_age,
+        httponly=False,
+        secure=secure,
+        samesite="Strict",
+        path="/",
+    )
+    return csrf_token
+
+
 def clear_portal_auth_cookies(response) -> None:
     """Delete all portal-auth cookies (logout, or a failed/expired refresh)."""
     response.delete_cookie(ACCESS_COOKIE_NAME, path="/")

@@ -63,10 +63,13 @@ def _assert_portal_auth_cookies(response) -> None:
 
 class TestSamlAcsSetsHttpOnlyCookies:
     @pytest.mark.asyncio
+    @patch(
+        "apps.api.api.v1.sso._sso_mfa_gate", new_callable=AsyncMock, return_value=None
+    )
     @patch("apps.api.api.v1.sso.generate_tokens", return_value=dict(_TOKENS))
     @patch("apps.api.api.v1.sso.SAMLService.process_saml_response")
     async def test_saml_acs_carries_auth_cookies(
-        self, mock_process, _mock_tokens, async_client
+        self, mock_process, _mock_tokens, _mock_mfa, async_client
     ):
         mock_process.return_value = {"id": 7, "tenant_id": 1, "email": "a@b.co"}
 
@@ -98,6 +101,9 @@ class TestSamlAcsSetsHttpOnlyCookies:
 
 class TestOidcCallbackSetsHttpOnlyCookies:
     @pytest.mark.asyncio
+    @patch(
+        "apps.api.api.v1.sso._sso_mfa_gate", new_callable=AsyncMock, return_value=None
+    )
     @patch("apps.api.api.v1.sso.generate_tokens", return_value=dict(_TOKENS))
     @patch("apps.api.api.v1.sso.OIDCService.jit_provision_user")
     @patch("apps.api.api.v1.sso.OIDCService.get_idp_config")
@@ -112,6 +118,7 @@ class TestOidcCallbackSetsHttpOnlyCookies:
         mock_idp,
         mock_jit,
         _mock_tokens,
+        _mock_mfa,
         async_client,
     ):
         mock_exchange.return_value = {

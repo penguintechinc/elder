@@ -3,6 +3,7 @@
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -74,8 +75,21 @@ class PortalUser(Base, IDMixin, VillageIDMixin, TimestampMixin):
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
     email = Column(String(255), nullable=False)
     password_hash = Column(String(255), nullable=True)
+    # Encrypted envelope (v1:<kid>:<nonce>:<ciphertext>), never the raw TOTP
+    # secret -- read/written only via apps.api.services.portal_auth accessors.
     mfa_secret = Column(String(255), nullable=True)
+    # List of salted password-hashes of the single-use backup codes.
     mfa_backup_codes = Column(JSON, nullable=True)
+    # Last accepted RFC 6238 time step (TOTP replay protection).
+    mfa_last_totp_counter = Column(BigInteger, nullable=True)
+    # Second-factor attempt budget and timed lockout (separate from password).
+    mfa_failed_attempts = Column(Integer, nullable=True, server_default="0")
+    mfa_locked_until = Column(DateTime(timezone=True), nullable=True)
+    # Enrolment in progress: the new sealed secret / hashed codes wait here
+    # and only replace the active ones on a successful /mfa/confirm.
+    mfa_pending_secret = Column(String(255), nullable=True)
+    mfa_pending_backup_codes = Column(JSON, nullable=True)
+    mfa_pending_expires_at = Column(DateTime(timezone=True), nullable=True)
     global_role = Column(String(50), nullable=True)
     tenant_role = Column(String(50), nullable=True)
     full_name = Column(String(255), nullable=True)
@@ -85,6 +99,28 @@ class PortalUser(Base, IDMixin, VillageIDMixin, TimestampMixin):
     failed_login_attempts = Column(Integer, nullable=True)
     locked_until = Column(DateTime(timezone=True), nullable=True)
     password_changed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PortalMfaChallenge(Base, IDMixin):
+    """Server-side MFA login challenge issued after a correct password.
+
+    The opaque challenge id handed to the client is never stored -- only its
+    SHA-256 -- and a row is short-lived, single-use and attempt-capped, so
+    the second-factor step is always bound to a completed password step.
+    """
+
+    __tablename__ = "portal_mfa_challenges"
+
+    challenge_hash = Column(String(64), nullable=False, unique=True, index=True)
+    portal_user_id = Column(
+        Integer, ForeignKey("portal_users.id", ondelete="CASCADE"), nullable=False
+    )
+    tenant_id = Column(Integer, nullable=False)
+    fingerprint_hash = Column(String(64), nullable=True)
+    attempts = Column(Integer, nullable=False, server_default="0")
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    consumed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class PortalUserOrgAssignment(Base, IDMixin):

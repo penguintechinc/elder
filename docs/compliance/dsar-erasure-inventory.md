@@ -51,7 +51,7 @@ Overwritten: `username`, `email`, `full_name`, `password_hash`, `mfa_secret`, `m
 
 ## Identity Inventory (89 linked columns in 74 tables)
 
-Actions: delete 14, unlink 54, retain 19, scrub match 2. Columns after the first are PII columns cleared on the same rows.
+Actions: delete 15, unlink 54, retain 19, scrub match 2. Columns after the first are PII columns cleared on the same rows.
 
 | Table | Columns | Action | Basis |
 |---|---|---|---|
@@ -150,6 +150,7 @@ Actions: delete 14, unlink 54, retain 19, scrub match 2. Columns after the first
 | Table | Columns | Action | Basis |
 |---|---|---|---|
 | `portal_user_org_assignments` | `portal_user_id` | delete | Art. 17(1) |
+| `portal_mfa_challenges` | `portal_user_id` | delete | Art. 17(1) |
 | `data_stores` | `created_by` | unlink (NULL) | Art. 17(1) |
 | `dsar_requests` | `portal_user_id` | retain | accountability record (ids only) |
 

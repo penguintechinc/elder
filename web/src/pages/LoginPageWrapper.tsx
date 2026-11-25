@@ -39,6 +39,16 @@ export default function LoginPageWrapper() {
           }}
           colors={ELDER_LOGIN_THEME}
           onSuccess={(response: LoginResponse) => {
+            // MFA is enforced and the grace period is over: the server issued
+            // only an enrolment-scoped token (no session). Send the user to
+            // the standalone enrolment screen -- nothing else will load.
+            if (
+              (response as LoginResponse & { mfaEnrollmentRequired?: boolean })
+                .mfaEnrollmentRequired
+            ) {
+              navigate('/mfa-enroll', { replace: true })
+              return
+            }
             // The access/refresh JWT arrive as HttpOnly cookies on this same
             // response (gh security audit, High: they used to be copied into
             // localStorage here) -- only the non-sensitive "logged in" flag

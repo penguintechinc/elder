@@ -12,7 +12,13 @@ from pydantic import ValidationError
 from quart import Blueprint, Response, current_app, jsonify, request
 from quart_schema import document_request, document_response, validate_response
 
-from apps.api.api.v1.portal_auth import generate_tokens, portal_token_required
+from apps.api.api.v1.portal_auth import (
+    _client_fingerprint,
+    _issue_mfa_enrollment_response,
+    _no_store,
+    generate_tokens,
+    portal_token_required,
+)
 from apps.api.auth.decorators import login_required
 from apps.api.auth.jwt_handler import interactive_auth_time
 from apps.api.auth.portal_cookies import set_portal_auth_cookies
@@ -23,6 +29,11 @@ from apps.api.models.pydantic.idp import (
     IdPConfigUpdateResponse,
     IdPErrorResponse,
     UpdateIdPConfigRequest,
+)
+from apps.api.services.portal_auth import (
+    PortalAuthService,
+    compute_user_mfa_status,
+    user_has_mfa_enrolled,
 )
 from apps.api.services.sso import OIDCService, SAMLService, SCIMService
 from apps.api.services.sso.idp_access import (
@@ -75,6 +86,63 @@ def _attach_auth_cookies(response, tokens: dict) -> None:
 
 
 # SCIM authentication decorator
+def _load_portal_user(user_id: int):
+    """Fetch the portal user an SSO flow just authenticated or provisioned."""
+    # The id comes from the SSO service's own verified-assertion / JIT
+    # result, never from a client parameter.
+    return current_app.db.portal_users[user_id]  # tenant-scope-exempt: see above
+
+
+async def _sso_mfa_gate(user: dict):
+    """Apply Elder's MFA policy to an SSO sign-in before any session exists.
+
+    IdP configs carry no "IdP asserts MFA" setting, so Elder's own MFA
+    rules apply to SSO sign-ins exactly as they do to password logins:
+    a user with TOTP enrolled gets the opaque login challenge (completed
+    via ``/portal-auth/mfa/verify``), and a user whose enrolment grace has
+    expired gets only the enrolment-scoped response.
+
+    Returns:
+        A response to send instead of a session, or None to proceed.
+
+    Raises:
+        LookupError: the account row is missing (caller fails closed).
+    """
+    row = _load_portal_user(int(user["id"]))
+    if not row:
+        # Fail closed: no account row means no basis for a session.
+        raise LookupError("SSO user not found")
+    if getattr(row, "mfa_secret", None):
+        challenge_id = PortalAuthService.create_mfa_challenge(
+            row.id, row.tenant_id, _client_fingerprint()
+        )
+        return _no_store(
+            jsonify(
+                {
+                    "success": False,
+                    "mfaRequired": True,
+                    "mfaChallenge": challenge_id,
+                    "mfa_challenge": challenge_id,
+                    "mfaChallengeExpiresIn": (
+                        PortalAuthService.MFA_CHALLENGE_TTL_SECONDS
+                    ),
+                }
+            )
+        ), 200
+    status = compute_user_mfa_status(
+        row.tenant_id,
+        mfa_enabled=user_has_mfa_enrolled(row),
+        user_created_at=getattr(row, "created_at", None),
+    )
+    if status["mfa_locked_out"]:
+        user["mfa_grace_expires_at"] = status["mfa_grace_expires_at"]
+        user.setdefault("tenant_id", row.tenant_id)
+        user.setdefault("email", row.email)
+        user.setdefault("full_name", row.full_name)
+        return await _issue_mfa_enrollment_response(user)
+    return None
+
+
 def scim_auth_required(f):
     """Decorator to require SCIM bearer token authentication."""
 
@@ -581,6 +649,13 @@ async def saml_acs(tenant_id):
     if "error" in result:
         return jsonify(result), 400
 
+    try:
+        gated = await _sso_mfa_gate(result)
+    except LookupError:
+        return ApiResponse.unauthorized("User not found")
+    if gated is not None:
+        return gated
+
     # Generate tokens
     tokens = generate_tokens(result, auth_time=interactive_auth_time())
 
@@ -661,7 +736,7 @@ def oidc_authorize(idp_id):
 
 
 @bp.route("/oidc/callback", methods=["GET"])
-def oidc_callback():
+async def oidc_callback():
     """Handle OIDC callback with authorization code.
 
     Query params:
@@ -721,6 +796,13 @@ def oidc_callback():
 
         if "error" in user:
             return jsonify(user), 400
+
+        try:
+            gated = await _sso_mfa_gate(user)
+        except LookupError:
+            return ApiResponse.unauthorized("User not found")
+        if gated is not None:
+            return gated
 
         # Generate Elder JWT tokens
         elder_tokens = generate_tokens(user, auth_time=interactive_auth_time())

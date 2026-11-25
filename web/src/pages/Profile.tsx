@@ -36,6 +36,9 @@ export default function Profile() {
   const [mfaSetup, setMfaSetup] = useState<MfaSetupResponse | null>(null)
   const [mfaQrDataUrl, setMfaQrDataUrl] = useState<string | null>(null)
   const [regeneratedBackupCodes, setRegeneratedBackupCodes] = useState<string[] | null>(null)
+  // Changing an enrolled factor (new backup codes, disable) needs proof of
+  // the current one -- the server rejects these without a valid code.
+  const [mfaCurrentCode, setMfaCurrentCode] = useState('')
   const [totpCode, setTotpCode] = useState('')
   const queryClient = useQueryClient()
 
@@ -136,10 +139,11 @@ export default function Profile() {
   })
 
   const disableMfaMutation = useMutation({
-    mutationFn: () => api.disableMfa(),
+    mutationFn: () => api.disableMfa(mfaCurrentCode.trim()),
     onSuccess: async () => {
       setMfaSetup(null)
       setRegeneratedBackupCodes(null)
+      setMfaCurrentCode('')
       setTotpCode('')
       await queryClient.invalidateQueries({ queryKey: ['profile'] })
       await queryClient.invalidateQueries({ queryKey: ['portal-profile'] })
@@ -152,9 +156,10 @@ export default function Profile() {
   })
 
   const regenerateBackupCodesMutation = useMutation({
-    mutationFn: () => api.regenerateMfaBackupCodes(),
+    mutationFn: () => api.regenerateMfaBackupCodes(mfaCurrentCode.trim()),
     onSuccess: async (data) => {
       setRegeneratedBackupCodes(data.backup_codes)
+      setMfaCurrentCode('')
       await queryClient.invalidateQueries({ queryKey: ['profile'] })
       await queryClient.invalidateQueries({ queryKey: ['portal-profile'] })
       toast.success('New backup codes generated. Previous codes are now invalid.')
@@ -661,6 +666,18 @@ export default function Profile() {
                 </p>
               )}
               <div className="pt-3 border-t border-slate-700 space-y-3">
+                <Input
+                  label="Current authenticator or backup code"
+                  type="text"
+                  value={mfaCurrentCode}
+                  onChange={(e) => setMfaCurrentCode(e.target.value)}
+                  placeholder="123456"
+                  autoComplete="one-time-code"
+                  data-testid="profile-mfa-current-code"
+                />
+                <p className="text-xs text-slate-400">
+                  Required to reset backup codes or disable MFA.
+                </p>
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div>
                     <h3 className="text-sm font-medium text-white">
@@ -677,6 +694,7 @@ export default function Profile() {
                     type="button"
                     variant="secondary"
                     isLoading={regenerateBackupCodesMutation.isPending}
+                    disabled={!mfaCurrentCode.trim()}
                     onClick={() => regenerateBackupCodesMutation.mutate()}
                   >
                     <RefreshCw className="w-4 h-4 mr-1.5" />
@@ -730,7 +748,11 @@ export default function Profile() {
                 <Button
                   type="button"
                   variant="ghost"
-                  disabled={Boolean(profile?.mfa_enforced) || disableMfaMutation.isPending}
+                  disabled={
+                    Boolean(profile?.mfa_enforced) ||
+                    disableMfaMutation.isPending ||
+                    !mfaCurrentCode.trim()
+                  }
                   isLoading={disableMfaMutation.isPending}
                   onClick={() => disableMfaMutation.mutate()}
                 >

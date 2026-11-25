@@ -407,6 +407,9 @@ PORTAL_USER_INVENTORY: tuple[InventoryEntry, ...] = (
     ),
     InventoryEntry("data_stores", "created_by", Action.UNLINK, "authored_content"),
     InventoryEntry(
+        "portal_mfa_challenges", "portal_user_id", Action.DELETE, "sessions"
+    ),
+    InventoryEntry(
         "dsar_requests",
         "portal_user_id",
         Action.RETAIN,

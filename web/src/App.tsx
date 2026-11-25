@@ -4,6 +4,7 @@ import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import Search from "./pages/Search";
 import Login from "./pages/LoginPageWrapper";
+import MfaEnroll from "./pages/MfaEnroll";
 import Register from "./pages/Register";
 import Profile from "./pages/Profile";
 // v2.2.0 Enterprise Admin Pages
@@ -109,6 +110,7 @@ export default function App() {
       />
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/mfa-enroll" element={<MfaEnroll />} />
         <Route path="/register" element={<Register />} />
         <Route
           path="/id/:villageId"

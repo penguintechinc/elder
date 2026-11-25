@@ -2388,9 +2388,15 @@ class ApiClient {
     return response.data;
   }
 
-  async portalMfaVerify(code: string) {
+  /**
+   * Complete the MFA step of a login. `challengeId` is the opaque
+   * `mfaChallenge` returned by the password step -- the server no longer
+   * accepts a bare user id here.
+   */
+  async portalMfaVerify(challengeId: string, code: string) {
     const response = await this.client.post("/portal-auth/mfa/verify", {
-      code,
+      mfa_challenge: challengeId,
+      totp_code: code,
     });
     return response.data;
   }
@@ -2402,7 +2408,7 @@ class ApiClient {
 
   async portalMfaDisable(code: string) {
     const response = await this.client.post("/portal-auth/mfa/disable", {
-      code,
+      current_code: code,
     });
     return response.data;
   }
@@ -2440,29 +2446,44 @@ class ApiClient {
     return response.data;
   }
 
-  async enableMfa(): Promise<MfaSetupResponse> {
-    const response = await this.client.post("/portal-auth/mfa/enable");
+  /**
+   * Start MFA setup. The new secret stays pending until `confirmMfa`
+   * succeeds. `currentCode` (TOTP or backup code) is required by the server
+   * when MFA is already enrolled.
+   */
+  async enableMfa(currentCode?: string): Promise<MfaSetupResponse> {
+    const response = await this.client.post(
+      "/portal-auth/mfa/enable",
+      currentCode ? { current_code: currentCode } : undefined,
+    );
     return response.data;
   }
 
-  async confirmMfa(totpCode: string): Promise<{ verified: boolean }> {
+  async confirmMfa(
+    totpCode: string,
+  ): Promise<{ verified: boolean; reauthenticate?: boolean }> {
     const response = await this.client.post("/portal-auth/mfa/confirm", {
       totp_code: totpCode,
     });
     return response.data;
   }
 
-  async disableMfa(): Promise<{ success: boolean }> {
-    const response = await this.client.post("/portal-auth/mfa/disable");
+  /** Disable MFA. Requires a current TOTP or backup code. */
+  async disableMfa(currentCode: string): Promise<{ success: boolean }> {
+    const response = await this.client.post("/portal-auth/mfa/disable", {
+      current_code: currentCode,
+    });
     return response.data;
   }
 
-  async regenerateMfaBackupCodes(): Promise<{
+  /** Replace the backup codes. Requires a current TOTP or backup code. */
+  async regenerateMfaBackupCodes(currentCode: string): Promise<{
     backup_codes: string[];
     remaining: number;
   }> {
     const response = await this.client.post(
       "/portal-auth/mfa/backup-codes/regenerate",
+      { current_code: currentCode },
     );
     return response.data;
   }
@@ -4903,6 +4924,10 @@ export interface MfaSetupResponse {
   secret: string;
   provisioning_uri: string;
   backup_codes: string[];
+  /** True while the setup awaits confirmation (nothing is active yet). */
+  pending?: boolean;
+  /** Seconds until an unconfirmed setup is discarded. */
+  expires_in?: number;
 }
 
 export interface AIResearcherConfig {

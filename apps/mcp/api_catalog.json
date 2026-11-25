@@ -5968,7 +5968,7 @@
     "path": "/api/v1/portal-auth/mfa/enable",
     "path_params": [],
     "wildcard_path_params": [],
-    "summary": "Enable MFA for the authenticated user.",
+    "summary": "Start MFA setup for the authenticated user.",
     "has_body": true,
     "destructive": false
   },
@@ -6012,7 +6012,7 @@
     "path": "/api/v1/privacy/me/erase",
     "path_params": [],
     "wildcard_path_params": [],
-    "summary": "GDPR Art. 17 right-to-erasure: anonymize the caller's own PII.",
+    "summary": "GDPR Art. 17 right-to-erasure: erase the caller's own personal data.",
     "has_body": true,
     "destructive": true
   },
@@ -6045,7 +6045,7 @@
     "path": "/api/v1/privacy/me/consent",
     "path_params": [],
     "wildcard_path_params": [],
-    "summary": "CCPA/CPRA \"Do Not Sell or Share\" opt-out + consent withdrawal (per-user flag).",
+    "summary": "Record a consent choice: CCPA/CPRA opt-out or a per-purpose grant/withdrawal.",
     "has_body": true,
     "destructive": false
   },

@@ -19,6 +19,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from types import ModuleType, SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import jwt
 import penguin_dal
@@ -54,6 +55,7 @@ except ImportError:
 from apps.api.api.v1.portal_auth import bp as portal_auth_bp
 from apps.api.api.v1.tenants import bp as tenants_bp
 from apps.api.services.portal_auth import (
+    PortalAuthService,
     compute_user_mfa_status,
     user_has_mfa_enrolled,
 )
@@ -457,7 +459,13 @@ class TestMfaDisableAndConfirm:
         assert "Enterprise security policy" in body["error"]
         assert db.portal_users[user_id].mfa_secret == secret
 
-    async def test_disable_mfa_allowed_when_not_enforced(self) -> None:
+    async def test_disable_mfa_not_enforced_requires_current_code(self) -> None:
+        """Without tenant enforcement, disabling still needs a current MFA code.
+
+        A session token alone must not strip the second factor; the
+        with-a-valid-code path is covered against a real database in
+        test_mfa_totp_encryption.py.
+        """
         app, db = _make_app("enterprise")
         secret = pyotp.random_base32()
         tenant_id, user_id = _seed_tenant_and_user(
@@ -472,8 +480,9 @@ class TestMfaDisableAndConfirm:
             "/api/v1/portal-auth/mfa/disable",
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert resp.status_code == 200
-        assert db.portal_users[user_id].mfa_secret is None
+        assert resp.status_code == 403
+        assert (await resp.get_json())["mfa_code_required"] is True
+        assert db.portal_users[user_id].mfa_secret == secret
 
     async def test_confirm_mfa_valid_and_invalid_totp(self) -> None:
         app, db = _make_app("enterprise")
@@ -483,19 +492,30 @@ class TestMfaDisableAndConfirm:
         client = app.test_client()
 
         valid_code = pyotp.TOTP(secret).now()
-        resp_ok = await client.post(
-            "/api/v1/portal-auth/mfa/confirm",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"totp_code": valid_code},
-        )
-        assert resp_ok.status_code == 200
-        assert (await resp_ok.get_json()) == {"verified": True}
 
-        resp_bad = await client.post(
-            "/api/v1/portal-auth/mfa/confirm",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"totp_code": "000000"},
-        )
+        # Confirming the ACTIVE factor goes through the attempt-capped
+        # verify_mfa, whose atomic reservation UPDATE this in-memory DB
+        # cannot express; the cap itself is tested against real Postgres in
+        # test_mfa_totp_encryption.py. Here only the route contract matters.
+        def _verify(uid: int, code: str) -> dict:
+            if code == valid_code:
+                return {"id": uid}
+            return {"error": "Invalid MFA code"}
+
+        with patch.object(PortalAuthService, "verify_mfa", side_effect=_verify):
+            resp_ok = await client.post(
+                "/api/v1/portal-auth/mfa/confirm",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"totp_code": valid_code},
+            )
+            assert resp_ok.status_code == 200
+            assert (await resp_ok.get_json()) == {"verified": True}
+
+            resp_bad = await client.post(
+                "/api/v1/portal-auth/mfa/confirm",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"totp_code": "000000"},
+            )
         assert resp_bad.status_code == 400
         bad_body = await resp_bad.get_json()
         assert bad_body["verified"] is False
@@ -694,3 +714,8 @@ class TestPortalMeAndLoginMfaFlags:
         assert login_body["mfa_setup_required"] is True
         assert login_body["mfa_grace_days_remaining"] == 0
         assert login_body["mfa_locked_out"] is True
+        # Grace expired: only the enrolment-scoped token is issued, no session.
+        assert login_body["mfaEnrollmentRequired"] is True
+        assert login_body["enrollment_token"]
+        assert "token" not in login_body
+        assert "refresh_token" not in login_body

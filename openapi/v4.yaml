@@ -6517,14 +6517,15 @@ paths:
         \ by entity sub-type (e.g. k8s_node, k8s_deployment)\n    - parent_id: Filter by parent entity\
         \ ID (e.g. all resources under a cluster)\n    - organization_id: Filter by organization ID\n\
         \    - name: Filter by name (partial match)\n    - is_active: Filter by active status\n\nReturns:\n\
-        \    200: List of entities with pagination metadata"
+        \    200: List of entities with pagination metadata\n    403: Token carries no tenant"
       operationId: get_list_entities
       parameters: []
       responses: {}
       summary: List all entities with pagination and filtering.
     post:
       description: "\nRequest Body:\n    JSON object with entity fields\n\nReturns:\n    201: Created\
-        \ entity\n    400: Validation error"
+        \ entity\n    400: Validation error\n    403: Token carries no tenant\n    404: Organization or\
+        \ parent entity not found in the caller's tenant"
       operationId: post_create_entity
       parameters: []
       responses: {}
@@ -12748,8 +12749,12 @@ paths:
   /api/v1/portal-auth/login:
     post:
       description: "\nRequest body:\n    tenant: str - Tenant slug (or use tenant_id)\n    email: str\
-        \ - Email address (validated format)\n    password: str - Password\n\nReturns:\n    Tokens on\
-        \ success, or MFA challenge\n    422: Invalid email format or validation error"
+        \ - Email address (validated format)\n    password: str - Password\n    mfaCode: str (optional)\
+        \ - TOTP or backup code, sent together with\n        the credentials to complete an MFA login\
+        \ in one request\n\nReturns:\n    Tokens on success.\n    MFA enrolled and no code sent: ``mfaRequired``\
+        \ plus an opaque,\n    short-lived ``mfaChallenge`` for POST /mfa/verify (no user id).\n    MFA\
+        \ required by policy and grace period expired:\n    ``mfaEnrollmentRequired`` plus an enrolment-scoped\
+        \ token only.\n    422: Invalid email format or validation error"
       operationId: post_login
       parameters: []
       responses: {}
@@ -12788,14 +12793,17 @@ paths:
   /api/v1/portal-auth/mfa/backup-codes/regenerate:
     post:
       description: "\nInvalidates all previously generated backup codes and returns 10 new codes.\n\n\
-        Returns:\n    JSON with ``backup_codes`` list and ``remaining`` count"
+        Request body:\n    current_code: str - Current TOTP or backup code\n\nReturns:\n    JSON with\
+        \ ``backup_codes`` list and ``remaining`` count"
       operationId: post_regenerate_mfa_backup_codes
       parameters: []
       responses: {}
       summary: Regenerate single-use MFA backup/bypass codes for the authenticated user.
   /api/v1/portal-auth/mfa/confirm:
     post:
-      description: "\nRequest body:\n    totp_code: str - 6-digit TOTP code from Google Authenticator\n\
+      description: "\nActivates a pending enrolment. When called with the enrolment-only\ntoken the cookies\
+        \ are cleared afterwards: the user signs in again, now\nwith password + MFA, to obtain a real\
+        \ session.\n\nRequest body:\n    totp_code: str - 6-digit TOTP code from Google Authenticator\n\
         \nReturns:\n    ``{\"verified\": True}`` on success, or 400/401 on invalid code"
       operationId: post_confirm_mfa
       parameters: []
@@ -12803,26 +12811,33 @@ paths:
       summary: Confirm MFA enrollment by verifying a 6-digit TOTP code.
   /api/v1/portal-auth/mfa/disable:
     post:
-      description: "\nReturns:\n    Success status, or 403 if MFA is enforced by tenant policy"
+      description: "\nRequest body:\n    current_code: str - Current TOTP or backup code\n\nReturns:\n\
+        \    Success status, or 403 if MFA is enforced by tenant policy or the\n    current code is missing/invalid"
       operationId: post_disable_mfa
       parameters: []
       responses: {}
       summary: Disable MFA for the authenticated user.
   /api/v1/portal-auth/mfa/enable:
     post:
-      description: "\nReturns:\n    MFA setup info (secret, provisioning URI, backup codes)"
+      description: "\nThe new secret stays pending until /mfa/confirm succeeds. If MFA is\nalready enrolled,\
+        \ a current TOTP or backup code is required.\n\nRequest body (only when re-enrolling):\n    current_code:\
+        \ str - Current TOTP or backup code\n\nReturns:\n    MFA setup info (secret, provisioning URI,\
+        \ backup codes)"
       operationId: post_enable_mfa
       parameters: []
       responses: {}
-      summary: Enable MFA for the authenticated user.
+      summary: Start MFA setup for the authenticated user.
   /api/v1/portal-auth/mfa/verify:
     post:
-      description: "\nRequest body:\n    user_id: int - User ID from login response\n    totp_code: str\
-        \ - 6-digit TOTP code\n\nReturns:\n    Tokens on success"
+      description: "\nRequest body:\n    mfa_challenge: str - Opaque challenge id returned by /login\n\
+        \    totp_code: str - 6-digit TOTP code or 8-character backup code\n\nA bare user id is not accepted:\
+        \ without a challenge (which only a correct\npassword yields) nobody can reach an account's second\
+        \ factor.\n\nReturns:\n    Tokens on success; 401 on a bad code or dead challenge, 429 while the\n\
+        \    account's MFA step is locked"
       operationId: post_verify_mfa
       parameters: []
       responses: {}
-      summary: Verify MFA code after initial authentication.
+      summary: Complete a login's MFA step using the challenge from the password step.
   /api/v1/portal-auth/org-assignments:
     post:
       description: "\nRequires tenant admin or global admin.\n\nRequest body:\n    portal_user_id: int\
@@ -12890,27 +12905,53 @@ paths:
       responses: {}
       summary: List DSAR self-service + bulk activity for the admin's own tenant (Enterprise).
   /api/v1/privacy/me/consent:
+    get:
+      description: "\nReturns:\n    200: {\"do_not_sell_share\": bool, \"purposes\": [...], \"history\"\
+        : [...]}\n    403: no tenant claim, or the caller is not a data subject\n    404: subject not\
+        \ found in the caller's tenant"
+      operationId: get_get_my_consent
+      parameters: []
+      responses: {}
+      summary: Return the caller's current consent state and consent-ledger history.
     post:
-      description: "\nRequest body:\n    {\"do_not_sell_share\": true|false}\n\nReturns:\n    200: {\"\
-        identity_id\": ..., \"do_not_sell_share\": ...}\n    400: missing/invalid body\n    404: feature\
-        \ disabled (flag off) or identity not found"
+      description: "\nRequest body (one of):\n    {\"do_not_sell_share\": true|false}\n    {\"purpose\"\
+        : <ConsentPurpose int code>, \"granted\": true|false}\n\nReturns:\n    200: {\"identity_id\":\
+        \ ..., \"purpose\": ..., \"state\": ..., ...}\n    400: missing/invalid body\n    403: no tenant\
+        \ claim, or the caller is not a data subject\n    404: subject not found in the caller's tenant"
       operationId: post_set_my_consent
       parameters: []
       responses: {}
-      summary: CCPA/CPRA "Do Not Sell or Share" opt-out + consent withdrawal (per-user flag).
+      summary: 'Record a consent choice: CCPA/CPRA opt-out or a per-purpose grant/withdrawal.'
+  /api/v1/privacy/me/consent/withdraw:
+    post:
+      description: "\nReturns:\n    200: {\"identity_id\": ..., \"do_not_sell_share\": true, \"withdrawn\"\
+        : [...]}\n    403: no tenant claim, or the caller is not a data subject\n    404: subject not\
+        \ found in the caller's tenant"
+      operationId: post_withdraw_my_consent
+      parameters: []
+      responses: {}
+      summary: 'GDPR Art. 7(3): withdraw consent for every purpose and opt out of sale/sharing.'
   /api/v1/privacy/me/erase:
     post:
-      description: "\nBlocked (409) while the caller's tenant is under an active legal hold --\nsee docs/compliance/data-retention-policy.md\
-        \ Legal Holds.\n\nReturns:\n    200: {\"identity_id\": ..., \"anonymized\": true}\n    404: feature\
-        \ disabled (flag off) or identity not found\n    409: tenant is under an active legal hold"
+      description: "\nWalks the full personal-data inventory, revokes the caller's credentials\nand returns\
+        \ a PII-free receipt of what was erased or retained and why.\nBlocked (409) while the caller's\
+        \ tenant is under an active legal hold --\nsee docs/compliance/data-retention-policy.md Legal\
+        \ Holds.\n\nRequest body:\n    {\"confirm\": \"ERASE\", \"password\": \"<current password>\"}\n\
+        \    {\"confirm\": \"ERASE\", \"mfa_code\": \"<authenticator code>\"}  (MFA enrolled)\n    {\"\
+        confirm\": \"ERASE\"}  (SSO subjects: signed in within 5 minutes)\n\nReturns:\n    200: {\"identity_id\"\
+        : ..., \"anonymized\": true, \"receipt\": {...}}\n    403: no tenant claim, not a data subject,\
+        \ missing confirmation, or\n        re-authentication missing/failed/stale\n    404: subject not\
+        \ found in the caller's tenant\n    409: tenant under legal hold, or caller is the tenant's last\
+        \ admin\n    429: per-subject rate limit exceeded"
       operationId: post_erase_my_data
       parameters: []
       responses: {}
-      summary: 'GDPR Art. 17 right-to-erasure: anonymize the caller''s own PII.'
+      summary: 'GDPR Art. 17 right-to-erasure: erase the caller''s own personal data.'
   /api/v1/privacy/me/export:
     get:
-      description: "\nReturns:\n    200: {\"identity\": {...}, \"roles\": [...], \"group_memberships\"\
-        : [...]}\n    404: feature disabled (flag off) or identity not found"
+      description: "\nReturns:\n    200: machine-readable bundle -- \"identity\", \"roles\",\n       \
+        \ \"group_memberships\", \"consent\", \"categories\", \"truncated\"\n    403: no tenant claim,\
+        \ or the caller is not a data subject\n    404: subject not found in the caller's tenant"
       operationId: get_export_my_data
       parameters: []
       responses: {}
@@ -13513,7 +13554,7 @@ paths:
       description: "\nQuery params:\n    - q: Search query\n    - types: Resource types to search (comma-separated:\
         \ entity,organization,issue)\n    - filters: JSON-encoded filter object\n    - limit: Results\
         \ per page (default: 50)\n    - offset: Pagination offset\n\nReturns:\n    200: Search results\n\
-        \    400: Invalid query"
+        \    400: Invalid query\n    403: Missing scope or tenant context"
       operationId: get_search_all
       parameters: []
       responses: {}
@@ -13535,7 +13576,7 @@ paths:
   /api/v1/search/analytics/popular:
     get:
       description: "\nQuery params:\n    - limit: Maximum results (default: 10)\n\nReturns:\n    200:\
-        \ Popular search terms and patterns"
+        \ Popular search terms and patterns (caller's tenant only)\n    403: Missing scope or tenant context"
       operationId: get_get_popular_searches
       parameters: []
       responses: {}
@@ -13546,7 +13587,7 @@ paths:
         \    - sub_type: Filter by entity sub-type\n    - organization_id: Filter by organization\n  \
         \  - tags: Filter by tags (comma-separated)\n    - filters: JSON filter for entity attributes\n\
         \    - limit: Results per page (default: 50)\n    - offset: Pagination offset\n\nReturns:\n  \
-        \  200: Entity search results"
+        \  200: Entity search results\n    403: Missing scope or tenant context"
       operationId: get_search_entities
       parameters: []
       responses: {}
@@ -13567,7 +13608,8 @@ paths:
       description: "\nQuery params:\n    - q: Search query\n    - status: Filter by status\n    - priority:\
         \ Filter by priority\n    - assignee_id: Filter by assignee\n    - organization_id: Filter by\
         \ organization\n    - labels: Filter by labels (comma-separated)\n    - limit: Results per page\
-        \ (default: 50)\n    - offset: Pagination offset\n\nReturns:\n    200: Issue search results"
+        \ (default: 50)\n    - offset: Pagination offset\n\nReturns:\n    200: Issue search results\n\
+        \    403: Missing scope or tenant context"
       operationId: get_search_issues
       parameters: []
       responses: {}
@@ -13576,7 +13618,8 @@ paths:
     get:
       description: "\nQuery params:\n    - q: Search query\n    - organization_type: Filter by type\n\
         \    - parent_id: Filter by parent organization\n    - limit: Results per page (default: 50)\n\
-        \    - offset: Pagination offset\n\nReturns:\n    200: Organization search results"
+        \    - offset: Pagination offset\n\nReturns:\n    200: Organization search results\n    403: Missing\
+        \ scope or tenant context"
       operationId: get_search_organizations
       parameters: []
       responses: {}
@@ -13637,7 +13680,8 @@ paths:
   /api/v1/search/saved/{search_id}/execute:
     get:
       description: "\nQuery params:\n    - limit: Maximum results (default: 50)\n    - offset: Pagination\
-        \ offset\n\nReturns:\n    200: Search results\n    404: Search not found"
+        \ offset\n\nReturns:\n    200: Search results\n    403: Missing tenant context\n    404: Search\
+        \ not found"
       operationId: get_execute_saved_search
       parameters:
       - in: path
@@ -13650,7 +13694,8 @@ paths:
   /api/v1/search/suggest:
     get:
       description: "\nQuery params:\n    - q: Partial query string\n    - type: Resource type for suggestions\n\
-        \    - limit: Maximum suggestions (default: 10)\n\nReturns:\n    200: Search suggestions"
+        \    - limit: Maximum suggestions (default: 10)\n\nReturns:\n    200: Search suggestions (caller's\
+        \ tenant only)\n    403: Missing scope or tenant context"
       operationId: get_search_suggestions
       parameters: []
       responses: {}
@@ -16946,8 +16991,9 @@ paths:
     post:
       description: "belonging to the caller's tenant.\n\nRequest body:\n    {\n        \"event_type\"\
         : \"entity.created\",\n        \"payload\": {...},\n        \"organization_id\": 1\n    }\n\n\
-        Returns:\n    200: Event broadcasted\n    400: Invalid request\n    403: Tenant not found\n  \
-        \  404: organization_id not found in tenant"
+        Returns:\n    200: Event accepted; deliveries queued in the background\n    400: Invalid request\n\
+        \    403: Tenant not found\n    404: organization_id not found in tenant\n    429: Delivery queue\
+        \ full (Retry-After header set)"
       operationId: post_broadcast_event
       parameters: []
       responses: {}
@@ -17080,7 +17126,7 @@ paths:
   /api/v1/webhooks/notification-rules/{rule_id}/test:
     post:
       description: "\nReturns:\n    200: Test notification sent\n    400: Test failed\n    403: Tenant\
-        \ not found\n    404: Rule not found"
+        \ not found\n    404: Rule not found\n    429: Delivery queue full (Retry-After header set)"
       operationId: post_test_notification_rule
       parameters:
       - in: path
@@ -17160,7 +17206,7 @@ paths:
   /api/v1/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver:
     post:
       description: "\nReturns:\n    200: Redelivery initiated\n    403: Tenant not found\n    404: Webhook\
-        \ or delivery not found"
+        \ or delivery not found\n    429: Delivery queue full (Retry-After header set)"
       operationId: post_redeliver_webhook
       parameters:
       - in: path
@@ -17178,7 +17224,7 @@ paths:
   /api/v1/webhooks/{webhook_id}/test:
     post:
       description: "\nReturns:\n    200: Test sent successfully\n    400: Test failed\n    403: Tenant\
-        \ not found\n    404: Webhook not found"
+        \ not found\n    404: Webhook not found\n    429: Delivery queue full (Retry-After header set)"
       operationId: post_test_webhook
       parameters:
       - in: path

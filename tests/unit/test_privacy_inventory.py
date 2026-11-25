@@ -407,6 +407,7 @@ def world(private_db):
     )
     # A second portal user's assignment that must survive the erasure.
     seed_a.insert("portal_user_org_assignments")
+    seed_a.insert("portal_mfa_challenges")
     portal_rows = {
         (e.table, e.column): seed_a.insert(e.table, **{e.column: portal})
         for e in PORTAL_USER_INVENTORY
