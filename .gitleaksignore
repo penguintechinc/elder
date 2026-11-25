@@ -1,0 +1,10 @@
+# gitleaks baseline — reviewed false positives only (documentation placeholders).
+# Fingerprint format: <path>:<rule>:<line>. Used by `make audit` and ci.yml.
+# Add an entry only after confirming the match is not a real credential.
+docs/api/README.md:curl-auth-header:54
+docs/api/API.md:curl-auth-header:23
+docs/deployment/github-actions-k8s.md:generic-api-key:127
+docs/standards/ARCHITECTURE.md:curl-auth-header:188
+docs/standards/AUTHENTICATION.md:curl-auth-header:399
+docs/standards/SECURITY.md:curl-auth-header:81
+docs/standards/SECURITY.md:generic-api-key:85

@@ -7,7 +7,7 @@
         smoke-test smoke-test-beta seed-demo seed-mock-data seed-mock-data-api seed-cloud-discovery seed-demo-unified seed-k8s-geo-demo screenshots \
         lint format format-check \
         test-ui test-ui-headed test-ui-debug test-beta \
-        build docker-build docker-build-alpha docker-push docker-scan \
+        build docker-build docker-build-alpha docker-push docker-scan audit openapi-check release-check \
         db-migrate db-create-migration db-downgrade db-reset db-shell db-backup \
         deploy-alpha deploy-beta \
         helm-lint helm-template test-helm \
@@ -446,9 +446,26 @@ docker-push: ## Push all service images to ghcr.io (requires docker login)
 	done
 	@echo "$(GREEN)All images pushed$(RESET)"
 
-docker-scan: ## Scan filesystem for vulnerabilities with trivy
-	@docker run --rm -v $(PWD):/project \
-		aquasec/trivy:0.69.3 fs /project --severity HIGH,CRITICAL
+docker-scan: ## Scan filesystem for vulnerabilities with trivy (gating, HIGH/CRITICAL)
+	@bash scripts/audit.sh trivy
+
+audit: ## Run the CI security scanners locally (trivy, semgrep, gitleaks) — same script as ci.yml security job
+	@bash scripts/audit.sh
+
+# No spectral ruleset is configured for this repo (spectral:oas reports ~1.4k
+# errors on the partially-annotated spec), so the gate is regeneration drift only.
+openapi-check: test-db-up build-test-image ## Regenerate openapi/v4.yaml and fail if it drifted from the committed spec
+	@for i in $$(seq 1 30); do \
+		docker exec elder-test-postgres pg_isready -h 127.0.0.1 -U elder_test -d elder_test >/dev/null 2>&1 && break; \
+		test $$i -lt 30 || { echo "$(RED)test postgres never became ready$(RESET)"; exit 1; }; \
+		sleep 2; \
+	done
+	@$(MAKE) --no-print-directory openapi-spec
+	@git diff --exit-code -- openapi/ || { echo "$(RED)openapi/ is stale — run make openapi-spec and commit the result$(RESET)"; exit 1; }
+	@echo "$(GREEN)openapi/ is up to date$(RESET)"
+
+release-check: ## Verify Chart.yaml version/appVersion match .version and CHANGELOG.md has an entry
+	@bash scripts/release-check.sh
 
 # ── Database ───────────────────────────────────────────────────────────────
 db-migrate: ## Run Alembic migrations (upgrade head)

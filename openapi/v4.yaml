@@ -10332,8 +10332,9 @@ paths:
       description: "\nRequest body:\n    {\n        \"name\": \"AWS KMS - Production\",\n        \"provider_type\"\
         : \"aws_kms\",  // aws_kms, gcp_kms, infisical\n        \"config\": {\n            \"region\"\
         : \"us-east-1\",\n            \"access_key_id\": \"...\",\n            \"secret_access_key\":\
-        \ \"...\"\n        },\n        \"description\": \"Production AWS KMS provider\"  // optional\n\
-        \    }\n\nReturns:\n    201: Provider created\n    400: Invalid request"
+        \ \"...\"\n        },\n        \"description\": \"Production AWS KMS provider\",  // optional\n\
+        \        \"organization_id\": 1  // optional when the tenant has one org\n    }\n\nReturns:\n\
+        \    201: Provider created\n    400: Invalid request"
       operationId: post_create_key_provider
       parameters: []
       responses: {}
