@@ -1,4 +1,5 @@
 import express, { type Express } from "express";
+import rateLimit from "express-rate-limit";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,8 +59,15 @@ export function createApp(options: ServerOptions = {}): Express {
     }),
   );
 
+  const spaRateLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 300,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+  });
+
   // Express 5 requires named wildcard parameter syntax rather than bare '*'.
-  app.get("/{*splat}", (_req, res) => {
+  app.get("/{*splat}", spaRateLimiter, (_req, res) => {
     res.setHeader("Cache-Control", "no-cache");
     res.sendFile(join(distDir, "index.html"));
   });

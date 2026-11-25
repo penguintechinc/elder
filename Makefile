@@ -586,7 +586,7 @@ license-check-deps: ## Flag AGPL/GPL-incompatible OSS dependency licenses (Pytho
 		$(VENV)/bin/pip-licenses --python "$$vdir/bin/python" --allow-only="$(LICENSE_ALLOW)" --ignore-packages $(LICENSE_IGNORE_PKGS); \
 	done
 	@echo "$(BLUE)[3/3] license-checker — npm dependency licenses...$(RESET)"
-	@cd web && npx --yes license-checker@25.0.1 --production --onlyAllow "MIT;MIT-0;(MIT OR Apache-2.0);ISC;BSD;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;CC0-1.0;CC-BY-3.0;CC-BY-4.0;Unlicense;WTFPL;MPL-2.0;LGPL-2.1;LGPL-2.1+;LGPL-3.0;LGPL-3.0+;GPL-3.0;GPL-3.0+;AGPL-3.0;AGPL-3.0+;Python-2.0" --excludePackages "project-template-web@4.0.0"
+	@cd web && npx --yes license-checker@25.0.1 --production --onlyAllow "MIT;MIT-0;(MIT OR Apache-2.0);ISC;BSD;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;CC0-1.0;CC-BY-3.0;CC-BY-4.0;Unlicense;WTFPL;MPL-2.0;LGPL-2.1;LGPL-2.1+;LGPL-3.0;LGPL-3.0+;GPL-3.0;GPL-3.0+;AGPL-3.0;AGPL-3.0+;Python-2.0" --excludePackages "project-template-web@$$(node -p 'require("./package.json").version')"
 	@echo "$(GREEN)No AGPL/GPL-incompatible dependency licenses found$(RESET)"
 
 # ── Housekeeping ───────────────────────────────────────────────────────────

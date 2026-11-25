@@ -4,6 +4,15 @@ import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import Webhooks from "./Webhooks";
 import api from "@/lib/api";
 
+function hasExampleHostname(placeholder: string): boolean {
+  try {
+    const { hostname } = new URL(placeholder);
+    return hostname === "example.com" || hostname.endsWith(".example.com");
+  } catch {
+    return false;
+  }
+}
+
 // Mock AssigneePicker with buttons to trigger onChange — allows tests to verify filter wiring
 vi.mock("@/components/AssigneePicker", () => ({
   default: ({
@@ -222,7 +231,7 @@ describe("Webhooks admin page", () => {
       (i as HTMLInputElement).placeholder.includes("Production"),
     );
     const urlInput = inputs.find((i) =>
-      (i as HTMLInputElement).placeholder.includes("example.com"),
+      hasExampleHostname((i as HTMLInputElement).placeholder),
     );
     if (nameInput)
       fireEvent.change(nameInput, {
@@ -292,7 +301,7 @@ describe("Webhooks admin page", () => {
       (i as HTMLInputElement).placeholder.includes("Production"),
     );
     const urlInput = inputs.find((i) =>
-      (i as HTMLInputElement).placeholder.includes("example.com"),
+      hasExampleHostname((i as HTMLInputElement).placeholder),
     );
     if (nameInput)
       fireEvent.change(nameInput, { target: { value: "General webhook" } });
@@ -601,7 +610,7 @@ describe("Webhooks admin page", () => {
       (i as HTMLInputElement).placeholder.includes("Production"),
     );
     const urlInput = inputs.find((i) =>
-      (i as HTMLInputElement).placeholder.includes("example.com"),
+      hasExampleHostname((i as HTMLInputElement).placeholder),
     );
     if (nameInput)
       fireEvent.change(nameInput, {

@@ -1,6 +1,6 @@
 {
   "name": "project-template-web",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "Frontend web application",
   "type": "module",
   "scripts": {
@@ -17,7 +17,7 @@
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "format:check": "prettier --check .",
-    "license-check": "license-checker --production --onlyAllow \"MIT;ISC;BSD;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;CC0-1.0;CC-BY-3.0;CC-BY-4.0;Unlicense;WTFPL;MPL-2.0;LGPL-2.1;LGPL-2.1+;LGPL-3.0;LGPL-3.0+;GPL-3.0;GPL-3.0+;AGPL-3.0;AGPL-3.0+;Python-2.0\" --excludePackages \"project-template-web@4.0.0\""
+    "license-check": "license-checker --production --onlyAllow \"MIT;ISC;BSD;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;CC0-1.0;CC-BY-3.0;CC-BY-4.0;Unlicense;WTFPL;MPL-2.0;LGPL-2.1;LGPL-2.1+;LGPL-3.0;LGPL-3.0+;GPL-3.0;GPL-3.0+;AGPL-3.0;AGPL-3.0+;Python-2.0\" --excludePackages \"project-template-web@4.0.1\""
   },
   "dependencies": {
     "@carbon/icons-react": "11.92.0",
@@ -33,6 +33,7 @@
     "axios": "1.20.0",
     "clsx": "2.1.1",
     "express": "5.3.0",
+    "express-rate-limit": "8.7.5",
     "http-proxy-middleware": "4.2.2",
     "iconoir-react": "7.12.2",
     "lucide-react": "0.453.0",
