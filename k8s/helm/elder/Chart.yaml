@@ -2,8 +2,8 @@ apiVersion: v2
 name: elder
 description: Elder - Asset Discovery and Management Platform
 type: application
-version: 4.0.0
-appVersion: "4.0.0.1791597744"
+version: 4.0.1
+appVersion: "4.0.1.1795586915"
 maintainers:
   - name: Penguin Tech Inc
     email: support@penguintech.io

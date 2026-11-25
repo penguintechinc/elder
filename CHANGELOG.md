@@ -6,6 +6,42 @@ uses `vMajor.Minor.Patch` version tags (see `scripts/version/update-version.sh`)
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-11-25
+
+### Security
+- Hardened outbound HTTP requests with an SSRF guard blocking private, loopback,
+  and link-local targets.
+- Upgraded MFA secret derivation to a hardened cryptographic KDF.
+- Removed clear-text secret logging from backend and service error paths.
+- Added `express-rate-limit` to the Express SPA fallback file-system routes
+  (`web/server.ts` and `web/src/server.js`) to mitigate file-system DoS.
+- Replaced substring URL checks with strict `URL` hostname validation in
+  webhook tests (`web/src/pages/Webhooks.test.tsx`).
+
+### Fixed
+- Fixed `svc-runworker` version reporting so worker health and status endpoints
+  report the built release version accurately.
+
+## [4.0.0] - 2026-11-24
+
+### Added
+- **6-image microservice architecture** splitting Elder into dedicated hub API,
+  Express WebUI, scheduler, runworker, and supporting service containers.
+- **Remote Workers Fleet** management for enrolling, monitoring, and routing
+  jobs to distributed workers.
+- **CodeRuns sandboxes** for isolated code execution workflows.
+- **Express WebUI** static + API proxy server (`web/server.ts`) replacing
+  legacy serving paths.
+- **Enterprise Google Authenticator MFA** with configurable enrollment grace
+  periods.
+- **DigitalOcean integration** for cloud asset discovery and inventory sync.
+- **Vulnerabilities management enhancements** including ownership assignment,
+  adjusted risk scoring, and linked remediation issues.
+- **IPAM in Networking** for subnet, prefix, and IP address allocation tracking.
+- **Service Endpoints in Services** for cataloging and linking exposed endpoints.
+- **AI Code Mode & UTCP servers** integration for agentic workflows.
+- **Diagram previews** for visual topology and architecture inspection.
+
 ### Security
 - SSO IdP configuration CRUD (`/api/v1/sso/idp*`) now enforces tenant
   ownership (regression: idp-config-cross-tenant). Previously any tenant

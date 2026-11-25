@@ -3,6 +3,7 @@
  */
 
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -251,9 +252,16 @@ app.use('/api/v1', apiRouter);
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
+  const spaRateLimiter = rateLimit({
+    windowMs: 60_000,
+    limit: 300,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false
+  });
+
   app.use(express.static('dist'));
 
-  app.get('*', (req, res) => {
+  app.get('*', spaRateLimiter, (req, res) => {
     res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
   });
 }
