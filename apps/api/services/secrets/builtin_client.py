@@ -256,7 +256,7 @@ class BuiltinSecretsClient(SecretProviderClient):
             # Retrieve created secret
             row = self.db.builtin_secrets[secret_id]
 
-            logger.info(f"Created secret '{path}' (ID: {secret_id})")
+            logger.info("Created built-in secret record")
 
             return SecretMetadata(
                 name=row.name,
@@ -279,7 +279,9 @@ class BuiltinSecretsClient(SecretProviderClient):
         except SecretAlreadyExistsException:
             raise
         except Exception as e:
-            logger.error(f"Failed to create secret '{path}': {str(e)}")
+            logger.error(
+                "Failed to create built-in secret record: %s", type(e).__name__
+            )
             raise SecretProviderException(f"Failed to create secret: {str(e)}")
 
     def update_secret(self, path: str, value: str) -> SecretMetadata:

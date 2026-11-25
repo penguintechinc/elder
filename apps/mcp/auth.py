@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import base64
-import hashlib
+import hmac
 import json
 import os
+import secrets
 import time
 from collections.abc import Iterable, Mapping
 from contextvars import ContextVar, Token
@@ -13,6 +14,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+
+_FINGERPRINT_KEY: bytes = secrets.token_bytes(32)
 
 
 class ElderAuthError(Exception):
@@ -71,13 +74,15 @@ class CallerCredentials:
     __str__ = __repr__
 
     def credential_fingerprint(self) -> str:
-        """Return a non-reversible SHA-256 digest identifying the caller credential."""
+        """Return a non-reversible keyed HMAC-SHA256 digest identifying the caller credential."""
         material = (
             f"bearer:{self.access_token}"
             if self.access_token
             else f"apikey:{self.api_key or ''}"
         )
-        return hashlib.sha256(material.encode("utf-8")).hexdigest()
+        return hmac.new(
+            _FINGERPRINT_KEY, material.encode("utf-8"), "sha256"
+        ).hexdigest()
 
     def propagation_headers(self) -> dict[str, str]:
         """Return safe correlation and trace propagation headers for ``hub-api``."""

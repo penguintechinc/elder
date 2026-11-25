@@ -102,7 +102,7 @@ def get_secret(secret_id):
     except SecretAccessDeniedException as e:
         return log_error_and_respond(logger, e, "Failed to process request", 403)
     except Exception as e:
-        logger.error(f"Error retrieving secret {secret_id}: {str(e)}")
+        logger.error("Error retrieving secret record: %s", type(e).__name__)
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 
@@ -143,7 +143,7 @@ def unmask_secret(secret_id):
     except SecretAccessDeniedException as e:
         return log_error_and_respond(logger, e, "Failed to process request", 403)
     except Exception as e:
-        logger.error(f"Error unmasking secret {secret_id}: {str(e)}")
+        logger.error("Error unmasking secret record: %s", type(e).__name__)
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 
@@ -222,7 +222,7 @@ async def create_secret():
             404,
         )
     except Exception as e:
-        logger.error(f"Error creating secret: {str(e)}")
+        logger.error("Error creating secret record: %s", type(e).__name__)
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 
@@ -266,7 +266,7 @@ async def update_secret(secret_id):
     except ValueError as e:
         return log_error_and_respond(logger, e, "Failed to process request", 404)
     except Exception as e:
-        logger.error(f"Error updating secret {secret_id}: {str(e)}")
+        logger.error("Error updating secret record: %s", type(e).__name__)
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 
@@ -292,7 +292,7 @@ def delete_secret(secret_id):
     except ValueError as e:
         return log_error_and_respond(logger, e, "Failed to process request", 404)
     except Exception as e:
-        logger.error(f"Error deleting secret {secret_id}: {str(e)}")
+        logger.error("Error deleting secret record: %s", type(e).__name__)
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 
@@ -325,7 +325,7 @@ def sync_secret(secret_id):
     except SecretAccessDeniedException as e:
         return log_error_and_respond(logger, e, "Failed to process request", 403)
     except Exception as e:
-        logger.error(f"Error syncing secret {secret_id}: {str(e)}")
+        logger.error("Error syncing secret record: %s", type(e).__name__)
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 
@@ -364,7 +364,9 @@ def get_secret_access_log(secret_id):
     except ValueError as e:
         return log_error_and_respond(logger, e, "Failed to process request", 404)
     except Exception as e:
-        logger.error(f"Error retrieving access log for secret {secret_id}: {str(e)}")
+        logger.error(
+            "Error retrieving access log for secret record: %s", type(e).__name__
+        )
         return (
             jsonify({"error": "Failed to retrieve access log", "message": str(e)}),
             500,

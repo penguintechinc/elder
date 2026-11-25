@@ -1160,13 +1160,10 @@ class DiscoveryService:
         # Warn on non-canonical dependency types but still persist them
         if dep_type not in CANONICAL_EDGE_TYPES:
             logger.warning(
-                "Non-canonical dependency_type %r for edge %s(%s)->"
-                "%s(%s); persisting anyway",
+                "Non-canonical dependency_type %r for edge %s->%s; persisting anyway",
                 dep_type,
                 source_type,
-                source_id,
                 target_type,
-                target_id,
             )
 
         try:

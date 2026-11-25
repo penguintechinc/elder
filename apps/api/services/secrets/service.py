@@ -180,7 +180,7 @@ class SecretsService:
             }
 
         except Exception as e:
-            logger.error(f"Error retrieving secret {secret_id}: {str(e)}")
+            logger.error("Error retrieving secret record: %s", type(e).__name__)
             raise
 
     def list_secrets(
@@ -301,7 +301,7 @@ class SecretsService:
                 masked=True,
             )
 
-        logger.info(f"Created secret {secret_id} (name: {name})")
+        logger.info("Created secret record")
 
         secret = self._secret_row(secret_id)
         return {
@@ -363,7 +363,7 @@ class SecretsService:
                     masked=True,
                 )
 
-            logger.info(f"Updated metadata for secret {secret_id}")
+            logger.info("Updated secret record metadata")
 
         return self.get_secret(secret_id, unmask=False)
 
@@ -385,12 +385,7 @@ class SecretsService:
         if not secret:
             raise TenantResourceNotFound(f"Secret {secret_id} not found")
 
-        logger.info(
-            "Deleting secret %s (organization %s) by identity %s",
-            secret_id,
-            secret.organization_id,
-            identity_id,
-        )
+        logger.info("Deleting secret record by identity %s", identity_id)
 
         # The access log references the secret (FK, no cascade), so the
         # registration's log rows go with it; the deletion is recorded in the
@@ -403,7 +398,7 @@ class SecretsService:
         ).delete()
         self.db.commit()
 
-        logger.info(f"Deleted secret {secret_id}")
+        logger.info("Deleted secret record")
         return True
 
     def sync_secret(
@@ -436,12 +431,12 @@ class SecretsService:
                 is_kv=secret_value.is_kv, last_synced_at=datetime.now(UTC)
             )
 
-            logger.info(f"Synced secret {secret_id} from provider")
+            logger.info("Synced secret record from provider")
 
             return self.get_secret(secret_id, unmask=False, identity_id=identity_id)
 
         except Exception as e:
-            logger.error(f"Error syncing secret {secret_id}: {str(e)}")
+            logger.error("Error syncing secret record: %s", type(e).__name__)
             raise
 
     def get_secret_access_log(
