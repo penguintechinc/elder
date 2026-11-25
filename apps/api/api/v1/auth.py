@@ -13,6 +13,7 @@ from werkzeug.security import generate_password_hash
 
 from apps.api.auth import generate_token, login_required, verify_password
 from apps.api.auth.jwt_handler import (
+    IDENTITY_REFRESH_TOKEN_TYPES,
     carried_auth_time,
     interactive_auth_time,
     verify_token,
@@ -500,7 +501,7 @@ async def refresh_token_endpoint():
         return ApiResponse.bad_request("Refresh token required")
 
     # Verify refresh token
-    payload = verify_token(refresh_token_str)
+    payload = verify_token(refresh_token_str, IDENTITY_REFRESH_TOKEN_TYPES)
 
     if not payload or payload.get("type") != "refresh":
         return ApiResponse.unauthorized("Invalid refresh token")

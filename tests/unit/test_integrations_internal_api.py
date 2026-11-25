@@ -160,6 +160,7 @@ class TestIntegrationsInternalAuth:
             app,
             {
                 "sub": str(normal_id),
+                "type": "access",
                 "tenant": str(tid),
                 "scope": ["integrations:sync", "discovery:read"],
                 "roles": ["viewer"],
@@ -169,6 +170,7 @@ class TestIntegrationsInternalAuth:
             app,
             {
                 "sub": str(admin_id),
+                "type": "access",
                 "tenant": str(tid),
                 "scope": ["integrations:sync", "discovery:admin"],
                 "roles": ["admin"],

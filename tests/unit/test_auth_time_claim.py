@@ -21,6 +21,7 @@ import pytest
 
 from apps.api.api.v1 import portal_auth, privacy
 from apps.api.auth.jwt_handler import (
+    IDENTITY_REFRESH_TOKEN_TYPES,
     carried_auth_time,
     generate_token,
     interactive_auth_time,
@@ -98,7 +99,8 @@ class TestIdentityTokens:
                 generate_token(_identity(), "access", auth_time=123456)
             )
             refresh = verify_token(
-                generate_token(_identity(), "refresh", auth_time=123456)
+                generate_token(_identity(), "refresh", auth_time=123456),
+                IDENTITY_REFRESH_TOKEN_TYPES,
             )
             bare = verify_token(generate_token(_identity(), "access"))
         assert stamped["auth_time"] == 123456
@@ -236,7 +238,9 @@ class TestEraseRecencyEndToEnd:
             refreshed = generate_token(
                 _identity(),
                 "access",
-                auth_time=carried_auth_time(verify_token(refresh)),
+                auth_time=carried_auth_time(
+                    verify_token(refresh, IDENTITY_REFRESH_TOKEN_TYPES)
+                ),
             )
             assert time.time() - verify_token(refreshed)["iat"] < 60  # looks "fresh"
             assert await self._erase_with(app, refreshed) == 403

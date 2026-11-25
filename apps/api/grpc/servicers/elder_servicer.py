@@ -9,6 +9,7 @@ For now, all methods return UNIMPLEMENTED status until proper penguin-dal integr
 
 # flake8: noqa: E501
 
+import os
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Optional
 
@@ -125,6 +126,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             "sub": str(identity.id),
             "username": identity.username,
             "type": token_type,
+            "principal_kind": "identity",
             "iat": now,
             "exp": now + expires_delta,
         }
@@ -132,12 +134,35 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
         return token
 
-    def _verify_jwt_token(self, token: str) -> dict | None:
-        """Verify and decode JWT token."""
+    def _verify_jwt_token(
+        self, token: str, expected_type: str = "access"
+    ) -> dict | None:
+        """Verify and decode an identity JWT of exactly ``expected_type``.
+
+        Fails closed: tokens of any other type (portal, refresh, service,
+        coderun, unknown or missing) never resolve to an identity here.
+        """
         try:
+            # aud is checked manually below (validate only if present),
+            # matching jwt_handler.verify_token.
             payload = jwt.decode(
-                token, self.jwt_secret, algorithms=[self.jwt_algorithm]
+                token,
+                self.jwt_secret,
+                algorithms=[self.jwt_algorithm],
+                options={"verify_aud": False},
             )
+            if payload.get("type") != expected_type:
+                logger.warning("Rejected token: type not accepted in this context")
+                return None
+            if payload.get("principal_kind", "identity") != "identity":
+                logger.warning("Rejected token: ambiguous principal kind")
+                return None
+            for claim, env_var in (("iss", "JWT_ISSUER"), ("aud", "JWT_AUDIENCE")):
+                if claim in payload and payload[claim] != os.getenv(
+                    env_var, "elder-api"
+                ):
+                    logger.warning(f"Rejected token: {claim} mismatch")
+                    return None
             return payload
         except jwt.ExpiredSignatureError:
             logger.warning("Token expired")
@@ -222,7 +247,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 return auth_pb2.RefreshTokenResponse()
 
             # Verify refresh token
-            payload = self._verify_jwt_token(request.refresh_token)
+            payload = self._verify_jwt_token(
+                request.refresh_token, expected_type="refresh"
+            )
             if not payload or payload.get("type") != "refresh":
                 context.set_code(grpc.StatusCode.UNAUTHENTICATED)
                 context.set_details("Invalid refresh token")

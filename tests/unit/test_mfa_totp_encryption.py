@@ -1432,10 +1432,10 @@ class TestMigration056:
     """Alembic revision 056: seal, hash, idempotency, downgrade, key handling."""
 
     def test_revision_chain(self) -> None:
-        """056 sits on top of both release heads, 053 and 054."""
+        """056 sits directly on top of the release head, 054."""
         module = _load_migration()
         assert module.revision == "056"
-        assert module.down_revision == ("053", "054")
+        assert module.down_revision == "054"
 
     def test_upgrade_seals_and_hashes_then_is_idempotent(
         self, legacy_engine: sa.Engine, monkeypatch: pytest.MonkeyPatch

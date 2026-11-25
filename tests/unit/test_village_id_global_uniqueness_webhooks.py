@@ -106,6 +106,7 @@ def _make_jwt(app, tenant_id: int, identity_id: int, scopes: list[str]) -> str:
     now = datetime.now(UTC)
     payload = {
         "sub": str(identity_id),
+        "type": "access",
         "identity_id": identity_id,
         "tenant": str(tenant_id),
         "iat": now,

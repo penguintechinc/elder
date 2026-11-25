@@ -67,6 +67,7 @@ class TestGraphDomainNodes:
         now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
+            "type": "access",
             "iat": now,
             "exp": now + timedelta(hours=1),
             "scope": scopes,

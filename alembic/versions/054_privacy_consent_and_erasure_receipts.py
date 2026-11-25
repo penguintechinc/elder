@@ -7,12 +7,12 @@ needs a PII-free receipt of what was erased/retained and why. Portal users
 and its identity_id becomes nullable. Must stay in sync with
 apps/api/models/privacy.py.
 
-MERGE NOTE: down_revision is "055" (scanner claim columns), the release
-head when this merged. Any migration merged after this one must re-point
-its down_revision at "054" so alembic keeps a single head.
+MERGE NOTE: 053 (webhook delivery) and 055 (scanner claims) both branch
+from 052, so this revision depends on BOTH and is the single alembic head.
+Any later migration must use down_revision = "054".
 
 Revision ID: 054
-Revises: 055
+Revises: 053, 055
 Create Date: 2026-11-24
 """
 
@@ -23,7 +23,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "054"
-down_revision = "055"
+down_revision = ("053", "055")
 branch_labels = None
 depends_on = None
 
