@@ -5,6 +5,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -17,7 +18,6 @@ from apps.runworker.k8s_runner import K8sRunner, RunExecutionResult, RunJobReque
 from apps.runworker.main import (
     RunWorkerConfig,
     RunWorkerService,
-    _mint_service_worker_jwt,
     _parse_str_tuple,
     _request_from_payload,
 )
@@ -73,6 +73,9 @@ def _cfg(**kw: Any) -> RunWorkerConfig:
     """Build a config pointing at an invalid host with a stable worker id."""
     base: dict[str, Any] = {
         "elder_api_url": "http://hub.invalid",
+        "elder_internal_token": fake_secret("worker", "token"),
+        "runtime_class_name": "kata",
+        "pod_runtime_class": "kata",
         "worker_id": "w-1",
         "health_file": "/nonexistent-dir/x",
     }
@@ -116,36 +119,17 @@ def _svc(
 class TestJwtAndConfig:
     """JWT minting and environment parsing."""
 
-    def test_b64url_unpadded(self) -> None:
-        """Encoding strips padding and uses the URL-safe alphabet."""
-        assert mod._b64url(b"\xfb\xff") == "-_8"
-
     def test_default_health_file(self) -> None:
         """The default liveness file lives in the temp dir."""
         assert mod._default_health_file().endswith("runworker.healthy")
 
-    def test_mint_jwt_is_verifiable(self) -> None:
-        """The token has valid HS256 signature and expected claims."""
-        secret = fake_secret("jwt", "key")
-        token = _mint_service_worker_jwt(
-            secret, issuer="iss", audience="aud", ttl_seconds=60
-        )
-        head, payload, sig = token.split(".")
-        expected = hmac.new(
-            secret.encode(), f"{head}.{payload}".encode(), hashlib.sha256
-        ).digest()
-        assert sig == mod._b64url(expected)
-        claims = json.loads(base64.urlsafe_b64decode(payload + "=="))
-        assert claims["iss"] == "iss" and claims["aud"] == "aud"
-        assert claims["exp"] - claims["iat"] == 60
-        assert claims["type"] == "service_worker" and claims["tenant"] == "system"
-
     def test_from_env_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Without env vars sensible defaults apply."""
         monkeypatch.setattr(mod.socket, "gethostname", lambda: "host-a")
+        monkeypatch.setenv("ELDER_INTERNAL_TOKEN", fake_secret("internal"))
         cfg = RunWorkerConfig.from_env()
         assert cfg.elder_api_url == "http://hub-api:5000"
-        assert cfg.worker_id == "host-a" and cfg.runner_backend == "auto"
+        assert cfg.worker_id == "host-a" and cfg.runner_backend == "k8s_job"
         assert cfg.s3_fetch_mode == "worker" and cfg.poll_interval_seconds == 3.0
         assert cfg.max_concurrent == 5 and cfg.heartbeat_interval_seconds == 30.0
         assert cfg.log_flush_interval_seconds == mod.DEFAULT_LOG_FLUSH_INTERVAL_SECONDS
@@ -156,8 +140,8 @@ class TestJwtAndConfig:
         """Explicit env values are honoured and clamped to safe minimums."""
         token = fake_secret("internal")
         env = {
-            "ELDER_API_URL": "http://api.invalid/", "ELDER_INTERNAL_TOKEN": token, "SECRET_KEY": "s",
-            "JWT_ISSUER": "i", "JWT_AUDIENCE": "a", "RUNS_EXECUTION_NAMESPACE": "ns",
+            "ELDER_API_URL": "http://api.invalid/", "ELDER_INTERNAL_TOKEN": token,
+            "RUNS_EXECUTION_NAMESPACE": "ns",
             "RUNS_WORKER_CLUSTER": " c1 ", "RUNS_RUNTIME_CLASS_NAME": " gvisor ",
             "RUNS_POLL_INTERVAL_SECONDS": "0.1", "RUNS_MAX_CONCURRENT": "0", "POD_NAME": "pod-9",
             "RUNS_HEALTH_FILE": "/tmp/hf", "RUNS_HTTP_TIMEOUT_SECONDS": "1",
@@ -172,7 +156,7 @@ class TestJwtAndConfig:
             cfg.elder_api_url == "http://api.invalid"
             and cfg.elder_internal_token == token
         )
-        assert cfg.jwt_secret_key == "s" and cfg.worker_cluster == "c1"
+        assert cfg.worker_cluster == "c1"
         assert cfg.runtime_class_name == "gvisor" and cfg.poll_interval_seconds == 0.5
         assert cfg.max_concurrent == 1 and cfg.worker_id == "pod-9"
         assert cfg.http_timeout_seconds == 5.0 and cfg.s3_fetch_mode == "init_container"
@@ -181,17 +165,49 @@ class TestJwtAndConfig:
         assert token not in repr(cfg)
 
     def test_from_env_invalid_choices(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Unknown modes fall back to defaults and bad heartbeat values are ignored."""
+        """Unknown fetch modes fall back; bad heartbeat and gateway values are handled."""
+        monkeypatch.setenv("ELDER_INTERNAL_TOKEN", fake_secret("internal"))
         monkeypatch.setenv("RUNS_S3_FETCH_MODE", "weird")
-        monkeypatch.setenv("RUNS_RUNNER_BACKEND", "weird")
         monkeypatch.setenv("RUNS_HEARTBEAT_INTERVAL_SECONDS", "abc")
-        monkeypatch.setenv("JWT_SECRET_KEY", "k")
         monkeypatch.setenv("RUNS_WORKER_ID", "wid")
         monkeypatch.setenv("APP_VERSION", "9")
         cfg = RunWorkerConfig.from_env()
-        assert (cfg.s3_fetch_mode, cfg.runner_backend) == ("worker", "auto")
+        assert (cfg.s3_fetch_mode, cfg.runner_backend) == ("worker", "k8s_job")
         assert cfg.heartbeat_interval_seconds == 30.0
         assert cfg.worker_id == "wid" and cfg.worker_version == "9"
+
+    def test_from_env_unknown_backend_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An unsupported runner backend fails loudly."""
+        monkeypatch.setenv("ELDER_INTERNAL_TOKEN", fake_secret("internal"))
+        monkeypatch.setenv("RUNS_RUNNER_BACKEND", "weird")
+        with pytest.raises(mod.WorkerConfigError, match="RUNS_RUNNER_BACKEND"):
+            RunWorkerConfig.from_env()
+
+    def test_from_env_requires_worker_token(self) -> None:
+        """A missing worker token refuses to start."""
+        with pytest.raises(mod.WorkerConfigError, match="ELDER_INTERNAL_TOKEN"):
+            RunWorkerConfig.from_env()
+
+    @pytest.mark.parametrize("key", ["JWT_SECRET_KEY", "SECRET_KEY"])
+    def test_from_env_rejects_signing_keys(
+        self, monkeypatch: pytest.MonkeyPatch, key: str
+    ) -> None:
+        """Platform signing material in the environment refuses to start."""
+        monkeypatch.setenv("ELDER_INTERNAL_TOKEN", fake_secret("internal"))
+        monkeypatch.setenv(key, "k")
+        with pytest.raises(mod.WorkerConfigError, match=key):
+            RunWorkerConfig.from_env()
+
+    def test_from_env_gateway_port_base(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Gateway port base parses as an int and rejects junk."""
+        monkeypatch.setenv("ELDER_INTERNAL_TOKEN", fake_secret("internal"))
+        monkeypatch.setenv("RUNS_GATEWAY_PORT_BASE", "9100")
+        assert RunWorkerConfig.from_env().gateway_port_base == 9100
+        monkeypatch.setenv("RUNS_GATEWAY_PORT_BASE", "x")
+        with pytest.raises(mod.WorkerConfigError, match="RUNS_GATEWAY_PORT_BASE"):
+            RunWorkerConfig.from_env()
 
 
 class TestPayloadParsing:
@@ -297,15 +313,14 @@ class TestServiceBasics:
 
     @pytest.mark.asyncio
     async def test_auth_headers(self) -> None:
-        """Internal token wins, JWT is minted from the secret, otherwise only Accept."""
+        """The worker token is sent as bearer plus internal header; none refuses."""
         tok = fake_secret("internal")
         h = _svc(_cfg(elder_internal_token=tok))[0]._auth_headers()
         assert (
             h["Authorization"] == f"Bearer {tok}" and h["X-Elder-Internal-Token"] == tok
         )
-        h = _svc(_cfg(jwt_secret_key="k"))[0]._auth_headers()
-        assert h["Authorization"].count(".") == 2 and "X-Elder-Internal-Token" not in h
-        assert _svc()[0]._auth_headers() == {"Accept": "application/json"}
+        with pytest.raises(mod.WorkerConfigError, match="ELDER_INTERNAL_TOKEN"):
+            _svc(_cfg(elder_internal_token=""))[0]._auth_headers()
 
     @pytest.mark.asyncio
     async def test_touch_heartbeat(self, tmp_path: Path) -> None:
@@ -639,6 +654,19 @@ class TestRunForever:
         await asyncio.wait_for(svc.run_forever(), timeout=10)
         assert svc._client.is_closed
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason="bug: run_forever startup log reads config.jwt_secret_key, "
+        "which RunWorkerConfig no longer defines, when no worker token is set",
+    )
+    @pytest.mark.asyncio
+    async def test_startup_without_token_does_not_crash(self) -> None:
+        """Starting with an empty token should reach the loop, not raise AttributeError."""
+        svc, _ = _svc(_cfg(elder_internal_token="", poll_interval_seconds=0.01))
+        svc.send_heartbeat = AsyncMock(return_value=None)  # type: ignore[method-assign]
+        svc.poll_once = AsyncMock(side_effect=lambda: svc.request_stop() or 0)  # type: ignore[method-assign]
+        await asyncio.wait_for(svc.run_forever(), timeout=10)
+
 
 class TestEntrypoint:
     """The module-level main()."""
@@ -650,6 +678,8 @@ class TestEntrypoint:
         self, monkeypatch: pytest.MonkeyPatch, level: str | None, expected: int
     ) -> None:
         """main() sets the log level, builds the service and runs the loop."""
+        monkeypatch.setenv("ELDER_INTERNAL_TOKEN", fake_secret("internal"))
+        monkeypatch.setattr(mod, "harden_worker_process", MagicMock())
         if level is not None:
             monkeypatch.setenv("LOG_LEVEL", level)
         else:
@@ -664,6 +694,7 @@ class TestEntrypoint:
             def __init__(self, config: RunWorkerConfig) -> None:
                 """Record the config."""
                 built.append(config)
+                self.backend = "k8s_job"
 
             async def run_forever(self) -> None:
                 """No-op loop."""
@@ -680,11 +711,61 @@ class TestEntrypoint:
         mod.main()
         assert basic.call_args.kwargs["level"] == expected
         assert built and ran == [True]
+        assert (
+            built[0].elder_internal_token and "ELDER_INTERNAL_TOKEN" not in os.environ
+        )
+
+    @pytest.mark.parametrize(
+        ("backend", "raises"), [("k8s_job", False), ("sandbox", True)]
+    )
+    def test_main_hardening_failure_policy(
+        self, monkeypatch: pytest.MonkeyPatch, backend: str, raises: bool
+    ) -> None:
+        """Unavailable process hardening is tolerated only for the k8s_job backend."""
+        monkeypatch.setenv("ELDER_INTERNAL_TOKEN", fake_secret("internal"))
+        monkeypatch.setattr(mod.logging, "basicConfig", MagicMock())
+
+        class FakeService:
+            """Service stand-in with a configurable backend."""
+
+            def __init__(self, config: RunWorkerConfig) -> None:
+                """Record the backend."""
+                self.backend = backend
+
+            async def run_forever(self) -> None:
+                """No-op loop."""
+
+        def refuse() -> None:
+            """Simulate hardening being unavailable."""
+            raise mod.SandboxIsolationError("no prctl")
+
+        ran: list[bool] = []
+
+        def fake_run(coro: Any) -> None:
+            """Close the coroutine instead of running a loop."""
+            ran.append(True)
+            coro.close()
+
+        monkeypatch.setattr(mod, "RunWorkerService", FakeService)
+        monkeypatch.setattr(mod, "harden_worker_process", refuse)
+        monkeypatch.setattr(mod.asyncio, "run", fake_run)
+        if raises:
+            with pytest.raises(mod.SandboxIsolationError):
+                mod.main()
+            assert ran == []
+        else:
+            mod.main()
+            assert ran == [True]
 
     def test_dunder_main_invokes_main(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Executing the module as a script calls main() once."""
         import runpy
 
+        from apps.runworker import sandbox_runner
+
+        monkeypatch.setenv("ELDER_INTERNAL_TOKEN", fake_secret("internal"))
+        monkeypatch.setenv("RUNS_RUNTIME_CLASS_NAME", "kata")
+        monkeypatch.setattr(sandbox_runner, "harden_worker_process", MagicMock())
         ran: list[bool] = []
 
         def fake_run(coro: Any) -> None:

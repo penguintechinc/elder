@@ -5,12 +5,12 @@ import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import requests
 from redis.exceptions import ResponseError
 
 from shared.alerting import alertmanager as am
 from shared.jobbus import JobBus, JobEnvelope, ReclamedMessage
 from shared.webhooks import issue_webhooks as iw
+from shared.webhooks.delivery import DeliveryResult
 
 
 # --------------------------------------------------------------------------- alertmanager
@@ -152,24 +152,41 @@ async def test_issue_webhooks_delivery_outcomes():
         _cfg({}, 4),
         _cfg(None, 5),
     ]
-    resp_ok = types.SimpleNamespace(status_code=204, text="")
-    resp_bad = types.SimpleNamespace(status_code=500, text="x" * 600)
+    ok = DeliveryResult(
+        success=True,
+        attempts=1,
+        outcome="success",
+        idempotency_key="k1",
+        status_code=204,
+    )
+    bad = DeliveryResult(
+        success=False,
+        attempts=3,
+        outcome="http_error",
+        idempotency_key="k2",
+        status_code=500,
+        error="HTTP 500",
+        response_excerpt="x" * 600,
+    )
     with patch.object(
-        iw.requests,
-        "post",
-        side_effect=[resp_ok, resp_bad, requests.exceptions.ConnectionError("down")],
-    ) as post:
+        iw._delivery,
+        "deliver",
+        new=AsyncMock(side_effect=[ok, bad, ConnectionError("down")]),
+    ) as deliver:
         out = await iw.send_issue_created_webhooks(
             _db(rows), 7, "Title", "security", 1, 9, web_url_base="http://web"
         )
     assert [r["config_id"] for r in out] == [1, 2, 3]
     assert out[0]["success"] is True and out[0]["response"] is None
+    assert out[0]["status_code"] == 204 and out[0]["target_host"] == "ok"
     assert out[1]["success"] is False and len(out[1]["response"]) == 500
-    assert out[2]["error"] == "down"
-    first = post.call_args_list[0]
-    assert first.kwargs["json"]["issue"]["url"] == "http://web/issues/7"
-    assert first.kwargs["json"]["issue"]["is_incident"] is True
-    assert first.kwargs["headers"]["X-A"] == "1" and first.kwargs["timeout"] == 3
+    assert out[1]["attempts"] == 3 and out[1]["error"] == "HTTP 500"
+    assert out[2]["success"] is False and out[2]["error"] == "ConnectionError: down"
+    first = deliver.await_args_list[0].args[0]
+    body = json.loads(first.body)
+    assert body["issue"]["url"] == "http://web/issues/7"
+    assert body["issue"]["is_incident"] is True and first.kind == "issue_created"
+    assert first.headers["X-A"] == "1" and first.url == "http://ok"
 
 
 def test_webhooks_package_exports_sender():
@@ -181,8 +198,15 @@ def test_webhooks_package_exports_sender():
 
 # --------------------------------------------------------------------------- jobbus
 def _bus(**kw):
-    """Return a JobBus wired to an AsyncMock Redis client."""
-    return JobBus(AsyncMock(), **kw)
+    """Return a JobBus wired to an AsyncMock Redis client with a MULTI/EXEC pipeline double."""
+    bus = JobBus(AsyncMock(), **kw)
+    pipe = MagicMock()
+    pipe.__aenter__ = AsyncMock(return_value=pipe)
+    pipe.__aexit__ = AsyncMock(return_value=False)
+    pipe.execute = AsyncMock(return_value=[])
+    bus.redis.pipeline = MagicMock(return_value=pipe)
+    bus.pipe = pipe
+    return bus
 
 
 def test_envelope_roundtrip_and_trace_context():
@@ -297,10 +321,11 @@ async def test_reclaim_stale_routes_and_returns():
     out = await bus.reclaim_stale("g", "c")
     assert len(out) == 1 and isinstance(out[0], ReclamedMessage)
     assert out[0].msg_id == "1-0" and out[0].delivery_count == 1
-    dead_key, dead = bus.redis.xadd.call_args.args
+    dead_key, dead = bus.pipe.xadd.call_args.args
     assert dead_key == "elder:jobs:g:dead"
     assert "max_deliveries_exceeded (3)" in json.loads(dead["data"])["dlq_reason"]
-    bus.redis.xack.assert_called_once()
+    bus.pipe.xack.assert_called_once()
+    bus.pipe.execute.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -347,4 +372,4 @@ async def test_reclaim_stale_swapped_payload_encodings():
     bus.redis.incr.side_effect = [1, 3]
     out = await bus.reclaim_stale("g", "c")
     assert [m.msg_id for m in out] == ["1-0"]
-    bus.redis.xadd.assert_called_once()
+    bus.pipe.xadd.assert_called_once()

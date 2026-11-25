@@ -87,7 +87,7 @@ class TestManifests:
         assert cm["data"]["input.json"] == '{"a":1}'
         assert "elder.py" in cm["data"]
         labels = cm["metadata"]["labels"]
-        assert labels["elder.penguintech.io/elder-api-access"] == "true"
+        assert labels[mod.GATEWAY_ACCESS_LABEL] == "true"
         assert labels["elder.penguintech.io/execution-id"] == "exec-abc-123"
         assert cm["metadata"]["name"] == "elder-run-cm-exec-abc-123"
 
