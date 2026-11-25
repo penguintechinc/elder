@@ -244,18 +244,21 @@ class TestVerifyTokenMachineTypes:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "claims, ok",
+        "make_claims, ok",
         [
-            (_worker_claims(), True),
-            (_worker_claims(scope=["secrets:admin"]), False),
-            (_coderun_claims(), True),
-            (_coderun_claims(function_id=-1), False),
+            # Factories, not dicts: claims built at collection time carry an
+            # exp (now+120s for coderun) that has already lapsed by the time a
+            # long full-suite run reaches this test.
+            (lambda: _worker_claims(), True),
+            (lambda: _worker_claims(scope=["secrets:admin"]), False),
+            (lambda: _coderun_claims(), True),
+            (lambda: _coderun_claims(function_id=-1), False),
         ],
     )
-    async def test_worker_and_coderun_dispatch(self, app, claims, ok):
+    async def test_worker_and_coderun_dispatch(self, app, make_claims, ok):
         """verify_token routes worker/coderun tokens through their validators."""
         async with app.app_context():
-            out = jh.verify_token(_sign(app, claims))
+            out = jh.verify_token(_sign(app, make_claims()))
         assert (out is not None) is ok
 
     @pytest.mark.asyncio
