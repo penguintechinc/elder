@@ -1,0 +1,712 @@
+# WaddleBot Connector Manifest for IceCharts
+# This defines all triggers, actions, and transforms available from WaddleBot
+connector:
+  id: waddlebot
+  name: WaddleBot
+  description: Chat bot platform for Twitch, Discord, Slack, and Kick
+  icon: "waddlebot-logo"
+  color: "#6366F1"
+  version: "1.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: api_key
+        header: X-API-Key
+        env_var: WADDLEBOT_API_KEY
+      - type: oauth
+        token_header: Authorization
+        token_prefix: Bearer
+        env_var: WADDLEBOT_TOKEN
+
+  connection:
+    base_url_env: WADDLEBOT_URL
+    default_url: http://localhost:8060
+    health_endpoint: /health
+
+  # ============================================================================
+  # TRIGGERS - Entry points that start workflows
+  # ============================================================================
+  triggers:
+    # Chat Command Trigger
+    - id: command
+      name: Chat Command
+      description: Triggered when a chat command is executed
+      icon: "💬"
+      webhook_path: /webhooks/waddlebot/command
+      outputs:
+        - name: out
+          type: object
+          description: Command data with username, args, platform, etc.
+      config_schema:
+        - field: command_name
+          type: string
+          label: Command Name
+          placeholder: "!hello"
+          required: true
+          description: The command to listen for (with or without prefix)
+        - field: platforms
+          type: multiselect
+          label: Platforms
+          options: [twitch, discord, slack, kick]
+          default: [twitch, discord]
+          description: Which platforms to listen on
+        - field: cooldown
+          type: number
+          label: Cooldown (seconds)
+          default: 5
+          description: Minimum time between command uses per user
+        - field: permission_level
+          type: select
+          label: Permission Level
+          options: [everyone, subscriber, moderator, broadcaster]
+          default: everyone
+          description: Minimum permission required to use command
+
+    # Stream Event Trigger
+    - id: event
+      name: Stream Event
+      description: Triggered on stream events (subscriptions, follows, raids, etc.)
+      icon: "📢"
+      webhook_path: /webhooks/waddlebot/event
+      outputs:
+        - name: subscription
+          type: object
+          description: Subscription event data
+        - name: follow
+          type: object
+          description: Follow event data
+        - name: raid
+          type: object
+          description: Raid event data
+        - name: cheer
+          type: object
+          description: Cheer/bits event data
+        - name: donation
+          type: object
+          description: Donation event data
+        - name: other
+          type: object
+          description: Other event types
+      config_schema:
+        - field: event_types
+          type: multiselect
+          label: Event Types
+          options: [subscription, follow, raid, cheer, donation, stream_online, stream_offline]
+          description: Which event types to trigger on
+
+    # Chat Message Trigger
+    - id: message
+      name: Chat Message
+      description: Triggered on any chat message matching a pattern
+      icon: "💭"
+      webhook_path: /webhooks/waddlebot/message
+      outputs:
+        - name: out
+          type: object
+          description: Message data with content, user info, etc.
+      config_schema:
+        - field: pattern
+          type: string
+          label: Message Pattern
+          placeholder: ".*hello.*"
+          description: Regex pattern to match messages (leave empty for all)
+          supports_variables: false
+        - field: platforms
+          type: multiselect
+          label: Platforms
+          options: [twitch, discord, slack, kick]
+          default: [twitch, discord]
+        - field: ignore_bots
+          type: checkbox
+          label: Ignore Bot Messages
+          default: true
+
+    # Incoming Webhook Trigger
+    - id: webhook
+      name: Incoming Webhook
+      description: Triggered by external HTTP webhook calls
+      icon: "🪝"
+      webhook_path: /webhooks/waddlebot/custom
+      outputs:
+        - name: out
+          type: object
+          description: Webhook payload data
+      config_schema:
+        - field: verify_signature
+          type: checkbox
+          label: Verify Signature
+          default: true
+          description: Require HMAC signature verification
+        - field: allowed_ips
+          type: string
+          label: Allowed IPs
+          placeholder: "192.168.1.0/24, 10.0.0.0/8"
+          description: CIDR ranges for IP allowlisting (comma separated)
+
+  # ============================================================================
+  # ACTIONS - Execute operations via WaddleBot APIs
+  # ============================================================================
+  actions:
+    # Send Chat Message
+    - id: send_chat
+      name: Send Chat
+      description: Send a message to chat
+      icon: "💬"
+      endpoint: /api/v1/router/events
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+          description: Input data for variable interpolation
+      outputs:
+        - name: out
+          type: object
+          description: Send result with message ID
+      config_schema:
+        - field: message
+          type: textarea
+          label: Message
+          placeholder: "Hello {{username}}! Welcome to the stream!"
+          supports_variables: true
+          required: true
+          description: Message to send (supports {{variable}} interpolation)
+        - field: platform
+          type: select
+          label: Platform
+          options: [twitch, discord, slack, kick]
+          required: true
+        - field: channel_id
+          type: string
+          label: Channel ID
+          placeholder: "channel_123"
+          supports_variables: true
+          description: Target channel (uses workflow context if empty)
+
+    # Reply to Message
+    - id: send_reply
+      name: Reply to Message
+      description: Reply to a specific message
+      icon: "↩️"
+      endpoint: /api/v1/router/events
+      method: POST
+      inputs:
+        - name: in
+          type: object
+          required: true
+          description: Must include message_id to reply to
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: message
+          type: textarea
+          label: Reply Message
+          supports_variables: true
+          required: true
+        - field: platform
+          type: select
+          label: Platform
+          options: [twitch, discord, slack, kick]
+          required: true
+
+    # Send Whisper/DM
+    - id: send_whisper
+      name: Send Whisper/DM
+      description: Send a private message to a user
+      icon: "🤫"
+      endpoint: /api/v1/router/whisper
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: user_id
+          type: string
+          label: User ID
+          supports_variables: true
+          required: true
+          description: Target user ID (or use {{input.user_id}})
+        - field: message
+          type: textarea
+          label: Message
+          supports_variables: true
+          required: true
+        - field: platform
+          type: select
+          label: Platform
+          options: [twitch, discord, slack]
+          required: true
+
+    # Display Media Overlay
+    - id: display_media
+      name: Display Media
+      description: Show media overlay in OBS browser source
+      icon: "🎬"
+      endpoint: /browser/source/display
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: media_type
+          type: select
+          label: Media Type
+          options: [image, video, audio, text]
+          required: true
+        - field: source_url
+          type: string
+          label: Source URL
+          placeholder: "https://example.com/image.png"
+          supports_variables: true
+          required: true
+          description: URL of media to display
+        - field: duration
+          type: number
+          label: Duration (seconds)
+          default: 10
+          description: How long to show the media
+        - field: position
+          type: select
+          label: Position
+          options: [fullscreen, top-left, top-right, bottom-left, bottom-right, center]
+          default: center
+
+    # Update Ticker
+    - id: update_ticker
+      name: Update Ticker
+      description: Update the stream ticker/banner text
+      icon: "📜"
+      endpoint: /browser/source/display
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: text
+          type: textarea
+          label: Ticker Text
+          supports_variables: true
+          required: true
+          description: Text to display in ticker
+        - field: scroll_speed
+          type: select
+          label: Scroll Speed
+          options: [slow, medium, fast]
+          default: medium
+
+    # Show Alert
+    - id: show_alert
+      name: Show Alert
+      description: Display an alert overlay
+      icon: "🔔"
+      endpoint: /browser/source/display
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: alert_type
+          type: select
+          label: Alert Type
+          options: [follow, subscription, raid, cheer, donation, custom]
+          default: custom
+        - field: title
+          type: string
+          label: Title
+          supports_variables: true
+          placeholder: "New Follower!"
+        - field: message
+          type: textarea
+          label: Message
+          supports_variables: true
+          placeholder: "{{username}} just followed!"
+        - field: sound_url
+          type: string
+          label: Sound URL
+          placeholder: "https://example.com/alert.mp3"
+          description: Optional alert sound
+        - field: duration
+          type: number
+          label: Duration (seconds)
+          default: 5
+
+    # Shoutout User
+    - id: shoutout
+      name: Shoutout User
+      description: Give a shoutout to another streamer
+      icon: "📣"
+      endpoint: /api/v1/shoutout
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Shoutout result with user info and clip
+      config_schema:
+        - field: username
+          type: string
+          label: Username
+          supports_variables: true
+          required: true
+          description: Username to shoutout (or use {{input.username}})
+        - field: platform
+          type: select
+          label: Platform
+          options: [twitch, kick]
+          required: true
+        - field: show_clip
+          type: checkbox
+          label: Show Random Clip
+          default: true
+          description: Display a random clip from their channel
+        - field: send_chat
+          type: checkbox
+          label: Send Chat Message
+          default: true
+
+    # AI Response
+    - id: ai_response
+      name: AI Response
+      description: Get an AI-generated response
+      icon: "🧠"
+      endpoint: /api/ai/v1/chat/completions
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+          description: Context data for the AI prompt
+      outputs:
+        - name: out
+          type: object
+          description: AI response with content and usage
+      config_schema:
+        - field: prompt
+          type: textarea
+          label: Prompt
+          supports_variables: true
+          required: true
+          placeholder: "Respond to this message: {{input.message}}"
+          description: Prompt template with variable interpolation
+        - field: system_prompt
+          type: textarea
+          label: System Prompt
+          placeholder: "You are a helpful stream assistant..."
+          description: Optional system prompt to set AI behavior
+        - field: provider
+          type: select
+          label: Provider
+          options: [ollama, openai, anthropic]
+          default: ollama
+        - field: model
+          type: string
+          label: Model
+          placeholder: "llama3.2"
+          description: Model name (provider-specific)
+        - field: max_tokens
+          type: number
+          label: Max Tokens
+          default: 256
+        - field: temperature
+          type: number
+          label: Temperature
+          default: 0.7
+          description: Creativity (0-2, lower is more focused)
+
+    # Spotify Control
+    - id: spotify_play
+      name: Spotify Play
+      description: Control Spotify playback
+      icon: "🎵"
+      endpoint: /api/v1/spotify/play
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: action
+          type: select
+          label: Action
+          options: [play, pause, skip, previous, queue]
+          default: play
+        - field: uri
+          type: string
+          label: Spotify URI
+          placeholder: "spotify:track:xxx"
+          supports_variables: true
+          description: Track/playlist URI for play/queue actions
+
+    # YouTube Music Control
+    - id: youtube_play
+      name: YouTube Music
+      description: Control YouTube Music playback
+      icon: "▶️"
+      endpoint: /api/v1/youtube-music/play
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: action
+          type: select
+          label: Action
+          options: [play, pause, skip, previous, queue]
+          default: play
+        - field: query
+          type: string
+          label: Search Query
+          supports_variables: true
+          placeholder: "Song name or YouTube URL"
+
+    # Inventory Management
+    - id: inventory_add
+      name: Add to Inventory
+      description: Add items to a user's inventory
+      icon: "🎒"
+      endpoint: /api/v1/inventory/add
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: user_id
+          type: string
+          label: User ID
+          supports_variables: true
+          required: true
+        - field: item_name
+          type: string
+          label: Item Name
+          supports_variables: true
+          required: true
+        - field: quantity
+          type: number
+          label: Quantity
+          default: 1
+
+    # Loyalty Points
+    - id: loyalty_give
+      name: Give Points
+      description: Award loyalty points to a user
+      icon: "💰"
+      endpoint: /api/v1/loyalty/give
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: user_id
+          type: string
+          label: User ID
+          supports_variables: true
+          required: true
+        - field: points
+          type: number
+          label: Points
+          required: true
+          description: Points to add (negative to remove)
+        - field: reason
+          type: string
+          label: Reason
+          supports_variables: true
+          placeholder: "Reward for {{action}}"
+
+    # Update Reputation
+    - id: reputation_update
+      name: Update Reputation
+      description: Update a user's reputation score
+      icon: "⭐"
+      endpoint: /reputation/event
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: user_id
+          type: string
+          label: User ID
+          supports_variables: true
+          required: true
+        - field: event_type
+          type: select
+          label: Event Type
+          options: [positive, negative, neutral]
+          default: positive
+        - field: points
+          type: number
+          label: Points
+          default: 1
+        - field: reason
+          type: string
+          label: Reason
+          supports_variables: true
+
+    # Timeout User
+    - id: timeout_user
+      name: Timeout User
+      description: Temporarily timeout a user from chat
+      icon: "⏱️"
+      endpoint: /api/v1/moderation/timeout
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: user_id
+          type: string
+          label: User ID
+          supports_variables: true
+          required: true
+        - field: duration
+          type: number
+          label: Duration (seconds)
+          default: 300
+          description: Timeout duration in seconds
+        - field: reason
+          type: string
+          label: Reason
+          supports_variables: true
+        - field: platform
+          type: select
+          label: Platform
+          options: [twitch, discord, kick]
+          required: true
+
+    # Ban User
+    - id: ban_user
+      name: Ban User
+      description: Permanently ban a user from chat
+      icon: "🚫"
+      endpoint: /api/v1/moderation/ban
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: user_id
+          type: string
+          label: User ID
+          supports_variables: true
+          required: true
+        - field: reason
+          type: string
+          label: Reason
+          supports_variables: true
+          required: true
+        - field: platform
+          type: select
+          label: Platform
+          options: [twitch, discord, kick]
+          required: true
+
+  # ============================================================================
+  # TRANSFORMS - Data lookups and validations
+  # ============================================================================
+  transforms:
+    # User Lookup
+    - id: user_lookup
+      name: Lookup User
+      description: Fetch user information and identity
+      icon: "🔍"
+      endpoint: /identity/user
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+          description: Must include user_id
+      outputs:
+        - name: out
+          type: object
+          description: User profile with linked identities
+      config_schema:
+        - field: user_id
+          type: string
+          label: User ID
+          supports_variables: true
+          description: User ID to lookup (or from input)
+        - field: include_reputation
+          type: checkbox
+          label: Include Reputation
+          default: true
+        - field: include_inventory
+          type: checkbox
+          label: Include Inventory
+          default: false
+
+    # Command Permission Check
+    - id: command_check
+      name: Check Permission
+      description: Validate user has permission for an action
+      icon: "🔐"
+      endpoint: /api/v1/router/permissions
+      method: GET
+      inputs:
+        - name: in
+          type: object
+          required: true
+          description: User context with user_id and badges
+      outputs:
+        - name: out
+          type: object
+          description: Permission check result
+      config_schema:
+        - field: required_level
+          type: select
+          label: Required Level
+          options: [everyone, subscriber, vip, moderator, broadcaster]
+          default: everyone
+        - field: required_badges
+          type: string
+          label: Required Badges
+          placeholder: "subscriber, founder"
+          description: Comma-separated list of required badges

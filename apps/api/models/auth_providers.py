@@ -12,7 +12,7 @@ from sqlalchemy import (
     Text,
 )
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
 class IDPConfiguration(Base, IDMixin, TimestampMixin):
@@ -66,7 +66,7 @@ class AuditRetentionPolicy(Base, IDMixin, TimestampMixin):
     enabled = Column(Boolean, nullable=False)
 
 
-class Backup(Base, IDMixin):
+class Backup(Base, IDMixin, VillageIDMixin):
     """Backup run records."""
 
     __tablename__ = "backups"
@@ -86,7 +86,7 @@ class Backup(Base, IDMixin):
     created_at = Column(DateTime(timezone=True), nullable=True)
 
 
-class BackupJob(Base, IDMixin, TimestampMixin):
+class BackupJob(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Backup job configuration."""
 
     __tablename__ = "backup_jobs"

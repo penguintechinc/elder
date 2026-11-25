@@ -1,0 +1,146 @@
+{{- $cfg := index .Values "svc-runworker" }}
+{{- if and $cfg $cfg.enabled .Values.networkPolicy.enabled ($cfg.networkPolicy).enabled }}
+{{- $execNs := $cfg.executionNamespace | default "elder-runs" }}
+{{- $backend := include "elder.runworker.backend" . }}
+{{- $np := $cfg.networkPolicy | default dict }}
+{{- $hubApiPort := (index .Values "hub-api").service.targetPort | default 5000 | quote }}
+# Controller policy for svc-runworker.
+# - Ingress: only the per-execution restriction gateway ports, and only from
+#   execution pods that were granted gateway access.
+# - Egress: DNS, kube-apiserver (Job backend only), hub-api, the OTLP
+#   collector, plus operator-declared FQDNs/CIDRs. There is deliberately no
+#   open internet rule: anything tenant code can influence (the gateway's
+#   egress proxy) is bounded by svc-runworker.networkPolicy.egressFQDNs.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: svc-runworker-policy
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-runworker" .) | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "elder.componentSelectorLabels" (list "svc-runworker" .) | nindent 6 }}
+  {{- if ne $backend "sandbox" }}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ $execNs }}
+            elder.penguintech.io/gateway-access: "true"
+      toPorts:
+        - ports:
+            {{- include "elder.runworker.gatewayPorts" . | nindent 12 }}
+  {{- else }}
+  ingress: []
+  {{- end }}
+  egress:
+    # DNS (CoreDNS / kube-dns)
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          {{- if $np.egressFQDNs }}
+          rules:
+            dns:
+              - matchPattern: "*"
+          {{- end }}
+    {{- if ne $backend "sandbox" }}
+    # Kubernetes API server (Job/ConfigMap/Pod management in executionNamespace)
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+    {{- end }}
+    # Same-cluster Elder API (hub-api)
+    - toEndpoints:
+        - matchLabels:
+            {{- include "elder.componentSelectorLabels" (list "hub-api" .) | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: {{ $hubApiPort }}
+              protocol: TCP
+    {{- if .Values.otel.enabled }}
+    # OTLP collector (same namespace)
+    - toEndpoints:
+        - matchLabels: {}
+      toPorts:
+        - ports:
+            - port: {{ .Values.networkPolicy.otelCollectorPort | default 4318 | quote }}
+              protocol: TCP
+    {{- end }}
+    {{- with $np.egressFQDNs }}
+    # Operator-declared HTTPS destinations: a remote-cluster Elder API host
+    # and/or the upper bound of what function egress allowlists may reach.
+    - toFQDNs:
+        {{- range . }}
+        - matchName: {{ . | quote }}
+        {{- end }}
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    {{- end }}
+    {{- with $np.s3Egress }}
+    # Optional explicit S3-compatible storage egress (e.g. in-cluster/RFC1918 MinIO/Garage)
+    - toCIDRSet:
+        - cidr: {{ .cidr | quote }}
+      toPorts:
+        - ports:
+            - port: {{ .port | default 443 | quote }}
+              protocol: TCP
+    {{- end }}
+---
+# Default-deny all ingress and egress for execution pods in executionNamespace
+# so tenant code cannot reach cluster services, cloud metadata, or the
+# internet unless explicitly allowed below.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: elder-runs-default-deny
+  namespace: {{ $execNs }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-runworker" .) | nindent 4 }}
+spec:
+  endpointSelector: {}
+  ingress: []
+  egress: []
+{{- if ne $backend "sandbox" }}
+---
+# Execution pods labelled elder.penguintech.io/gateway-access: "true" (the
+# function was granted Elder API scopes or an egress allowlist) may reach ONLY
+# the controller's per-execution restriction gateway. The gateway enforces the
+# scopes and the per-function egress allowlist; there is no direct path to
+# hub-api, DNS, or the internet. Unlabelled pods stay at egress: [].
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: elder-runs-gateway-access
+  namespace: {{ $execNs }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-runworker" .) | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      elder.penguintech.io/gateway-access: "true"
+  ingress: []
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.namespace }}
+            {{- include "elder.componentSelectorLabels" (list "svc-runworker" .) | nindent 12 }}
+      toPorts:
+        - ports:
+            {{- include "elder.runworker.gatewayPorts" . | nindent 12 }}
+{{- end }}
+{{- end }}

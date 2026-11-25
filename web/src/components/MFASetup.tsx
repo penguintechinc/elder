@@ -11,6 +11,20 @@ interface MFASetupProps {
   onSuccess?: () => void
 }
 
+interface ApiError {
+  response?: {
+    data?: {
+      message?: string
+    }
+  }
+  message?: string
+}
+
+interface MFAResponse {
+  qr_code?: string
+  secret?: string
+}
+
 export default function MFASetup({ isOpen, onClose, onSuccess }: MFASetupProps) {
   const [step, setStep] = useState<'setup' | 'verify'>('setup')
   const [qrCode, setQrCode] = useState('')
@@ -19,18 +33,20 @@ export default function MFASetup({ isOpen, onClose, onSuccess }: MFASetupProps) 
 
   const enableMutation = useMutation({
     mutationFn: () => api.portalMfaEnable(),
-    onSuccess: (data) => {
+    onSuccess: (data: MFAResponse) => {
       setQrCode(data.qr_code || '')
       setSecret(data.secret || '')
       setStep('verify')
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.message || 'Failed to enable MFA')
     },
   })
 
   const verifyMutation = useMutation({
-    mutationFn: (code: string) => api.portalMfaVerify(code),
+    // Setup is confirmed with /mfa/confirm; /mfa/verify is the login step
+    // and needs a server-issued challenge.
+    mutationFn: (code: string) => api.confirmMfa(code),
     onSuccess: () => {
       toast.success('MFA enabled successfully!')
       onSuccess?.()
@@ -38,7 +54,7 @@ export default function MFASetup({ isOpen, onClose, onSuccess }: MFASetupProps) 
       setStep('setup')
       setVerificationCode('')
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.message || 'Invalid verification code')
     },
   })

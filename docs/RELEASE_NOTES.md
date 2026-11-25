@@ -7,6 +7,162 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.0.0] - Unreleased
+
+**Elder Platform Merge** — consolidates several separate PenguinTech products into Elder as toggleable modules, moving Elder to a modular-monolith architecture backed by a 6-image Kubernetes deployment (`hub-webui`, `hub-mcp`, `hub-api`, `svc-worker`, `svc-scanner`, `svc-runworker`).
+
+### 🔒 CodeRuns Worker Isolation (upgrade action required)
+
+- **`svc-runworker` no longer receives the platform signing key.** It authenticates only with a provisioned worker token from a Secret (`svc-runworker.internalTokenSecret.name`, now required) and refuses to start if `JWT_SECRET_KEY`/`SECRET_KEY` is in its environment. Onboard the in-cluster worker via `POST /api/v1/admin/workers` before upgrading.
+- **Default runner backend is now `k8s_job`** (was `auto`): each execution runs in its own pod under `runtimeClassName: kata` with a token-less, RBAC-less ServiceAccount. The in-pod `sandbox` backend is opt-in and requires a Kata worker pod; unsupported combinations fail at `helm template` and at worker start-up unless a `kataException` flag is recorded.
+- **Network policy tightened:** the worker has no open internet egress (declare hosts in `networkPolicy.egressFQDNs`); execution pods reach only their per-execution restriction gateway. Controller RBAC reduced to the minimum verbs.
+- **Runtime class must be a listed sandboxed class:** `runtimeClassName` is checked for membership in `sandboxedRuntimeClasses` by the chart and the worker; `runc` or a misspelt class is refused unless the recorded Kata exception is set.
+- **Gateway token moved to a per-execution Secret:** the controller Role gains `secrets` create/delete (no read verbs); the token no longer appears in Job or Pod specs.
+- **Claim anomaly signal:** `run_claim_anomaly` warning and `elder.runs.claim_anomalies` counter when a worker claims for a tenant it has not served before or exceeds `RUNS_CLAIM_RATE_WARN_THRESHOLD` claims per minute.
+- **Execution namespace:** with `createExecutionNamespace=false` the chart requires `executionNamespacePodSecurityVerified=true`.
+- See `docs/deployment/runworker-isolation.md` for the model and upgrade steps; `make test-helm` asserts the rendered guarantees.
+
+### 🚀 6-Image Architecture, CodeRuns & Remote Workers Fleet
+
+- **6-Image Kubernetes Architecture**: Standardized service images (`hub-webui`, `hub-mcp`, `hub-api`, `svc-worker`, `svc-scanner`, `svc-runworker`). Removed the standalone `svc-csv-importer` CronJob and gated the legacy `svc-scanner` CronJob strictly on `mode=cronjob`.
+- **CSV Bulk Imports via S3 + Valkey (`svc-worker`)** (#419, #422, #429): `hub-api` streams uploaded CSVs to an S3-compatible bucket and pushes job IDs to Valkey (`elder:csv_import:queue`); `svc-worker` claims jobs immediately via `BRPOP` (with a 60s periodic DB fallback sweep) and imports directly into PostgreSQL.
+- **CodeRuns (`svc-runworker`)** (#408–#415, #420–#421, #425–#428, #430–#431): Renamed from "Runs" to "CodeRuns" in the UI; remote-capable Deployment polling `hub-api` over HTTP with zero DB/Valkey/S3 credentials; 5-minute (`300s`) max timeout; warm sandbox pool + loopback Tool/Network Restriction Gateway + built-in zero-dependency `elder` helper SDK (`elder.py`, `elder.mjs`, `elder.rb`); per-CodeRun scoped permissions (`granted_scopes`, `allowed_egress_domains`) with ephemeral JWTs; live stdout log push every 30s default (`RUNS_LOG_FLUSH_INTERVAL_SECONDS`); operator-managed `execution_namespace` (`elder-runs`) with `worker_cluster` routing.
+- **Remote Scanner (`svc-scanner`)** (#432, #436): Flipped to a remote-capable long-running Rust Deployment (`run --loop`) with 5-minute (`300s`) default poll, 30s default progress push, remote `ELDER_INTERNAL_TOKEN` (`ewk_`) + in-cluster `JWT_SECRET_KEY` auth, and periodic fleet heartbeats.
+- **Remote Workers Fleet (`/api/v1/admin/workers`)** (#433–#435, #437): Onboarding (one-time `ewk_` token), offboarding/revocation, live config, token rotation, heartbeats, and liveness (`online`/`stale`/`offline`/`revoked`) exposed consistently across WebUI (`/admin/workers`), `hub-mcp`, Python SDK (`client.workers`), Rust SDK (`elder-sdk::workers`), and Rust CLI (`elder workers`).
+- **UI & Workflow Upgrades** (#416–#418, #420–#421): Pure-browser PNG/JPG/SVG export and versioned JSON backup/import for Diagrams and Playbooks; centralized Executions audit log (`All` / `Playbooks` / `CodeRuns` / `Webhooks`); reorganized sidebar (`Workstreams`, `Work Management`, `Relationships`, `Infrastructure`, `Software`, `Security`, `Documents`, plus `Administration → Workers`).
+- **Official SDKs, Rust CLI & Hosted MCP** (#381, #383–#384, #395–#396, #398): Added official Python SDK (`sdk/python`), pure-rustls Rust SDK (`crates/elder-sdk`), pure-rustls Rust CLI (`cli/elder-cli`), and hosted caller-scoped `hub-mcp` Deployment.
+
+### 🔐 Portal MFA Hardening (migration 056 — run it WITH the deploy)
+
+- **MFA secrets and backup codes are protected at rest**: TOTP secrets are stored as an AES-256-GCM envelope (`v1:<kid>:<nonce>:<ciphertext>`), backup codes as salted hashes. A TOTP code is accepted once, and the second-factor step locks for 30 minutes after 5 failed attempts.
+- **Login MFA step is bound to the password step**: `POST /api/v1/portal-auth/login` returns an opaque `mfaChallenge` (5 minutes, single-use) instead of a user id, and `POST /api/v1/portal-auth/mfa/verify` takes `mfa_challenge` + `totp_code`. **Breaking for API clients**: the former `user_id` + `totp_code` body is no longer accepted. Sending `mfaCode` together with the credentials to `/login` also works.
+- **MFA enforcement is applied server-side**: once a tenant's grace period has expired, a user without MFA receives only an enrolment-scoped token (`mfaEnrollmentRequired: true`) that can reach `/mfa/enable`, `/mfa/confirm` and `/logout`. Token refresh is refused in that state.
+- **SSO sign-ins follow the same MFA policy**: for a user with TOTP enrolled, SAML ACS and the OIDC callback return an `mfaChallenge` (completed via `/mfa/verify`) instead of a session; when the user's MFA grace period has expired they return the enrolment-only response. **Behaviour change** for SSO clients of enrolled users.
+- `/mfa/confirm` against an already-active factor uses the same attempt limit, lockout and single-use rule as login.
+- **MFA login challenges are bounded**: expired challenges are pruned table-wide and each user keeps at most 5 live challenges (oldest evicted).
+- **Enrolment is pending until confirmed**: `/mfa/enable` no longer changes the active factor; `/mfa/confirm` activates it (a pending setup expires after 10 minutes). Re-enrolling, disabling MFA and regenerating backup codes require a current TOTP or backup code (`current_code`).
+- **Upgrade steps (required)**:
+  1. Run Alembic revision `056` (`./scripts/migrate.sh upgrade head`) as part of the deploy — `hub-api` does not add columns to existing tables at startup, and the new code needs them. It also converts existing rows.
+  2. Run it with the **same** `SECRET_KEY` (or `MFA_ENCRYPTION_KEY`) as `hub-api`, e.g. from inside a `hub-api` pod. With MFA rows present and no key in the environment the migration aborts.
+  3. Optional: set a dedicated `MFA_ENCRYPTION_KEY`. Before changing it (or `SECRET_KEY` while it is the MFA key) put the previous value in `MFA_ENCRYPTION_OLD_KEYS`, otherwise enrolled users cannot sign in. Rotation procedure: `apps/api/utils/mfa_crypto.py`.
+- **Downgrade** of `056` decrypts secrets back and clears backup codes (users regenerate them).
+
+### ✨ Merged Product Lines
+
+#### IceCharts Merge — Diagramming & Automation (#167, #168)
+- **`diagrams`**: React-Flow diagram editor with real-time collaboration, merged in from IceCharts
+- **`streams`**: Workflow automation module, merged in from IceStreams
+- **`flows`**: CI/CD pipeline module, merged in from IceFlows
+
+#### Ruffled Merge — Helpdesk & Knowledge Base (#166, #173)
+- **`helpdesk`**: Tickets, SLAs, and CRM, merged in from Ruffled — the customer-relations half (CRM, public intake, customer email) was later split out to Waddles; Elder keeps internal ticketing, see below
+- **`documents`**: Knowledge base module, merged in from Ruffled
+- **`pages`**: Documentation pages module, merged in from Ruffled
+- Rookery was intentionally excluded from this merge
+
+### ✨ Issues ↔ Tickets Unification
+
+Following the Ruffled merge, helpdesk tickets and CRM were folded into
+Elder's native, unified Issue model instead of staying a parallel
+resource — a support request is now just an Issue.
+
+- **Support is an `issue_type`, not a separate table**: `IssueType` gained
+  a `support` value (alongside `operations`, `code`, `config`, `security`,
+  `architecture`, `process`, `approval`, `feature`, `bug`, `other`).
+  Support-only fields (`channel`, `category`, `requester_contact_id`,
+  `sla_breach_at`, `first_response_at`, `resolved_at`) live directly on
+  `issues`, nullable for non-support issue types
+- **Polymorphic assignee**: `issues.assignee_type` (`identity` or
+  `org_unit`) + `assignee_id` replaces an identity-only assignee — an
+  Issue can be assigned to a person or to an organizational unit. The web
+  UI exposes this as a single combined identity+org-unit search picker
+- **Intake forms**: admin-configurable forms (`/api/v1/intake-forms`,
+  backed by the `hd_intake_forms` table) define dynamic,
+  Pydantic-validated fields; the public, unauthenticated
+  `/api/v1/intake/<slug>` (GET) and `/api/v1/intake/<slug>/submit`
+  (POST) routes serve them. Public submission is optionally protected
+  by an **Altcha** proof-of-work captcha (`captcha_required` per form,
+  off by default); a successful submit upserts a `customer_contact`
+  identity and creates a native Issue of the form's configured
+  `issue_type` (default `support`)
+- **Assignment webhooks**: a new `issue.assigned` event fires on every
+  assignee change (create, update, or an intake form's default-assign),
+  HMAC-signed (`X-Elder-Signature`) and delivered non-blocking. Each
+  webhook can filter by `issue_type` and by assignee
+  (`assignee_type`/`assignee_id`); an unset filter matches everything
+- **CRM as identity/organization types, not new tables**:
+  `customer_company` is an `organization_type` and `customer_contact` is
+  an `identity_type` — CRM records are organizations and identities, not
+  a separate schema
+- **`/helpdesk` frontend surface retired**: the web UI now offers only
+  the unified Issues experience — support issues render a support
+  section, and the intake-form builder lives under the Issues area.
+  Backend helpdesk endpoints (`/api/v1/helpdesk/tickets`,
+  `/companies`, `/contacts`, etc.) still exist during the phase-out but
+  are no longer the primary path
+- **Demo data**: `make seed-demo-unified` (`scripts/seed_demo_unified.py`)
+  seeds native support issues, `customer_company`/`customer_contact` CRM
+  entities, intake forms (public and private), and assignment webhooks
+
+### 🗑️ Customer-Relations Split-Out — Helpdesk is now Internal-Only
+
+Superseding the unification above: the customer/public/community half of the
+helpdesk was **removed from Elder and handed off to Waddles**, which owns
+public community + customer relationships. Elder's helpdesk is now strictly
+internal (employees/contractors).
+
+- **Removed** (moved to Waddles): CRM tables `hd_companies`/`hd_contacts`;
+  public intake forms (`hd_ticket_forms`, `hd_intake_forms`) with their
+  **Altcha** captcha; customer email intake (`hd_email_accounts`,
+  `hd_email_logs`) and the `helpdesk_email_poll`/`helpdesk_email_send`
+  workers; and the `requester_contact_id` FK on both `hd_tickets` and
+  `issues`. The backend routes (`/api/v1/helpdesk/{companies,contacts,email-accounts,ticket-forms}`,
+  `/api/v1/intake-forms`, `/api/v1/intake`) and the Intake-Forms web UI were deleted.
+- **Kept** (internal ticketing): `hd_tickets`, messages, attachments,
+  `hd_sla_policies`, `hd_canned_responses`, `hd_teams`/`hd_team_members`,
+  and the SLA-breach worker.
+- **Regrouped**: the `helpdesk` module moved out of the `crm` group, which is
+  retired; it now sits in the `issues` WIRED group alongside `issues` (see
+  *WIRED Module Groups* below). Migration `040` drops the removed tables and
+  columns.
+- `customer_contact` (identity type) and `customer_company` (organization
+  type) remain as harmless enum values, no longer written by any Elder path.
+- Specs: `docs/superpowers/specs/2026-08-21-helpdesk-internal-reframe-phase3.md`
+  (Elder) and the Waddles handoff spec.
+
+### 🏗️ Architecture — Modular Monolith Restructure (#164)
+- Feature-domain code moved from the flat `apps/api/models/*.py` + `apps/api/api/v1/*` layout into per-module packages `apps/api/modules/<name>/{models,routes}/` — 15 modules total: `infrastructure`, `ipam`, `sbom`, `services_oncall`, `issues`, `discovery`, `secrets`, `webhooks_alerting`, `access_reviews`, `documents`, `pages`, `diagrams`, `streams`, `flows`, `helpdesk`
+- Always-on **core** models (base, identity, rbac, tenant, audit, security, etc.) remain in `apps/api/models/`
+- Split the `apps/api/models/infrastructure.py` "god-file": `NetworkingResource`/`DataStore` moved to `apps/api/modules/infrastructure/models/infrastructure.py`; `Service`/`Software` moved to `apps/api/modules/sbom/models/assets.py`; cost models moved to `webhooks_alerting`
+- **Breaking for consumers**: import paths for these models changed — `apps.api.models.infrastructure` no longer exists
+
+### 🧭 WIRED Module Groups
+
+The four ad-hoc module buckets (`core`, `crm`, `workflow`, `kb`) are replaced by
+Elder's five WIRED pillars. Grouping stays presentation/deployment only — no
+group is tier-locked, and no module directories moved.
+
+| Group | Modules |
+|-------|---------|
+| `workstreams` | `streams`, `flows`, `webhooks_alerting` |
+| `issues` | `issues`, `helpdesk` |
+| `relationships` | `discovery`, `access_reviews` |
+| `entities` | `infrastructure`, `ipam`, `sbom`, `services_oncall`, `secrets` |
+| `documents` | `documents`, `pages`, `diagrams` |
+
+- **Breaking for deployments**: the group env toggles are renamed —
+  `ELDER_GROUP_CORE`/`ELDER_GROUP_CRM`/`ELDER_GROUP_WORKFLOW`/`ELDER_GROUP_KB`
+  are replaced by `ELDER_GROUP_WORKSTREAMS`, `ELDER_GROUP_ISSUES`,
+  `ELDER_GROUP_RELATIONSHIPS`, `ELDER_GROUP_ENTITIES`, `ELDER_GROUP_DOCUMENTS`.
+  Toggle precedence is unchanged: `ELDER_MODULE_<NAME>` > `ELDER_GROUP_<GROUP>` >
+  `ELDER_MODULES_ENABLED`. Per-module `ELDER_MODULE_*` vars are untouched.
+- **Sidebar**: nav headers render in acronym order — Workstreams, Issues,
+  Relationships, Entities, Documents.
+- `group` is still returned by `GET /api/v1/modules`; consumers reading it see
+  the new values.
+
+---
+
 ## [3.2.3] - 2026-04-29
 
 ### 🐛 Bug Fixes

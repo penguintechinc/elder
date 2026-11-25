@@ -7,17 +7,42 @@ Installation:
     pip install grpcio grpcio-tools protobuf
 
 Usage:
-    python python_client_example.py
+    ELDER_USERNAME=... ELDER_PASSWORD=... python python_client_example.py
+
+Authentication:
+    Every RPC except Login, RefreshToken and HealthCheck requires an access
+    token in the `authorization` metadata (`Bearer <token>`); calls without
+    one are rejected with UNAUTHENTICATED. Results are scoped to the tenant
+    of the authenticated identity.
 """
 
+import os
+
 import grpc
+
 from apps.api.grpc.generated import (
+    auth_pb2,
+    common_pb2,
     elder_pb2,
     elder_pb2_grpc,
-    organization_pb2,
     entity_pb2,
-    common_pb2,
+    organization_pb2,
 )
+
+
+class BearerAuth(grpc.UnaryUnaryClientInterceptor):
+    """Attach `authorization: Bearer <token>` metadata to every unary call."""
+
+    def __init__(self, token: str):
+        """Keep the access token to send."""
+        self._token = token
+
+    def intercept_unary_unary(self, continuation, client_call_details, request):
+        """Add the bearer token to the outgoing call metadata."""
+        metadata = list(client_call_details.metadata or [])
+        metadata.append(("authorization", f"Bearer {self._token}"))
+        details = client_call_details._replace(metadata=metadata)
+        return continuation(details, request)
 
 
 def run_examples():
@@ -28,7 +53,16 @@ def run_examples():
     # credentials = grpc.ssl_channel_credentials()
     # channel = grpc.secure_channel('grpc.example.com:443', credentials)
 
-    channel = grpc.insecure_channel('localhost:50051')
+    channel = grpc.insecure_channel("localhost:50051")
+
+    # Log in once, then attach the access token to every subsequent call.
+    login = elder_pb2_grpc.ElderServiceStub(channel).Login(
+        auth_pb2.LoginRequest(
+            username=os.environ["ELDER_USERNAME"],
+            password=os.environ["ELDER_PASSWORD"],
+        )
+    )
+    channel = grpc.intercept_channel(channel, BearerAuth(login.access_token))
 
     # Create stub (client)
     stub = elder_pb2_grpc.ElderServiceStub(channel)
@@ -53,10 +87,7 @@ def run_examples():
     print("-" * 70)
     try:
         request = organization_pb2.ListOrganizationsRequest(
-            pagination=common_pb2.PaginationRequest(
-                page=1,
-                per_page=10
-            )
+            pagination=common_pb2.PaginationRequest(page=1, per_page=10)
         )
         response = stub.ListOrganizations(request)
         print(f"Total: {response.pagination.total}")
@@ -74,10 +105,7 @@ def run_examples():
         request = organization_pb2.CreateOrganizationRequest(
             name="Engineering Department",
             description="Engineering team organization",
-            metadata={
-                "team_size": "50",
-                "location": "Building A"
-            }
+            metadata={"team_size": "50", "location": "Building A"},
         )
         response = stub.CreateOrganization(request)
         print(f"Created Organization:")
@@ -113,15 +141,14 @@ def run_examples():
             request = organization_pb2.UpdateOrganizationRequest(
                 id=org_id,
                 description="Updated engineering team organization",
-                metadata={
-                    "team_size": "60",
-                    "location": "Building B"
-                }
+                metadata={"team_size": "60", "location": "Building B"},
             )
             response = stub.UpdateOrganization(request)
             print(f"Updated Organization:")
             print(f"  Description: {response.organization.description}")
-            print(f"  Metadata: {[f'{m.key}={m.value}' for m in response.organization.metadata]}")
+            print(
+                f"  Metadata: {[f'{m.key}={m.value}' for m in response.organization.metadata]}"
+            )
         except grpc.RpcError as e:
             print(f"Error: {e.code()} - {e.details()}")
 
@@ -130,11 +157,8 @@ def run_examples():
     print("-" * 70)
     try:
         request = entity_pb2.ListEntitiesRequest(
-            pagination=common_pb2.PaginationRequest(
-                page=1,
-                per_page=10
-            ),
-            entity_type=entity_pb2.EntityType.COMPUTE
+            pagination=common_pb2.PaginationRequest(page=1, per_page=10),
+            entity_type=entity_pb2.EntityType.COMPUTE,
         )
         response = stub.ListEntities(request)
         print(f"Total Compute Entities: {response.pagination.total}")
@@ -156,8 +180,8 @@ def run_examples():
                 metadata={
                     "ip_address": "10.0.1.100",
                     "cpu_cores": "8",
-                    "memory_gb": "32"
-                }
+                    "memory_gb": "32",
+                },
             )
             response = stub.CreateEntity(request)
             print(f"Created Entity:")

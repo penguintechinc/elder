@@ -12,9 +12,8 @@ Provides validated Pydantic 2 equivalents of Issue dataclasses:
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from penguin_libs.pydantic.base import ImmutableModel, RequestModel
 from pydantic import Field
@@ -32,13 +31,14 @@ Valid issue status values.
 """
 
 # Issue priority types
-IssuePriority = Literal["low", "medium", "high", "critical"]
+IssuePriority = Literal["low", "medium", "high", "urgent", "critical"]
 """
 Valid issue priority values.
 
 - low: Minor issues with no urgent timeline
 - medium: Standard priority issues
 - high: Important issues requiring timely attention
+- urgent: Time-sensitive issues requiring prompt attention (e.g. support tickets)
 - critical: Urgent issues blocking operations or causing major impact
 """
 
@@ -81,20 +81,28 @@ class IssueDTO(ImmutableModel):
 
     id: int
     title: str
-    description: Optional[str] = None
+    description: str | None = None
     status: str
     priority: str
     issue_type: str
     reporter_id: int
-    assignee_id: Optional[int] = None
-    organization_id: Optional[int] = None
+    assignee_id: int | None = None
+    assignee_type: str | None = None
+    organization_id: int | None = None
     is_incident: int
-    closed_at: Optional[datetime] = None
+    closed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
-    tenant_id: Optional[int] = None
-    village_id: Optional[str] = None
-    parent_issue_id: Optional[int] = None
+    tenant_id: int | None = None
+    village_id: str | None = None
+    parent_issue_id: int | None = None
+    channel: str | None = None
+    category: str | None = None
+    hd_sla_policy_id: int | None = None
+    sla_breach_at: datetime | None = None
+    first_response_at: datetime | None = None
+    resolved_at: datetime | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class CreateIssueRequest(RequestModel):
@@ -127,7 +135,7 @@ class CreateIssueRequest(RequestModel):
         ge=1,
         description="Identity ID of the reporter (must be positive)",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed issue description",
     )
@@ -143,12 +151,12 @@ class CreateIssueRequest(RequestModel):
         default="other",
         description="Type classification of the issue",
     )
-    assignee_id: Optional[int] = Field(
+    assignee_id: int | None = Field(
         default=None,
         ge=1,
         description="Optional Identity ID to assign the issue",
     )
-    organization_id: Optional[int] = Field(
+    organization_id: int | None = Field(
         default=None,
         ge=1,
         description="Optional organization this issue belongs to",
@@ -157,10 +165,24 @@ class CreateIssueRequest(RequestModel):
         default=0,
         description="Flag indicating if this is an incident",
     )
-    parent_issue_id: Optional[int] = Field(
+    parent_issue_id: int | None = Field(
         default=None,
         ge=1,
         description="Optional parent issue ID for sub-tasks",
+    )
+    channel: str | None = Field(
+        default=None,
+        max_length=20,
+        description="Support channel the issue was raised through (e.g. email, chat, phone)",
+    )
+    category: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Support category/topic (e.g. billing, technical)",
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Universal free-form JSON metadata bag",
     )
 
 
@@ -181,39 +203,53 @@ class UpdateIssueRequest(RequestModel):
         is_incident: Incident flag (optional)
     """
 
-    title: Optional[str] = Field(
+    title: str | None = Field(
         default=None,
         min_length=1,
         max_length=255,
         description="Issue title",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Detailed issue description",
     )
-    status: Optional[str] = Field(
+    status: str | None = Field(
         default=None,
         description="Issue status",
     )
-    priority: Optional[str] = Field(
+    priority: str | None = Field(
         default=None,
         description="Priority level",
     )
-    issue_type: Optional[str] = Field(
+    issue_type: str | None = Field(
         default=None,
         description="Type classification",
     )
-    assignee_id: Optional[int] = Field(
+    assignee_id: int | None = Field(
         default=None,
         ge=1,
         description="Assigned person ID",
     )
-    is_incident: Optional[int] = Field(
+    is_incident: int | None = Field(
         default=None,
         description="Incident flag",
     )
-    parent_issue_id: Optional[int] = Field(
+    parent_issue_id: int | None = Field(
         default=None,
         ge=1,
         description="Optional parent issue ID for sub-tasks",
+    )
+    channel: str | None = Field(
+        default=None,
+        max_length=20,
+        description="Support channel the issue was raised through",
+    )
+    category: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Support category/topic",
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Universal free-form JSON metadata bag",
     )

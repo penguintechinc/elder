@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 from apps.api.services.costs.base import BaseCostProvider
@@ -19,7 +19,7 @@ except ImportError:
 class AWSCostExplorerProvider(BaseCostProvider):
     """AWS Cost Explorer integration for cost tracking."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         if not boto3:
             raise ImportError("boto3 required. Install: pip install boto3")
@@ -34,10 +34,8 @@ class AWSCostExplorerProvider(BaseCostProvider):
     def test_connection(self) -> bool:
         """Test AWS Cost Explorer connectivity."""
         try:
-            end = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            start = (datetime.now(timezone.utc) - timedelta(days=1)).strftime(
-                "%Y-%m-%d"
-            )
+            end = datetime.now(UTC).strftime("%Y-%m-%d")
+            start = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
             self.ce_client.get_cost_and_usage(
                 TimePeriod={"Start": start, "End": end},
                 Granularity="DAILY",
@@ -50,7 +48,7 @@ class AWSCostExplorerProvider(BaseCostProvider):
 
     def fetch_costs(
         self, resource_type: str, resource_id: str, start_date: str, end_date: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Fetch costs from AWS Cost Explorer for a resource."""
         try:
             response = self.ce_client.get_cost_and_usage(
@@ -88,7 +86,7 @@ class AWSCostExplorerProvider(BaseCostProvider):
 
     def get_recommendations(
         self, resource_type: str, resource_id: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get rightsizing recommendations from AWS."""
         try:
             response = self.ce_client.get_rightsizing_recommendation(

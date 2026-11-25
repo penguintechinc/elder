@@ -1,0 +1,1137 @@
+# FleetDM Connector Manifest for Elder Playbooks / Streams
+# Open-source endpoint management, osquery orchestration, vulnerability intelligence, and MDM
+connector:
+  id: fleetdm
+  name: FleetDM
+  description: Endpoint management, osquery orchestration, vulnerability intelligence, and MDM platform (Fleet v4.95.0 / Fleet 5)
+  icon: "fleetdm-logo"
+  color: "#6A67FE"
+  version: "1.0.0"
+  vendor: fleetdm
+
+  auth:
+    methods:
+      - type: jwt
+        header: Authorization
+        env_var: FLEETDM_API_TOKEN
+        token_prefix: "Bearer "
+
+  connection:
+    base_url_env: FLEETDM_URL
+    default_url: https://fleet.example.com
+    health_endpoint: /api/v1/fleet/config
+
+  # ============================================================================
+  # TRIGGERS - Webhook events from FleetDM
+  # ============================================================================
+  triggers:
+    - id: failing_policy
+      name: Failing Policy
+      description: Triggered when one or more hosts fail a FleetDM policy check
+      icon: "🚨"
+      webhook_path: /webhooks/fleetdm/policy/failing
+      outputs:
+        - name: out
+          type: object
+          description: Failing policy webhook payload with policy and host IDs
+      config_schema:
+        - field: policy_id
+          type: number
+          label: Policy ID
+          placeholder: "42"
+          description: Filter by specific FleetDM policy ID (empty for any)
+        - field: critical_only
+          type: checkbox
+          label: Critical Policies Only
+          default: false
+          description: Only trigger for policies marked critical
+
+    - id: vulnerability_detected
+      name: Vulnerability Detected
+      description: Triggered when FleetDM detects a new CVE on enrolled hosts
+      icon: "🛡️"
+      webhook_path: /webhooks/fleetdm/vuln/detected
+      outputs:
+        - name: out
+          type: object
+          description: Vulnerability webhook payload with CVE, CVSS, and affected hosts
+      config_schema:
+        - field: min_cvss
+          type: number
+          label: Minimum CVSS Score
+          default: 7.0
+          description: Only trigger for CVEs at or above this CVSS score
+        - field: cisa_kev_only
+          type: checkbox
+          label: CISA KEV Only
+          default: false
+          description: Only trigger for CISA Known Exploited Vulnerabilities
+
+    - id: host_status_alert
+      name: Host Status Alert
+      description: Triggered when host status or MDM compliance changes (offline, MIA, failing)
+      icon: "💻"
+      webhook_path: /webhooks/fleetdm/host/status
+      outputs:
+        - name: out
+          type: object
+          description: Host status change event payload
+      config_schema:
+        - field: statuses
+          type: multiselect
+          label: Host Statuses
+          options: [online, offline, mia, missing]
+          description: Host statuses to trigger on
+        - field: fleet_id
+          type: number
+          label: Fleet ID
+          description: Optional Fleet/Team ID filter
+
+  # ============================================================================
+  # TRANSFORMS - Read-only lookups against FleetDM API
+  # ============================================================================
+  transforms:
+    - id: list_hosts
+      name: List Hosts
+      description: List enrolled hosts with pagination and optional filters
+      icon: "💻"
+      endpoint: /api/v1/fleet/hosts
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Paginated list of hosts
+      config_schema:
+        - field: status
+          type: select
+          label: Status
+          options: [online, offline, mia, missing]
+          description: Filter hosts by status
+        - field: fleet_id
+          type: number
+          label: Fleet ID
+          supports_variables: true
+          description: Filter by Fleet ID
+        - field: vulnerability
+          type: string
+          label: CVE
+          placeholder: "CVE-2024-1234"
+          supports_variables: true
+          description: Filter hosts affected by CVE
+        - field: policy_id
+          type: number
+          label: Policy ID
+          supports_variables: true
+          description: Filter by policy ID
+        - field: policy_response
+          type: select
+          label: Policy Response
+          options: [passing, failing]
+          description: Filter by passing or failing policy
+        - field: page
+          type: number
+          label: Page
+          default: 0
+        - field: per_page
+          type: number
+          label: Per Page
+          default: 100
+
+    - id: get_host
+      name: Get Host
+      description: Fetch detailed telemetry for a single FleetDM host
+      icon: "🔍"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Host details
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+          description: FleetDM host ID
+
+    - id: get_host_software
+      name: Get Host Software
+      description: List software installed on a specific host
+      icon: "📦"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/software
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Host software inventory
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+        - field: page
+          type: number
+          label: Page
+          default: 0
+        - field: per_page
+          type: number
+          label: Per Page
+          default: 100
+
+    - id: get_host_mdm
+      name: Get Host MDM
+      description: Get MDM enrollment and settings status for a host
+      icon: "📱"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/mdm
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Host MDM details
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+
+    - id: get_host_certificates
+      name: Get Host Certificates
+      description: List MDM and system certificates on a host
+      icon: "📜"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/certificates
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Host certificates list
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+
+    - id: get_host_profiles
+      name: Get Host Profiles
+      description: List MDM configuration profile statuses on a host
+      icon: "⚙️"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/configuration_profiles
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Host MDM configuration profiles
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+
+    - id: list_vulnerabilities
+      name: List Vulnerabilities
+      description: List vulnerabilities detected across the fleet
+      icon: "🔓"
+      endpoint: /api/v1/fleet/vulnerabilities
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Paginated list of vulnerabilities
+      config_schema:
+        - field: fleet_id
+          type: number
+          label: Fleet ID
+          supports_variables: true
+        - field: exploit_only
+          type: checkbox
+          label: Known Exploits Only
+          default: false
+        - field: page
+          type: number
+          label: Page
+          default: 0
+        - field: per_page
+          type: number
+          label: Per Page
+          default: 100
+
+    - id: get_vulnerability
+      name: Get Vulnerability
+      description: Get CVE details, affected software, and affected OS versions
+      icon: "🔎"
+      endpoint: /api/v1/fleet/vulnerabilities/{{cve}}
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Vulnerability details
+      config_schema:
+        - field: cve
+          type: string
+          label: CVE ID
+          placeholder: "CVE-2024-1234"
+          supports_variables: true
+          required: true
+
+    - id: list_software_titles
+      name: List Software Titles
+      description: List software titles including AI tools and installer packages
+      icon: "📚"
+      endpoint: /api/v1/fleet/software/titles
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Software titles list
+      config_schema:
+        - field: fleet_id
+          type: number
+          label: Fleet ID
+          supports_variables: true
+        - field: page
+          type: number
+          label: Page
+          default: 0
+        - field: per_page
+          type: number
+          label: Per Page
+          default: 100
+
+    - id: list_software_versions
+      name: List Software Versions
+      description: List installed software versions across the fleet
+      icon: "📦"
+      endpoint: /api/v1/fleet/software/versions
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Software versions list
+      config_schema:
+        - field: fleet_id
+          type: number
+          label: Fleet ID
+          supports_variables: true
+        - field: vulnerable
+          type: checkbox
+          label: Vulnerable Only
+          default: false
+        - field: page
+          type: number
+          label: Page
+          default: 0
+        - field: per_page
+          type: number
+          label: Per Page
+          default: 100
+
+    - id: list_os_versions
+      name: List OS Versions
+      description: List operating system versions across enrolled hosts
+      icon: "🖥️"
+      endpoint: /api/v1/fleet/os_versions
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: OS versions list
+      config_schema:
+        - field: fleet_id
+          type: number
+          label: Fleet ID
+          supports_variables: true
+        - field: platform
+          type: select
+          label: Platform
+          options: [darwin, linux, windows, chrome, ios, ipados, android]
+        - field: page
+          type: number
+          label: Page
+          default: 0
+        - field: per_page
+          type: number
+          label: Per Page
+          default: 100
+
+    - id: list_policies
+      name: List Policies
+      description: List FleetDM compliance policies
+      icon: "📋"
+      endpoint: /api/v1/fleet/policies
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Policies list
+      config_schema:
+        - field: fleet_id
+          type: number
+          label: Fleet ID
+          supports_variables: true
+        - field: page
+          type: number
+          label: Page
+          default: 0
+        - field: per_page
+          type: number
+          label: Per Page
+          default: 100
+
+    - id: list_fleets
+      name: List Fleets
+      description: List FleetDM fleets (organizational groups)
+      icon: "🏢"
+      endpoint: /api/v1/fleet/fleets
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Fleets list
+      config_schema:
+        - field: page
+          type: number
+          label: Page
+          default: 0
+        - field: per_page
+          type: number
+          label: Per Page
+          default: 100
+
+    - id: list_labels
+      name: List Labels
+      description: List dynamic, manual, and builtin host labels
+      icon: "🏷️"
+      endpoint: /api/v1/fleet/labels
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Labels list
+      config_schema:
+        - field: fleet_id
+          type: number
+          label: Fleet ID
+          supports_variables: true
+        - field: page
+          type: number
+          label: Page
+          default: 0
+        - field: per_page
+          type: number
+          label: Per Page
+          default: 100
+
+    - id: list_scripts
+      name: List Scripts
+      description: List FleetDM remediation scripts
+      icon: "📜"
+      endpoint: /api/v1/fleet/scripts
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Scripts list
+      config_schema:
+        - field: fleet_id
+          type: number
+          label: Fleet ID
+          supports_variables: true
+        - field: page
+          type: number
+          label: Page
+          default: 0
+        - field: per_page
+          type: number
+          label: Per Page
+          default: 100
+
+    - id: list_reports
+      name: List Reports
+      description: List saved FleetDM reports/queries
+      icon: "📊"
+      endpoint: /api/v1/fleet/reports
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Saved reports list
+      config_schema:
+        - field: fleet_id
+          type: number
+          label: Fleet ID
+          supports_variables: true
+        - field: page
+          type: number
+          label: Page
+          default: 0
+        - field: per_page
+          type: number
+          label: Per Page
+          default: 100
+
+    - id: list_activities
+      name: List Activities
+      description: List FleetDM audit activity stream
+      icon: "📰"
+      endpoint: /api/v1/fleet/activities
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Activity log items
+      config_schema:
+        - field: page
+          type: number
+          label: Page
+          default: 0
+        - field: per_page
+          type: number
+          label: Per Page
+          default: 100
+
+    - id: get_mdm_summary
+      name: Get MDM Summary
+      description: Get fleet-wide MDM enrollment and status summary
+      icon: "📱"
+      endpoint: /api/v1/fleet/hosts/summary/mdm
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Fleet MDM summary counts
+      config_schema:
+        - field: fleet_id
+          type: number
+          label: Fleet ID
+          supports_variables: true
+
+    - id: get_disk_encryption
+      name: Get Disk Encryption
+      description: Get fleet-wide disk encryption compliance summary
+      icon: "🔐"
+      endpoint: /api/v1/fleet/disk_encryption
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Disk encryption posture summary
+      config_schema:
+        - field: fleet_id
+          type: number
+          label: Fleet ID
+          supports_variables: true
+
+  # ============================================================================
+  # ACTIONS - Remediation, MDM, and Fleet control operations
+  # ============================================================================
+  actions:
+    - id: refetch_host
+      name: Refetch Host
+      description: Trigger immediate refetch of osquery vitals for a host
+      icon: "🔄"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/refetch
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Refetch initiation status
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+
+    - id: lock_host
+      name: Lock Host
+      description: Remotely lock a managed endpoint via MDM
+      icon: "🔒"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/lock
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Lock command status
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+
+    - id: unlock_host
+      name: Unlock Host
+      description: Unlock a previously locked endpoint via MDM
+      icon: "🔓"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/unlock
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Unlock command result
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+
+    - id: wipe_host
+      name: Wipe Host
+      description: Remotely wipe a managed endpoint via MDM
+      icon: "🧹"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/wipe
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Wipe command status
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+
+    - id: transfer_hosts_fleet
+      name: Transfer Hosts Fleet
+      description: Transfer one or more hosts to a target Fleet
+      icon: "🚚"
+      endpoint: /api/v1/fleet/hosts/transfer
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Transfer result
+      config_schema:
+        - field: fleet_id
+          type: number
+          label: Target Fleet ID
+          supports_variables: true
+          required: true
+        - field: hosts
+          type: textarea
+          label: Host IDs (JSON array)
+          placeholder: "[1, 2, 3]"
+          supports_variables: true
+          required: true
+
+    - id: add_host_labels
+      name: Add Host Labels
+      description: Assign manual labels to a host
+      icon: "🏷️"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/labels
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Label assignment result
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+        - field: labels
+          type: textarea
+          label: Labels (JSON array)
+          placeholder: '["quarantine", "high-risk"]'
+          supports_variables: true
+          required: true
+
+    - id: remove_host_labels
+      name: Remove Host Labels
+      description: Remove manual labels from a host
+      icon: "🏷️"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/labels
+      method: DELETE
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Label removal result
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+        - field: labels
+          type: textarea
+          label: Labels (JSON array)
+          placeholder: '["quarantine"]'
+          supports_variables: true
+          required: true
+
+    - id: run_script
+      name: Run Script
+      description: Execute a FleetDM script asynchronously on a host
+      icon: "▶️"
+      endpoint: /api/v1/fleet/scripts/run
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Script execution ID and status
+      config_schema:
+        - field: host_id
+          type: number
+          label: Host ID
+          supports_variables: true
+          required: true
+        - field: script_id
+          type: number
+          label: Script ID
+          supports_variables: true
+          required: true
+        - field: script_contents
+          type: textarea
+          label: Script Contents (ad-hoc)
+          supports_variables: true
+
+    - id: batch_run_script
+      name: Batch Run Script
+      description: Execute a FleetDM script across a batch of hosts
+      icon: "⚡"
+      endpoint: /api/v1/fleet/scripts/run/batch
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Batch script execution ID
+      config_schema:
+        - field: script_id
+          type: number
+          label: Script ID
+          supports_variables: true
+          required: true
+        - field: host_ids
+          type: textarea
+          label: Host IDs (JSON array)
+          placeholder: "[1, 2, 3]"
+          supports_variables: true
+          required: true
+
+    - id: install_software
+      name: Install Software
+      description: Trigger software package installation on a host
+      icon: "📥"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/software/{{software_title_id}}/install
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Software installation UUID
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+        - field: software_title_id
+          type: string
+          label: Software Title ID
+          supports_variables: true
+          required: true
+
+    - id: uninstall_software
+      name: Uninstall Software
+      description: Trigger software uninstallation on a host
+      icon: "🗑️"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/software/{{software_title_id}}/uninstall
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Software uninstallation UUID
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+        - field: software_title_id
+          type: string
+          label: Software Title ID
+          supports_variables: true
+          required: true
+
+    - id: run_live_query_host
+      name: Run Live Query Host
+      description: Execute an ad-hoc osquery query synchronously on a host
+      icon: "🔎"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/query
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Live osquery result rows
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+        - field: query
+          type: textarea
+          label: SQL Query
+          placeholder: "SELECT * FROM os_version;"
+          supports_variables: true
+          required: true
+
+    - id: run_live_report
+      name: Run Live Report
+      description: Execute a live osquery report across targeted hosts or labels
+      icon: "📊"
+      endpoint: /api/v1/fleet/reports/run
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Live report campaign ID and results
+      config_schema:
+        - field: query
+          type: textarea
+          label: SQL Query
+          placeholder: "SELECT * FROM uptime;"
+          supports_variables: true
+          required: true
+        - field: selected
+          type: textarea
+          label: Target Selection (JSON)
+          placeholder: '{"hosts": [1, 2], "labels": []}'
+          supports_variables: true
+
+    - id: run_mdm_command
+      name: Run MDM Command
+      description: Send a custom MDM command payload to enrolled hosts
+      icon: "📡"
+      endpoint: /api/v1/fleet/commands/run
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: MDM command UUID and status
+      config_schema:
+        - field: command
+          type: textarea
+          label: Base64 Command XML
+          supports_variables: true
+          required: true
+        - field: host_uuids
+          type: textarea
+          label: Host UUIDs (JSON array)
+          supports_variables: true
+          required: true
+
+    - id: resend_config_profile
+      name: Resend Config Profile
+      description: Re-deliver an MDM configuration profile to a host
+      icon: "🔁"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/configuration_profiles/{{profile_uuid}}/resend
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Profile resend status
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+        - field: profile_uuid
+          type: string
+          label: Profile UUID
+          supports_variables: true
+          required: true
+
+    - id: rotate_encryption_key
+      name: Rotate Encryption Key
+      description: Rotate the disk encryption key on a managed host
+      icon: "🔑"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/encryption_key/rotate
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Key rotation initiation status
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+
+    - id: rotate_recovery_lock
+      name: Rotate Recovery Lock
+      description: Rotate the macOS Recovery Lock password on a managed host
+      icon: "🔐"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/recovery_lock_password/rotate
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Recovery lock rotation status
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+
+    - id: clear_host_passcode
+      name: Clear Host Passcode
+      description: Clear device passcode on an MDM-managed mobile host
+      icon: "📲"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/clear_passcode
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Passcode clear command status
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+
+    - id: send_apns_ping
+      name: Send APNs Ping
+      description: Send an APNs wake-up ping to an MDM-enrolled Apple device
+      icon: "📶"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}/mdm/ping
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: APNs ping status
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true
+
+    - id: create_policy
+      name: Create Policy
+      description: Create a new FleetDM compliance policy
+      icon: "📝"
+      endpoint: /api/v1/fleet/policies
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Created FleetDM policy
+      config_schema:
+        - field: name
+          type: string
+          label: Policy Name
+          supports_variables: true
+          required: true
+        - field: query
+          type: textarea
+          label: Osquery SQL
+          supports_variables: true
+          required: true
+        - field: description
+          type: string
+          label: Description
+          supports_variables: true
+        - field: resolution
+          type: textarea
+          label: Resolution Steps
+          supports_variables: true
+        - field: platform
+          type: select
+          label: Platform
+          options: [darwin, linux, windows, chrome]
+        - field: critical
+          type: checkbox
+          label: Critical
+          default: false
+        - field: fleet_id
+          type: number
+          label: Fleet ID
+          supports_variables: true
+
+    - id: delete_host
+      name: Delete Host
+      description: Remove a host from FleetDM inventory
+      icon: "🗑️"
+      endpoint: /api/v1/fleet/hosts/{{host_id}}
+      method: DELETE
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Deletion result
+      config_schema:
+        - field: host_id
+          type: string
+          label: Host ID
+          supports_variables: true
+          required: true

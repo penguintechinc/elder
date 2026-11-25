@@ -1,44 +1,158 @@
 """Elder gRPC servicer implementation.
 
-NOTE: This servicer is currently a stub. The original implementation assumed SQLAlchemy
-ORM models, but Elder uses penguin-dal. The servicer methods need to be rewritten to use
-penguin-dal operations via the apps.api.api.v1 services.
-
-For now, all methods return UNIMPLEMENTED status until proper penguin-dal integration is done.
+Every RPC except Login/RefreshToken/HealthCheck runs for a caller verified
+by ``apps.api.grpc.auth.GrpcAuthInterceptor``. Each handler is wrapped by
+``_rpc``, which re-checks that a verified caller is bound (defence in depth
+if the interceptor is ever missing), refuses platform identities that carry
+no tenant, and enforces the same ``resource:action`` scopes as the REST API.
+All queries are then scoped to the caller's tenant: lists filter, foreign
+ids resolve to NOT_FOUND, and creates verify every referenced row is
+in-tenant. Nothing in a request message is trusted for tenancy.
 """
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+import functools
+import itertools
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any
 
 import grpc
-import jwt
 import networkx as nx
 import structlog
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from apps.api.auth.jwt_handler import (
+    carried_auth_time,
+    generate_token,
+    interactive_auth_time,
+    verify_token,
+)
+from apps.api.grpc.auth import GrpcCaller, current_caller, run_in_app_context
 from apps.api.grpc.converters import (
     dependency_to_proto,
+    dependency_type_to_proto,
     entity_to_proto,
     entity_type_from_proto,
+    entity_type_to_proto,
     identity_to_proto,
     organization_to_proto,
 )
 from apps.api.grpc.generated import (
-    auth_pb2,
-    common_pb2,
-    dependency_pb2,
+    auth_pb2 as _auth_pb2,
+)
+from apps.api.grpc.generated import (
+    common_pb2 as _common_pb2,
+)
+from apps.api.grpc.generated import (
+    dependency_pb2 as _dependency_pb2,
+)
+from apps.api.grpc.generated import (
     elder_pb2_grpc,
-    entity_pb2,
-    graph_pb2,
-    organization_pb2,
+)
+from apps.api.grpc.generated import (
+    entity_pb2 as _entity_pb2,
+)
+from apps.api.grpc.generated import (
+    graph_pb2 as _graph_pb2,
+)
+from apps.api.grpc.generated import (
+    organization_pb2 as _organization_pb2,
 )
 from apps.api.models import DependencyDTO, EntityDTO, IdentityDTO, OrganizationDTO
 from apps.api.models.dataclasses import from_pydal_row
+from apps.api.modules.infrastructure.routes.graph import (
+    GRAPH_MAX_NODES,
+    _entity_edges,
+    _get_entity_subgraph,
+    _resolve_depth,
+    _select_capped,
+    _tenant_org_ids,
+)
+from apps.api.utils.pagination import DEFAULT_LIMIT, MAX_LIMIT, MAX_OFFSET, clamp_int
+from apps.api.utils.tenant_scoping import get_tenant_scoped
+
+# The protobuf modules are generated at runtime descriptors and ship no type
+# stubs, so their message classes are invisible to mypy; bind them as Any.
+auth_pb2: Any = _auth_pb2
+common_pb2: Any = _common_pb2
+dependency_pb2: Any = _dependency_pb2
+entity_pb2: Any = _entity_pb2
+graph_pb2: Any = _graph_pb2
+organization_pb2: Any = _organization_pb2
 
 logger = structlog.get_logger(__name__)
+
+# Scopes accepted per resource and action. The REST routes guard
+# organizations, entities and dependencies with ``infrastructure:*``; the
+# resource-specific scopes are accepted too because they are what
+# per-resource roles and service workers are issued.
+ORG_READ = ("organizations:read", "infrastructure:read")
+ORG_WRITE = ("organizations:write", "infrastructure:write")
+ENTITY_READ = ("entities:read", "infrastructure:read")
+ENTITY_WRITE = ("entities:write", "infrastructure:write")
+DEP_READ = ("dependencies:read", "infrastructure:read")
+DEP_WRITE = ("dependencies:write", "infrastructure:write")
+GRAPH_READ = ("infrastructure:read",)
+USERS_READ = ("users:read", "identities:read")
+USERS_WRITE = ("users:write", "identities:write")
+
+# Upper bound on cycles reported by AnalyzeGraph (enumeration is exponential).
+ANALYZE_MAX_CYCLES = 10
+# Upper bound on organization nesting walked when resolving a hierarchy root.
+ORG_MAX_ANCESTORS = 100
+
+
+def _rpc(response_cls: Callable[[], Any], scopes: tuple[str, ...] = ()):
+    """Guard a servicer method with caller, tenant and scope checks.
+
+    The wrapped method receives the verified ``GrpcCaller`` as an extra
+    argument. Calls with no verified caller get UNAUTHENTICATED; platform
+    identities without a tenant, or callers lacking every accepted scope,
+    get PERMISSION_DENIED. Status is set on the context (not raised) so the
+    method bodies' broad exception handlers cannot mask it as INTERNAL.
+    """
+
+    def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+        @functools.wraps(fn)
+        def wrapper(self: Any, request: Any, context: grpc.ServicerContext) -> Any:
+            caller = current_caller()
+            if caller is None:
+                context.set_code(grpc.StatusCode.UNAUTHENTICATED)
+                context.set_details("valid bearer token required")
+                return response_cls()
+            if caller.is_system:
+                context.set_code(grpc.StatusCode.PERMISSION_DENIED)
+                context.set_details("a tenant-bound identity is required")
+                return response_cls()
+            if scopes and not caller.has_any_scope(scopes):
+                context.set_code(grpc.StatusCode.PERMISSION_DENIED)
+                context.set_details(f"requires one of scopes: {', '.join(scopes)}")
+                return response_cls()
+            return fn(self, request, context, caller)
+
+        return wrapper
+
+    return decorator
+
+
+def _not_found(context: grpc.ServicerContext, what: str, rid: Any, resp: Any) -> Any:
+    """Set NOT_FOUND for a missing or foreign row and return ``resp``.
+
+    Foreign ids get exactly the same answer as non-existent ones so callers
+    cannot enumerate other tenants' ids.
+    """
+    context.set_code(grpc.StatusCode.NOT_FOUND)
+    context.set_details(f"{what} with ID {rid} not found")
+    return resp
+
+
+def _invalid(context: grpc.ServicerContext, details: str, resp: Any) -> Any:
+    """Set INVALID_ARGUMENT with ``details`` and return ``resp``."""
+    context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+    context.set_details(details)
+    return resp
 
 
 class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
@@ -53,18 +167,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         """
         super().__init__()
 
-        # Store reference to Flask app for shared database access
+        # Store reference to the app for shared database access and the
+        # JWT configuration used by the REST API (single signing key).
         self.app = app
-
-        # JWT configuration
-        import os
-
-        self.jwt_secret = os.getenv(
-            "JWT_SECRET_KEY", "default-secret-key-change-in-production"
-        )
-        self.jwt_algorithm = os.getenv("JWT_ALGORITHM", "HS256")
-        self.jwt_access_token_expires = timedelta(hours=1)
-        self.jwt_refresh_token_expires = timedelta(days=30)
 
         logger.info("elder_servicer_initialized")
 
@@ -77,7 +182,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
     # Helper Methods
     # ========================================================================
 
-    def _create_timestamp(self, dt: Optional[datetime]) -> common_pb2.Timestamp:
+    def _create_timestamp(self, dt: datetime | None) -> Any:
         """Convert datetime to protobuf Timestamp."""
         if dt is None:
             return common_pb2.Timestamp(seconds=0, nanos=0)
@@ -86,9 +191,58 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         nanos = dt.microsecond * 1000
         return common_pb2.Timestamp(seconds=timestamp, nanos=nanos)
 
-    def _create_pagination_response(
-        self, page: int, per_page: int, total: int
-    ) -> common_pb2.PaginationResponse:
+    def _page(self, pagination) -> tuple[int, int, int]:
+        """Return ``(page, per_page, offset)`` bounded like the REST lists.
+
+        ``per_page`` defaults to 50 and is capped at 200; the offset is
+        capped at ``MAX_OFFSET`` so a huge page number cannot force a deep
+        scan.
+        """
+        per_page = clamp_int(pagination.per_page or None, DEFAULT_LIMIT, 1, MAX_LIMIT)
+        page = clamp_int(pagination.page or None, 1, 1, MAX_OFFSET // per_page + 1)
+        return page, per_page, (page - 1) * per_page
+
+    def _scoped_org(self, db, org_id: int, tenant_id: int | None):
+        """Return the organization only if it belongs to ``tenant_id``."""
+        return get_tenant_scoped(db, db.organizations, org_id, tenant_id)
+
+    def _scoped_entity(self, db, entity_id: int, tenant_id: int | None):
+        """Return the entity only if its organization belongs to ``tenant_id``."""
+        return get_tenant_scoped(
+            db, db.entities, entity_id, tenant_id, org_fk="organization_id"
+        )
+
+    def _scoped_dependency(self, db, dep_id: int, tenant_id: int | None):
+        """Return the dependency only if it is recorded for ``tenant_id``."""
+        return get_tenant_scoped(db, db.dependencies, dep_id, tenant_id)
+
+    def _scoped_identity(self, db, identity_id: int, tenant_id: int | None):
+        """Return the identity only if it belongs to ``tenant_id``."""
+        return get_tenant_scoped(db, db.identities, identity_id, tenant_id)
+
+    def _tenant_graph(self, db, tenant_id: int | None, org_id: int = 0):
+        """Load the caller's entity graph, bounded by the shared graph caps.
+
+        Returns ``(entities, edges, truncated)`` where every entity belongs
+        to one of the tenant's organizations (optionally a single one) and
+        both endpoints of every edge are inside that entity set.
+        """
+        org_ids = _tenant_org_ids(db, tenant_id)
+        if org_id:
+            org_ids = [org_id] if org_id in org_ids else []
+        if not org_ids:
+            return [], [], False
+        entities, nodes_cut = _select_capped(
+            db,
+            db.entities.organization_id.belongs(org_ids),
+            db.entities.id,
+            GRAPH_MAX_NODES,
+        )
+        edges, edges_cut = _entity_edges(db, [e.id for e in entities])
+        edges = [e for e in edges if e.tenant_id in (tenant_id, None)]
+        return entities, edges, nodes_cut or edges_cut
+
+    def _create_pagination_response(self, page: int, per_page: int, total: int) -> Any:
         """Create pagination response."""
         pages = (total + per_page - 1) // per_page if per_page > 0 else 0
         return common_pb2.PaginationResponse(
@@ -99,8 +253,8 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         )
 
     def _create_status_response(
-        self, success: bool, message: str, details: dict = None
-    ) -> common_pb2.StatusResponse:
+        self, success: bool, message: str, details: dict | None = None
+    ) -> Any:
         """Create status response."""
         return common_pb2.StatusResponse(
             success=success,
@@ -114,38 +268,30 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         context.set_code(grpc.StatusCode.INTERNAL)
         context.set_details(f"{operation} failed: {str(e)}")
 
-    def _generate_jwt_token(self, identity, token_type: str = "access") -> str:
-        """Generate JWT token for identity."""
-        if token_type == "access":
-            expires_delta = self.jwt_access_token_expires
-        else:
-            expires_delta = self.jwt_refresh_token_expires
+    def _generate_jwt_token(
+        self, identity, token_type: str = "access", auth_time: int | None = None
+    ) -> str:
+        """Issue a token with the REST API's issuer (same key and claims)."""
+        return run_in_app_context(
+            self.app, generate_token, identity, token_type, auth_time
+        )
 
-        now = datetime.now(timezone.utc)
-        payload = {
-            "sub": str(identity.id),
-            "username": identity.username,
-            "type": token_type,
-            "iat": now,
-            "exp": now + expires_delta,
-        }
+    def _verify_jwt_token(
+        self, token: str, expected_type: str = "access"
+    ) -> dict | None:
+        """Verify an identity JWT of exactly ``expected_type`` (shared verifier).
 
-        token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
-        return token
-
-    def _verify_jwt_token(self, token: str) -> Optional[dict]:
-        """Verify and decode JWT token."""
-        try:
-            payload = jwt.decode(
-                token, self.jwt_secret, algorithms=[self.jwt_algorithm]
-            )
-            return payload
-        except jwt.ExpiredSignatureError:
-            logger.warning("Token expired")
+        Fails closed: tokens of any other type never resolve here.
+        """
+        if not token:
             return None
-        except jwt.InvalidTokenError:
-            logger.warning("Invalid token")
-            return None
+        return run_in_app_context(
+            self.app, verify_token, token, frozenset({expected_type})
+        )
+
+    def _access_expires_in(self) -> int:
+        """Return the configured access-token lifetime in seconds."""
+        return int(self.app.config["JWT_ACCESS_TOKEN_EXPIRES"].total_seconds())
 
     # ========================================================================
     # Authentication & Identity Management (11 methods)
@@ -188,18 +334,18 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 return auth_pb2.LoginResponse()
 
             # Update last login
-            db(db.identities.id == identity.id).update(
-                last_login_at=datetime.now(timezone.utc)
-            )
+            db(db.identities.id == identity.id).update(last_login_at=datetime.now(UTC))
             db.commit()
 
             # Refresh identity data
             identity = db.identities[identity.id]
 
             # Generate tokens
-            access_token = self._generate_jwt_token(identity, "access")
-            refresh_token = self._generate_jwt_token(identity, "refresh")
-            expires_in = int(self.jwt_access_token_expires.total_seconds())
+            # Password login is an interactive authentication.
+            auth_time = interactive_auth_time()
+            access_token = self._generate_jwt_token(identity, "access", auth_time)
+            refresh_token = self._generate_jwt_token(identity, "refresh", auth_time)
+            expires_in = self._access_expires_in()
 
             identity_dto = from_pydal_row(identity, IdentityDTO)
 
@@ -225,7 +371,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 return auth_pb2.RefreshTokenResponse()
 
             # Verify refresh token
-            payload = self._verify_jwt_token(request.refresh_token)
+            payload = self._verify_jwt_token(
+                request.refresh_token, expected_type="refresh"
+            )
             if not payload or payload.get("type") != "refresh":
                 context.set_code(grpc.StatusCode.UNAUTHENTICATED)
                 context.set_details("Invalid refresh token")
@@ -240,9 +388,11 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 context.set_details("User not found or inactive")
                 return auth_pb2.RefreshTokenResponse()
 
-            # Generate new access token
-            access_token = self._generate_jwt_token(identity, "access")
-            expires_in = int(self.jwt_access_token_expires.total_seconds())
+            # A refresh carries the original auth_time forward, never renews it.
+            access_token = self._generate_jwt_token(
+                identity, "access", carried_auth_time(payload)
+            )
+            expires_in = self._access_expires_in()
 
             return auth_pb2.RefreshTokenResponse(
                 access_token=access_token,
@@ -253,7 +403,8 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "refresh_token")
             return auth_pb2.RefreshTokenResponse()
 
-    def Logout(self, request, context):
+    @_rpc(auth_pb2.LogoutResponse)
+    def Logout(self, request, context, caller):
         """Logout and invalidate tokens."""
         try:
             # Note: JWT tokens are stateless, so logout is handled client-side
@@ -267,26 +418,25 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "logout")
             return auth_pb2.LogoutResponse()
 
-    def GetCurrentIdentity(self, request, context):
-        """Get current authenticated identity."""
+    @_rpc(auth_pb2.GetCurrentIdentityResponse)
+    def GetCurrentIdentity(self, request, context, caller):
+        """Return the identity of the verified caller.
+
+        The identity always comes from the call's bearer token; the legacy
+        ``access_token`` request field is ignored so it cannot be used to
+        look up somebody else.
+        """
         try:
             db = self.db
 
-            if not request.access_token:
-                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
-                context.set_details("access_token is required")
-                return auth_pb2.GetCurrentIdentityResponse()
-
-            # Verify token
-            payload = self._verify_jwt_token(request.access_token)
-            if not payload:
-                context.set_code(grpc.StatusCode.UNAUTHENTICATED)
-                context.set_details("Invalid or expired token")
-                return auth_pb2.GetCurrentIdentityResponse()
-
-            # Get identity
-            user_id = int(payload["sub"])
-            identity = db.identities[user_id]
+            if caller.token_type != "access":
+                return _not_found(
+                    context,
+                    "Identity",
+                    caller.subject,
+                    auth_pb2.GetCurrentIdentityResponse(),
+                )
+            identity = self._scoped_identity(db, int(caller.subject), caller.tenant_id)
 
             if not identity:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -301,7 +451,8 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "get_current_identity")
             return auth_pb2.GetCurrentIdentityResponse()
 
-    def ChangePassword(self, request, context):
+    @_rpc(auth_pb2.ChangePasswordResponse)
+    def ChangePassword(self, request, context, caller):
         """Change password for current user."""
         try:
             db = self.db
@@ -316,17 +467,23 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 context.set_details("new_password is required")
                 return auth_pb2.ChangePasswordResponse()
 
-            # Note: This requires authentication context to get current user
-            # For now, return UNIMPLEMENTED - requires auth interceptor
+            # Password changes go through the REST API, which applies the
+            # password policy and session revocation.
             context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-            context.set_details("ChangePassword requires authentication interceptor")
+            context.set_details("ChangePassword is only available via the REST API")
             return auth_pb2.ChangePasswordResponse()
         except Exception as e:
             self._handle_exception(context, e, "change_password")
             return auth_pb2.ChangePasswordResponse()
 
-    def RegisterIdentity(self, request, context):
-        """Register new identity."""
+    @_rpc(auth_pb2.RegisterIdentityResponse, USERS_WRITE)
+    def RegisterIdentity(self, request, context, caller):
+        """Create an identity in the caller's tenant.
+
+        Requires ``users:write``. The new identity is a non-superuser
+        observer, and no tokens are returned for it: the creating caller
+        must not be able to act as the identity it just created.
+        """
         try:
             db = self.db
 
@@ -361,10 +518,11 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             # Determine identity type
             identity_type = "human"
             if request.identity_type == auth_pb2.IdentityType.SERVICE_ACCOUNT:
+                # nosemgrep: generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account -- identity-type enum value / placeholder text, not a credential
                 identity_type = "service_account"
 
             # Create identity
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             identity_id = db.identities.insert(
                 username=request.username,
                 email=request.email,
@@ -372,6 +530,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 identity_type=identity_type,
                 auth_provider="local",
                 password_hash=generate_password_hash(request.password),
+                tenant_id=caller.tenant_id,
+                portal_role="observer",
+                must_change_password=False,
                 is_active=True,
                 is_superuser=False,
                 mfa_enabled=False,
@@ -380,26 +541,24 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             )
             db.commit()
 
-            # Get created identity
-            identity = db.identities[identity_id]
+            identity = self._scoped_identity(db, identity_id, caller.tenant_id)
             identity_dto = from_pydal_row(identity, IdentityDTO)
-
-            # Generate tokens
-            access_token = self._generate_jwt_token(identity, "access")
-            refresh_token = self._generate_jwt_token(identity, "refresh")
 
             return auth_pb2.RegisterIdentityResponse(
                 identity=identity_to_proto(identity_dto),
-                access_token=access_token,
-                refresh_token=refresh_token,
             )
         except Exception as e:
             db.rollback()
             self._handle_exception(context, e, "register_identity")
             return auth_pb2.RegisterIdentityResponse()
 
-    def ValidateToken(self, request, context):
-        """Validate access token."""
+    @_rpc(auth_pb2.ValidateTokenResponse)
+    def ValidateToken(self, request, context, caller):
+        """Validate an access token belonging to the caller's tenant.
+
+        Tokens of other tenants (or of non-identity callers) report
+        ``valid=False`` so introspection cannot reveal foreign identities.
+        """
         try:
             db = self.db
 
@@ -410,16 +569,19 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
 
             # Verify token
             payload = self._verify_jwt_token(request.access_token)
-            if not payload:
+            sub = str((payload or {}).get("sub", ""))
+            if (
+                not payload
+                or payload.get("type") != "access"
+                or not (sub.isascii() and sub.isdigit())
+            ):
                 return auth_pb2.ValidateTokenResponse(
                     valid=False,
                     identity=None,
                     expires_at=None,
                 )
 
-            # Get identity
-            user_id = int(payload["sub"])
-            identity = db.identities[user_id]
+            identity = self._scoped_identity(db, int(sub), caller.tenant_id)
 
             if not identity or not identity.is_active:
                 return auth_pb2.ValidateTokenResponse(
@@ -441,20 +603,15 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "validate_token")
             return auth_pb2.ValidateTokenResponse()
 
-    def ListIdentities(self, request, context):
-        """List identities with pagination and filters."""
+    @_rpc(auth_pb2.ListIdentitiesResponse, USERS_READ)
+    def ListIdentities(self, request, context, caller):
+        """List the caller tenant's identities with pagination and filters."""
         try:
             db = self.db
 
-            # Get pagination params
-            page = request.pagination.page if request.pagination.page > 0 else 1
-            per_page = min(
-                request.pagination.per_page if request.pagination.per_page > 0 else 50,
-                1000,
-            )
+            page, per_page, offset = self._page(request.pagination)
 
-            # Build query
-            query = db.identities.id > 0
+            query = db.identities.tenant_id == caller.tenant_id
 
             # Apply filters
             if request.identity_type != auth_pb2.IdentityType.IDENTITY_TYPE_UNSPECIFIED:
@@ -477,7 +634,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                     query &= db.identities.auth_provider == auth_provider_str
 
             if request.active_only:
-                query &= db.identities.is_active is True
+                query &= db.identities.is_active == True  # noqa: E712 - SQL
 
             # Apply search filter if provided (from filters map)
             if request.filters and request.filters.filters:
@@ -492,9 +649,6 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
 
             # Get total count
             total = db(query).count()
-
-            # Calculate pagination
-            offset = (page - 1) * per_page
 
             # Execute query
             rows = db(query).select(
@@ -533,11 +687,12 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "list_identities")
             return auth_pb2.ListIdentitiesResponse()
 
-    def GetIdentity(self, request, context):
-        """Get identity by ID."""
+    @_rpc(auth_pb2.GetIdentityResponse, USERS_READ)
+    def GetIdentity(self, request, context, caller):
+        """Get an identity of the caller's tenant by ID."""
         try:
             db = self.db
-            identity = db.identities[request.id]
+            identity = self._scoped_identity(db, request.id, caller.tenant_id)
 
             if not identity:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -554,10 +709,27 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return auth_pb2.GetIdentityResponse()
 
     def UpdateIdentity(self, request, context):
-        """Update identity."""
+        """Update an identity of the caller's tenant.
+
+        ``is_superuser`` can never be changed over gRPC, whoever the caller
+        is: the request is refused before authentication or lookup, and the
+        change must be made through the REST API by a verified superuser.
+        """
+        if request.HasField("is_superuser"):
+            logger.warning(
+                "grpc_update_identity_superuser_refused", identity_id=request.id
+            )
+            context.set_code(grpc.StatusCode.PERMISSION_DENIED)
+            context.set_details("is_superuser cannot be changed via gRPC")
+            return auth_pb2.UpdateIdentityResponse()
+        return self._update_identity(request, context)
+
+    @_rpc(auth_pb2.UpdateIdentityResponse, USERS_WRITE)
+    def _update_identity(self, request, context, caller):
+        """Apply a non-privileged identity update within the caller's tenant."""
         try:
             db = self.db
-            identity = db.identities[request.id]
+            identity = self._scoped_identity(db, request.id, caller.tenant_id)
 
             if not identity:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -572,16 +744,16 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 data["full_name"] = request.display_name
             if request.HasField("is_active"):
                 data["is_active"] = request.is_active
-            if request.HasField("is_superuser"):
-                data["is_superuser"] = request.is_superuser
-
             # Update identity
             if data:
-                db(db.identities.id == request.id).update(**data)
+                db(
+                    (db.identities.id == request.id)
+                    & (db.identities.tenant_id == caller.tenant_id)
+                ).update(**data)
                 db.commit()
 
             # Fetch updated identity
-            updated_identity = db.identities[request.id]
+            updated_identity = self._scoped_identity(db, request.id, caller.tenant_id)
             identity_dto = from_pydal_row(updated_identity, IdentityDTO)
 
             return auth_pb2.UpdateIdentityResponse(
@@ -592,19 +764,22 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "update_identity")
             return auth_pb2.UpdateIdentityResponse()
 
-    def DeleteIdentity(self, request, context):
-        """Delete identity."""
+    @_rpc(auth_pb2.DeleteIdentityResponse, USERS_WRITE)
+    def DeleteIdentity(self, request, context, caller):
+        """Delete an identity of the caller's tenant."""
         try:
             db = self.db
-            identity = db.identities[request.id]
+            identity = self._scoped_identity(db, request.id, caller.tenant_id)
 
             if not identity:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
                 context.set_details(f"Identity with ID {request.id} not found")
                 return auth_pb2.DeleteIdentityResponse()
 
-            # Delete identity
-            del db.identities[request.id]
+            db(
+                (db.identities.id == request.id)
+                & (db.identities.tenant_id == caller.tenant_id)
+            ).delete()
             db.commit()
 
             return auth_pb2.DeleteIdentityResponse(
@@ -625,18 +800,15 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
     # Organization Management (7 methods)
     # ========================================================================
 
-    def ListOrganizations(self, request, context):
-        """List organizations with pagination and filters."""
+    @_rpc(organization_pb2.ListOrganizationsResponse, ORG_READ)
+    def ListOrganizations(self, request, context, caller):
+        """List the caller tenant's organizations with pagination and filters."""
         try:
             db = self.db
 
-            # Get pagination params from nested pagination message
-            pagination = request.pagination
-            page = pagination.page if pagination.page > 0 else 1
-            per_page = min(pagination.per_page if pagination.per_page > 0 else 50, 1000)
+            page, per_page, offset = self._page(request.pagination)
 
-            # Build PyDAL query
-            query = db.organizations.id > 0
+            query = db.organizations.tenant_id == caller.tenant_id
 
             # Apply filters
             if request.parent_id > 0:
@@ -650,10 +822,6 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
 
             # Get total count
             total = db(query).count()
-
-            # Calculate pagination
-            offset = (page - 1) * per_page
-            pages = (total + per_page - 1) // per_page
 
             # Execute query with pagination and ordering
             rows = db(query).select(
@@ -676,11 +844,12 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "list_organizations")
             return organization_pb2.ListOrganizationsResponse()
 
-    def GetOrganization(self, request, context):
-        """Get organization by ID."""
+    @_rpc(organization_pb2.GetOrganizationResponse, ORG_READ)
+    def GetOrganization(self, request, context, caller):
+        """Get an organization of the caller's tenant by ID."""
         try:
             db = self.db
-            org = db.organizations[request.id]
+            org = self._scoped_org(db, request.id, caller.tenant_id)
 
             if not org:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -696,39 +865,65 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "get_organization")
             return organization_pb2.GetOrganizationResponse()
 
-    def CreateOrganization(self, request, context):
-        """Create new organization."""
+    def _org_refs_error(
+        self, db, request, tenant_id: int | None, self_id: int = 0
+    ) -> str | None:
+        """Validate the rows an organization write references.
+
+        The parent organization and owner identity must belong to the
+        caller's tenant. Owner groups are rejected because identity groups
+        carry no tenant column, so their ownership cannot be verified.
+        Returns an error message, or None when the references are valid.
+        """
+        if request.parent_id > 0:
+            if request.parent_id == self_id or not self._scoped_org(
+                db, request.parent_id, tenant_id
+            ):
+                return f"Parent organization {request.parent_id} not found"
+        if request.owner_identity_id > 0 and not self._scoped_identity(
+            db, request.owner_identity_id, tenant_id
+        ):
+            return f"Owner identity {request.owner_identity_id} not found"
+        if request.owner_group_id > 0:
+            return "owner_group_id is not supported over gRPC"
+        return None
+
+    @_rpc(organization_pb2.CreateOrganizationResponse, ORG_WRITE)
+    def CreateOrganization(self, request, context, caller):
+        """Create an organization in the caller's tenant."""
         try:
             db = self.db
 
-            # Build data dict from request
+            if not request.name:
+                return _invalid(
+                    context,
+                    "name is required",
+                    organization_pb2.CreateOrganizationResponse(),
+                )
+            error = self._org_refs_error(db, request, caller.tenant_id)
+            if error:
+                return _invalid(
+                    context, error, organization_pb2.CreateOrganizationResponse()
+                )
+
             data = {
                 "name": request.name,
                 "description": request.description,
-                "organization_type": "organization",  # Default type
+                "type": "organization",
+                "tenant_id": caller.tenant_id,
             }
-
-            # Optional fields
             if request.parent_id > 0:
                 data["parent_id"] = request.parent_id
-            if request.ldap_dn:
-                data["ldap_dn"] = request.ldap_dn
-            if request.saml_group:
-                data["saml_group"] = request.saml_group
             if request.owner_identity_id > 0:
                 data["owner_identity_id"] = request.owner_identity_id
-            if request.owner_group_id > 0:
-                data["owner_group_id"] = request.owner_group_id
 
-            # Create organization using PyDAL
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             data["created_at"] = now
             data["updated_at"] = now
             org_id = db.organizations.insert(**data)
             db.commit()
 
-            # Fetch the created organization
-            org = db.organizations[org_id]
+            org = self._scoped_org(db, org_id, caller.tenant_id)
             org_dto = from_pydal_row(org, OrganizationDTO)
 
             return organization_pb2.CreateOrganizationResponse(
@@ -739,16 +934,23 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "create_organization")
             return organization_pb2.CreateOrganizationResponse()
 
-    def UpdateOrganization(self, request, context):
-        """Update existing organization."""
+    @_rpc(organization_pb2.UpdateOrganizationResponse, ORG_WRITE)
+    def UpdateOrganization(self, request, context, caller):
+        """Update an organization of the caller's tenant."""
         try:
             db = self.db
-            org = db.organizations[request.id]
+            org = self._scoped_org(db, request.id, caller.tenant_id)
 
             if not org:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
                 context.set_details(f"Organization with ID {request.id} not found")
                 return organization_pb2.UpdateOrganizationResponse()
+
+            error = self._org_refs_error(db, request, caller.tenant_id, request.id)
+            if error:
+                return _invalid(
+                    context, error, organization_pb2.UpdateOrganizationResponse()
+                )
 
             # Build update data dict (only include fields that are set)
             data = {}
@@ -756,24 +958,19 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 data["name"] = request.name
             if request.description:
                 data["description"] = request.description
-            # organization_type is not in the proto, skip it
             if request.parent_id > 0:
                 data["parent_id"] = request.parent_id
-            if request.ldap_dn:
-                data["ldap_dn"] = request.ldap_dn
-            if request.saml_group:
-                data["saml_group"] = request.saml_group
             if request.owner_identity_id > 0:
                 data["owner_identity_id"] = request.owner_identity_id
-            if request.owner_group_id > 0:
-                data["owner_group_id"] = request.owner_group_id
 
-            # Update organization using PyDAL
-            db(db.organizations.id == request.id).update(**data)
-            db.commit()
+            if data:
+                db(
+                    (db.organizations.id == request.id)
+                    & (db.organizations.tenant_id == caller.tenant_id)
+                ).update(**data)
+                db.commit()
 
-            # Fetch updated organization
-            org = db.organizations[request.id]
+            org = self._scoped_org(db, request.id, caller.tenant_id)
             org_dto = from_pydal_row(org, OrganizationDTO)
 
             return organization_pb2.UpdateOrganizationResponse(
@@ -784,11 +981,12 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "update_organization")
             return organization_pb2.UpdateOrganizationResponse()
 
-    def DeleteOrganization(self, request, context):
-        """Delete organization."""
+    @_rpc(organization_pb2.DeleteOrganizationResponse, ORG_WRITE)
+    def DeleteOrganization(self, request, context, caller):
+        """Delete an organization of the caller's tenant."""
         try:
             db = self.db
-            org = db.organizations[request.id]
+            org = self._scoped_org(db, request.id, caller.tenant_id)
 
             if not org:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -804,8 +1002,10 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 )
                 return organization_pb2.DeleteOrganizationResponse()
 
-            # Delete organization
-            del db.organizations[request.id]
+            db(
+                (db.organizations.id == request.id)
+                & (db.organizations.tenant_id == caller.tenant_id)
+            ).delete()
             db.commit()
 
             return organization_pb2.DeleteOrganizationResponse(
@@ -819,26 +1019,25 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "delete_organization")
             return organization_pb2.DeleteOrganizationResponse()
 
-    def GetOrganizationChildren(self, request, context):
-        """Get organization children."""
+    @_rpc(organization_pb2.GetOrganizationChildrenResponse, ORG_READ)
+    def GetOrganizationChildren(self, request, context, caller):
+        """Get the direct children of an organization of the caller's tenant."""
         try:
             db = self.db
-            org = db.organizations[request.id]
+            org = self._scoped_org(db, request.id, caller.tenant_id)
 
             if not org:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
                 context.set_details(f"Organization with ID {request.id} not found")
                 return organization_pb2.GetOrganizationChildrenResponse()
 
-            # Get pagination params from nested pagination message if provided
-            pagination = request.pagination
-            page = pagination.page if pagination.page > 0 else 1
-            per_page = min(pagination.per_page if pagination.per_page > 0 else 50, 1000)
+            page, per_page, offset = self._page(request.pagination)
 
-            # Get direct children only (proto doesn't have recursive field)
-            query = db.organizations.parent_id == request.id
+            # Direct children only, and only those in the caller's tenant.
+            query = (db.organizations.parent_id == request.id) & (
+                db.organizations.tenant_id == caller.tenant_id
+            )
             total = db(query).count()
-            offset = (page - 1) * per_page
 
             children = db(query).select(
                 orderby=db.organizations.name, limitby=(offset, offset + per_page)
@@ -859,43 +1058,59 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "get_organization_children")
             return organization_pb2.GetOrganizationChildrenResponse()
 
-    def GetOrganizationHierarchy(self, request, context):
-        """Get organization hierarchy."""
+    @_rpc(organization_pb2.GetOrganizationHierarchyResponse, ORG_READ)
+    def GetOrganizationHierarchy(self, request, context, caller):
+        """Get the hierarchy around an organization of the caller's tenant.
+
+        The walk never leaves the caller's tenant, is cycle-safe, and stops
+        at ``ORG_MAX_ANCESTORS`` levels up and ``GRAPH_MAX_NODES``
+        descendants.
+        """
         try:
             db = self.db
-            org = db.organizations[request.id]
+            tid = caller.tenant_id
+            org = self._scoped_org(db, request.id, tid)
 
             if not org:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
                 context.set_details(f"Organization with ID {request.id} not found")
                 return organization_pb2.GetOrganizationHierarchyResponse()
 
-            # Find the root organization by walking up the hierarchy
+            # Find the in-tenant root by walking up the hierarchy
             current = org
-            while current.parent_id:
-                parent = db.organizations[current.parent_id]
+            seen = {org.id}
+            for _ in range(ORG_MAX_ANCESTORS):
+                if not current.parent_id or current.parent_id in seen:
+                    break
+                parent = self._scoped_org(db, current.parent_id, tid)
                 if not parent:
                     break
+                seen.add(parent.id)
                 current = parent
 
-            # current is now the root
             root_dto = from_pydal_row(current, OrganizationDTO)
             root_proto = organization_to_proto(root_dto)
 
-            # Build flattened hierarchy from root down
-            def get_descendants_flat(parent_id):
-                """Get all descendants in a flat list, depth-first."""
-                children = db(db.organizations.parent_id == parent_id).select(
-                    orderby=db.organizations.name
+            # Breadth-first descendants, one query per level, bounded.
+            flattened: list[Any] = []
+            visited = {current.id}
+            frontier = [current.id]
+            while frontier and len(flattened) < GRAPH_MAX_NODES:
+                children, _ = _select_capped(
+                    db,
+                    db.organizations.parent_id.belongs(frontier)
+                    & (db.organizations.tenant_id == tid),
+                    db.organizations.name,
+                    GRAPH_MAX_NODES - len(flattened),
                 )
-                result = []
+                frontier = []
                 for child in children:
+                    if child.id in visited:
+                        continue
+                    visited.add(child.id)
+                    frontier.append(child.id)
                     child_dto = from_pydal_row(child, OrganizationDTO)
-                    result.append(organization_to_proto(child_dto))
-                    result.extend(get_descendants_flat(child.id))
-                return result
-
-            flattened = get_descendants_flat(current.id)
+                    flattened.append(organization_to_proto(child_dto))
 
             return organization_pb2.GetOrganizationHierarchyResponse(
                 root=root_proto,
@@ -909,30 +1124,32 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
     # Entity Management (7 methods)
     # ========================================================================
 
-    def ListEntities(self, request, context):
-        """List entities with pagination and filters."""
+    @_rpc(entity_pb2.ListEntitiesResponse, ENTITY_READ)
+    def ListEntities(self, request, context, caller):
+        """List entities in the caller tenant's organizations."""
         try:
             db = self.db
 
-            # Build query
-            query = db.entities.id > 0
+            page, per_page, offset = self._page(request.pagination)
 
-            # Apply filters
+            # Entities have no tenant column; they are scoped through the
+            # tenant's organizations. A foreign organization filter yields
+            # an empty list, never another tenant's rows.
+            org_ids = _tenant_org_ids(db, caller.tenant_id)
             if request.organization_id > 0:
-                query &= db.entities.organization_id == request.organization_id
+                org_ids = [o for o in org_ids if o == request.organization_id]
+            if not org_ids:
+                return entity_pb2.ListEntitiesResponse(
+                    entities=[],
+                    pagination=self._create_pagination_response(page, per_page, 0),
+                )
+            query = db.entities.organization_id.belongs(org_ids)
 
             if request.entity_type != entity_pb2.EntityType.ENTITY_TYPE_UNSPECIFIED:
                 entity_type_str = entity_type_from_proto(request.entity_type)
-                query &= db.entities.entity_type == entity_type_str
+                query &= db.entities.type == entity_type_str
 
-            # Get total count
             total = db(query).count()
-
-            # Apply pagination from nested pagination message
-            pagination = request.pagination
-            page = pagination.page if pagination.page > 0 else 1
-            per_page = pagination.per_page if pagination.per_page > 0 else 50
-            offset = (page - 1) * per_page
 
             # Fetch entities
             rows = db(query).select(
@@ -957,13 +1174,13 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "list_entities")
             return entity_pb2.ListEntitiesResponse()
 
-    def GetEntity(self, request, context):
-        """Get entity by ID or unique_id."""
+    @_rpc(entity_pb2.GetEntityResponse, ENTITY_READ)
+    def GetEntity(self, request, context, caller):
+        """Get an entity of the caller's tenant by ID."""
         try:
             db = self.db
 
-            # Fetch entity by ID
-            entity = db.entities[request.id]
+            entity = self._scoped_entity(db, request.id, caller.tenant_id)
 
             if not entity:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -977,37 +1194,36 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "get_entity")
             return entity_pb2.GetEntityResponse()
 
-    def CreateEntity(self, request, context):
-        """Create new entity."""
+    def _entity_insert_data(self, entity_request) -> dict:
+        """Map an entity create request onto the entities table columns."""
+        now = datetime.now(UTC)
+        return {
+            "name": entity_request.name,
+            "type": entity_type_from_proto(entity_request.entity_type),
+            "organization_id": entity_request.organization_id,
+            "tags": [],
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    @_rpc(entity_pb2.CreateEntityResponse, ENTITY_WRITE)
+    def CreateEntity(self, request, context, caller):
+        """Create an entity in an organization of the caller's tenant."""
         try:
             db = self.db
 
-            # Build data dict from request
-            entity_type_str = entity_type_from_proto(request.entity_type)
-            data = {
-                "name": request.name,
-                "description": request.description,
-                "entity_type": entity_type_str,
-                "organization_id": request.organization_id,
-                "attributes": {},
-                "tags": [],
-                "is_active": True,
-            }
+            if not self._scoped_org(db, request.organization_id, caller.tenant_id):
+                return _not_found(
+                    context,
+                    "Organization",
+                    request.organization_id,
+                    entity_pb2.CreateEntityResponse(),
+                )
 
-            # Get tenant_id from organization
-            org = db.organizations[request.organization_id]
-            if org:
-                data["tenant_id"] = org.tenant_id
-
-            # Create entity using PyDAL
-            now = datetime.now(timezone.utc)
-            data["created_at"] = now
-            data["updated_at"] = now
-            entity_id = db.entities.insert(**data)
+            entity_id = db.entities.insert(**self._entity_insert_data(request))
             db.commit()
 
-            # Fetch the created entity
-            entity = db.entities[entity_id]
+            entity = self._scoped_entity(db, entity_id, caller.tenant_id)
             entity_dto = from_pydal_row(entity, EntityDTO)
 
             return entity_pb2.CreateEntityResponse(entity=entity_to_proto(entity_dto))
@@ -1016,38 +1232,43 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "create_entity")
             return entity_pb2.CreateEntityResponse()
 
-    def UpdateEntity(self, request, context):
-        """Update existing entity."""
+    @_rpc(entity_pb2.UpdateEntityResponse, ENTITY_WRITE)
+    def UpdateEntity(self, request, context, caller):
+        """Update an entity of the caller's tenant.
+
+        Moving the entity is only allowed into another organization of the
+        same tenant.
+        """
         try:
             db = self.db
-            entity = db.entities[request.id]
+            entity = self._scoped_entity(db, request.id, caller.tenant_id)
 
             if not entity:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
                 context.set_details(f"Entity with ID {request.id} not found")
                 return entity_pb2.UpdateEntityResponse()
 
-            # Build update data dict (only include fields that are set)
             data = {}
             if request.name:
                 data["name"] = request.name
-            if request.description:
-                data["description"] = request.description
             if request.entity_type != entity_pb2.EntityType.ENTITY_TYPE_UNSPECIFIED:
-                data["entity_type"] = entity_type_from_proto(request.entity_type)
+                data["type"] = entity_type_from_proto(request.entity_type)
             if request.organization_id > 0:
+                if not self._scoped_org(db, request.organization_id, caller.tenant_id):
+                    return _not_found(
+                        context,
+                        "Organization",
+                        request.organization_id,
+                        entity_pb2.UpdateEntityResponse(),
+                    )
                 data["organization_id"] = request.organization_id
-                # Update tenant_id when organization changes
-                org = db.organizations[request.organization_id]
-                if org:
-                    data["tenant_id"] = org.tenant_id
 
-            # Update entity
-            db(db.entities.id == request.id).update(**data)
-            db.commit()
+            if data:
+                data["updated_at"] = datetime.now(UTC)
+                db(db.entities.id == entity.id).update(**data)
+                db.commit()
 
-            # Fetch updated entity
-            updated_entity = db.entities[request.id]
+            updated_entity = self._scoped_entity(db, request.id, caller.tenant_id)
             entity_dto = from_pydal_row(updated_entity, EntityDTO)
 
             return entity_pb2.UpdateEntityResponse(entity=entity_to_proto(entity_dto))
@@ -1056,19 +1277,19 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "update_entity")
             return entity_pb2.UpdateEntityResponse()
 
-    def DeleteEntity(self, request, context):
-        """Delete entity."""
+    @_rpc(entity_pb2.DeleteEntityResponse, ENTITY_WRITE)
+    def DeleteEntity(self, request, context, caller):
+        """Delete an entity of the caller's tenant."""
         try:
             db = self.db
-            entity = db.entities[request.id]
+            entity = self._scoped_entity(db, request.id, caller.tenant_id)
 
             if not entity:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
                 context.set_details(f"Entity with ID {request.id} not found")
                 return entity_pb2.DeleteEntityResponse()
 
-            # Delete entity
-            del db.entities[request.id]
+            db(db.entities.id == entity.id).delete()
             db.commit()
 
             return entity_pb2.DeleteEntityResponse(
@@ -1085,28 +1306,31 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 )
             )
 
-    def GetEntityDependencies(self, request, context):
-        """Get entity dependencies."""
+    @_rpc(entity_pb2.GetEntityDependenciesResponse, DEP_READ)
+    def GetEntityDependencies(self, request, context, caller):
+        """Get the caller tenant's dependencies touching one of its entities."""
         try:
             db = self.db
-            entity = db.entities[request.id]
+            entity = self._scoped_entity(db, request.id, caller.tenant_id)
 
             if not entity:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
                 context.set_details(f"Entity with ID {request.id} not found")
                 return entity_pb2.GetEntityDependenciesResponse()
 
-            # Get pagination params from nested pagination message if provided
-            pagination = request.pagination
-            page = pagination.page if pagination.page > 0 else 1
-            per_page = min(pagination.per_page if pagination.per_page > 0 else 50, 1000)
+            page, per_page, offset = self._page(request.pagination)
 
-            # Get all dependencies where this entity is source OR target
-            query = (db.dependencies.source_id == request.id) | (
-                db.dependencies.target_id == request.id
+            query = (db.dependencies.tenant_id == caller.tenant_id) & (
+                (
+                    (db.dependencies.source_type == "entity")
+                    & (db.dependencies.source_id == request.id)
+                )
+                | (
+                    (db.dependencies.target_type == "entity")
+                    & (db.dependencies.target_id == request.id)
+                )
             )
             total = db(query).count()
-            offset = (page - 1) * per_page
 
             rows = db(query).select(
                 orderby=~db.dependencies.created_at, limitby=(offset, offset + per_page)
@@ -1127,43 +1351,37 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "get_entity_dependencies")
             return entity_pb2.GetEntityDependenciesResponse()
 
-    def BatchCreateEntities(self, request, context):
-        """Batch create entities."""
+    @_rpc(entity_pb2.BatchCreateEntitiesResponse, ENTITY_WRITE)
+    def BatchCreateEntities(self, request, context, caller):
+        """Batch create entities in organizations of the caller's tenant.
+
+        At most ``MAX_LIMIT`` items are accepted per call.
+        """
         try:
             db = self.db
             created_entities = []
             errors = []
 
+            if len(request.entities) > MAX_LIMIT:
+                return _invalid(
+                    context,
+                    f"at most {MAX_LIMIT} entities per batch",
+                    entity_pb2.BatchCreateEntitiesResponse(),
+                )
+            org_ids = set(_tenant_org_ids(db, caller.tenant_id))
+
             for i, entity_request in enumerate(request.entities):
                 try:
-                    # Build data dict from request
-                    entity_type_str = entity_type_from_proto(entity_request.entity_type)
-                    data = {
-                        "name": entity_request.name,
-                        "description": entity_request.description,
-                        "entity_type": entity_type_str,
-                        "organization_id": entity_request.organization_id,
-                        "attributes": {},
-                        "tags": [],
-                        "is_active": True,
-                    }
-
-                    # Get tenant_id from organization
-                    org = db.organizations[entity_request.organization_id]
-                    if not org:
+                    if entity_request.organization_id not in org_ids:
                         errors.append(
                             f"Index {i}: Organization {entity_request.organization_id} not found"
                         )
                         continue
 
-                    data["tenant_id"] = org.tenant_id
-
-                    # Create entity
-                    now = datetime.now(timezone.utc)
-                    data["created_at"] = now
-                    data["updated_at"] = now
-                    entity_id = db.entities.insert(**data)
-                    entity = db.entities[entity_id]
+                    entity_id = db.entities.insert(
+                        **self._entity_insert_data(entity_request)
+                    )
+                    entity = self._scoped_entity(db, entity_id, caller.tenant_id)
                     entity_dto = from_pydal_row(entity, EntityDTO)
                     created_entities.append(entity_to_proto(entity_dto))
 
@@ -1185,20 +1403,15 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
     # Dependency Management (7 methods)
     # ========================================================================
 
-    def ListDependencies(self, request, context):
-        """List dependencies with pagination and filters."""
+    @_rpc(dependency_pb2.ListDependenciesResponse, DEP_READ)
+    def ListDependencies(self, request, context, caller):
+        """List the caller tenant's dependencies with pagination and filters."""
         try:
             db = self.db
 
-            # Get pagination params
-            page = request.pagination.page if request.pagination.page > 0 else 1
-            per_page = min(
-                request.pagination.per_page if request.pagination.per_page > 0 else 50,
-                1000,
-            )
+            page, per_page, offset = self._page(request.pagination)
 
-            # Build PyDAL query
-            query = db.dependencies.id > 0
+            query = db.dependencies.tenant_id == caller.tenant_id
 
             # Apply filters
             if request.source_entity_id > 0:
@@ -1209,9 +1422,6 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
 
             # Get total count
             total = db(query).count()
-
-            # Calculate pagination
-            offset = (page - 1) * per_page
 
             # Execute query with pagination and ordering
             rows = db(query).select(
@@ -1234,11 +1444,12 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "list_dependencies")
             return dependency_pb2.ListDependenciesResponse()
 
-    def GetDependency(self, request, context):
-        """Get dependency by ID."""
+    @_rpc(dependency_pb2.GetDependencyResponse, DEP_READ)
+    def GetDependency(self, request, context, caller):
+        """Get a dependency of the caller's tenant by ID."""
         try:
             db = self.db
-            dep = db.dependencies[request.id]
+            dep = self._scoped_dependency(db, request.id, caller.tenant_id)
 
             if not dep:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -1254,8 +1465,36 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "get_dependency")
             return dependency_pb2.GetDependencyResponse()
 
-    def CreateDependency(self, request, context):
-        """Create new dependency."""
+    def _dependency_insert_data(
+        self, db, dep_request, tenant_id: int | None
+    ) -> dict | str:
+        """Build a dependency row whose endpoints are both in-tenant.
+
+        Returns the insert data, or an error message when either entity is
+        missing or belongs to another tenant (reported as not found).
+        """
+        for label, eid in (
+            ("Source", dep_request.source_entity_id),
+            ("Target", dep_request.target_entity_id),
+        ):
+            if not self._scoped_entity(db, eid, tenant_id):
+                return f"{label} entity {eid} not found"
+        now = datetime.now(UTC)
+        return {
+            "tenant_id": tenant_id,
+            "source_type": "entity",
+            "source_id": dep_request.source_entity_id,
+            "target_type": "entity",
+            "target_id": dep_request.target_entity_id,
+            "dependency_type": "depends_on",
+            "metadata": dict(dep_request.metadata) if dep_request.metadata else {},
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    @_rpc(dependency_pb2.CreateDependencyResponse, DEP_WRITE)
+    def CreateDependency(self, request, context, caller):
+        """Create a dependency between two entities of the caller's tenant."""
         try:
             db = self.db
 
@@ -1270,41 +1509,16 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 context.set_details("target_entity_id is required")
                 return dependency_pb2.CreateDependencyResponse()
 
-            # Build data dict from request
-            data = {
-                "source_type": "entity",  # Default to entity type
-                "source_id": request.source_entity_id,
-                "target_type": "entity",
-                "target_id": request.target_entity_id,
-                "dependency_type": "depends_on",  # Default type
-                "metadata": dict(request.metadata) if request.metadata else {},
-            }
-
-            # Get tenant_id from source entity's organization
-            source_entity = db.entities[request.source_entity_id]
-            if not source_entity:
+            data = self._dependency_insert_data(db, request, caller.tenant_id)
+            if isinstance(data, str):
                 context.set_code(grpc.StatusCode.NOT_FOUND)
-                context.set_details(
-                    f"Source entity {request.source_entity_id} not found"
-                )
+                context.set_details(data)
                 return dependency_pb2.CreateDependencyResponse()
 
-            # Get tenant_id from the entity's organization
-            org = db.organizations[source_entity.organization_id]
-            if org:
-                data["tenant_id"] = org.tenant_id
-            else:
-                data["tenant_id"] = 1  # Default tenant
-
-            # Create dependency using PyDAL
-            now = datetime.now(timezone.utc)
-            data["created_at"] = now
-            data["updated_at"] = now
             dep_id = db.dependencies.insert(**data)
             db.commit()
 
-            # Fetch the created dependency
-            dep = db.dependencies[dep_id]
+            dep = self._scoped_dependency(db, dep_id, caller.tenant_id)
             dep_dto = from_pydal_row(dep, DependencyDTO)
 
             return dependency_pb2.CreateDependencyResponse(
@@ -1315,11 +1529,12 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "create_dependency")
             return dependency_pb2.CreateDependencyResponse()
 
-    def UpdateDependency(self, request, context):
-        """Update existing dependency."""
+    @_rpc(dependency_pb2.UpdateDependencyResponse, DEP_WRITE)
+    def UpdateDependency(self, request, context, caller):
+        """Update a dependency of the caller's tenant."""
         try:
             db = self.db
-            dep = db.dependencies[request.id]
+            dep = self._scoped_dependency(db, request.id, caller.tenant_id)
 
             if not dep:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
@@ -1335,13 +1550,14 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             if request.metadata:
                 data["metadata"] = dict(request.metadata)
 
-            # Update dependency using PyDAL
             if data:
-                db(db.dependencies.id == request.id).update(**data)
+                db(
+                    (db.dependencies.id == request.id)
+                    & (db.dependencies.tenant_id == caller.tenant_id)
+                ).update(**data)
                 db.commit()
 
-            # Fetch updated dependency
-            dep = db.dependencies[request.id]
+            dep = self._scoped_dependency(db, request.id, caller.tenant_id)
             dep_dto = from_pydal_row(dep, DependencyDTO)
 
             return dependency_pb2.UpdateDependencyResponse(
@@ -1352,19 +1568,22 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "update_dependency")
             return dependency_pb2.UpdateDependencyResponse()
 
-    def DeleteDependency(self, request, context):
-        """Delete dependency."""
+    @_rpc(dependency_pb2.DeleteDependencyResponse, DEP_WRITE)
+    def DeleteDependency(self, request, context, caller):
+        """Delete a dependency of the caller's tenant."""
         try:
             db = self.db
-            dep = db.dependencies[request.id]
+            dep = self._scoped_dependency(db, request.id, caller.tenant_id)
 
             if not dep:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
                 context.set_details(f"Dependency with ID {request.id} not found")
                 return dependency_pb2.DeleteDependencyResponse()
 
-            # Delete dependency
-            del db.dependencies[request.id]
+            db(
+                (db.dependencies.id == request.id)
+                & (db.dependencies.tenant_id == caller.tenant_id)
+            ).delete()
             db.commit()
 
             return dependency_pb2.DeleteDependencyResponse(
@@ -1378,12 +1597,23 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "delete_dependency")
             return dependency_pb2.DeleteDependencyResponse()
 
-    def BulkCreateDependencies(self, request, context):
-        """Bulk create dependencies."""
+    @_rpc(dependency_pb2.BulkCreateDependenciesResponse, DEP_WRITE)
+    def BulkCreateDependencies(self, request, context, caller):
+        """Bulk create dependencies between entities of the caller's tenant.
+
+        At most ``MAX_LIMIT`` items are accepted per call.
+        """
         try:
             db = self.db
             created_dependencies = []
             errors = []
+
+            if len(request.dependencies) > MAX_LIMIT:
+                return _invalid(
+                    context,
+                    f"at most {MAX_LIMIT} dependencies per batch",
+                    dependency_pb2.BulkCreateDependenciesResponse(),
+                )
 
             for i, dep_request in enumerate(request.dependencies):
                 try:
@@ -1396,34 +1626,15 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                         errors.append(f"Index {i}: target_entity_id is required")
                         continue
 
-                    # Build data dict
-                    data = {
-                        "source_type": "entity",
-                        "source_id": dep_request.source_entity_id,
-                        "target_type": "entity",
-                        "target_id": dep_request.target_entity_id,
-                        "dependency_type": "depends_on",
-                        "metadata": (
-                            dict(dep_request.metadata) if dep_request.metadata else {}
-                        ),
-                    }
-
-                    # Get tenant_id from source entity
-                    source_entity = db.entities[dep_request.source_entity_id]
-                    if not source_entity:
-                        errors.append(
-                            f"Index {i}: Source entity {dep_request.source_entity_id} not found"
-                        )
+                    data = self._dependency_insert_data(
+                        db, dep_request, caller.tenant_id
+                    )
+                    if isinstance(data, str):
+                        errors.append(f"Index {i}: {data}")
                         continue
 
-                    data["tenant_id"] = source_entity.tenant_id
-
-                    # Create dependency
-                    now = datetime.now(timezone.utc)
-                    data["created_at"] = now
-                    data["updated_at"] = now
                     dep_id = db.dependencies.insert(**data)
-                    dep = db.dependencies[dep_id]
+                    dep = self._scoped_dependency(db, dep_id, caller.tenant_id)
                     dep_dto = from_pydal_row(dep, DependencyDTO)
                     created_dependencies.append(dependency_to_proto(dep_dto))
 
@@ -1440,21 +1651,36 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "bulk_create_dependencies")
             return dependency_pb2.BulkCreateDependenciesResponse()
 
-    def BulkDeleteDependencies(self, request, context):
-        """Bulk delete dependencies."""
+    @_rpc(dependency_pb2.BulkDeleteDependenciesResponse, DEP_WRITE)
+    def BulkDeleteDependencies(self, request, context, caller):
+        """Bulk delete dependencies of the caller's tenant.
+
+        At most ``MAX_LIMIT`` ids are accepted per call; foreign ids are
+        reported exactly like missing ones.
+        """
         try:
             db = self.db
             errors = []
             deleted_count = 0
 
+            if len(request.ids) > MAX_LIMIT:
+                return _invalid(
+                    context,
+                    f"at most {MAX_LIMIT} ids per batch",
+                    dependency_pb2.BulkDeleteDependenciesResponse(),
+                )
+
             for dep_id in request.ids:
                 try:
-                    dep = db.dependencies[dep_id]
+                    dep = self._scoped_dependency(db, dep_id, caller.tenant_id)
                     if not dep:
                         errors.append(f"Dependency {dep_id} not found")
                         continue
 
-                    del db.dependencies[dep_id]
+                    db(
+                        (db.dependencies.id == dep_id)
+                        & (db.dependencies.tenant_id == caller.tenant_id)
+                    ).delete()
                     deleted_count += 1
 
                 except Exception as e:
@@ -1474,147 +1700,148 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
     # Graph Operations (4 methods)
     # ========================================================================
 
-    def GetDependencyGraph(self, request, context):
-        """Get dependency graph for organization or entity."""
+    def _graph_node(self, entity, properties: dict | None = None):
+        """Build a GraphNode for an entity row."""
+        return graph_pb2.GraphNode(
+            id=entity.id,
+            label=entity.name or "",
+            type=entity_type_to_proto(entity.type or "compute"),
+            properties=properties or {},
+        )
+
+    def _graph_edge(self, dep, label: bool = True):
+        """Build a GraphEdge for a dependency row."""
+        dep_type = dep.dependency_type or "depends_on"
+        return graph_pb2.GraphEdge(
+            id=dep.id,
+            source_id=dep.source_id,
+            target_id=dep.target_id,
+            type=dependency_type_to_proto(dep_type),
+            label=dep_type if label else "",
+            properties={},
+        )
+
+    @_rpc(graph_pb2.GetDependencyGraphResponse, GRAPH_READ)
+    def GetDependencyGraph(self, request, context, caller):
+        """Get the dependency graph of an organization or around an entity.
+
+        Scoped to the caller's tenant and bounded by the shared graph depth,
+        node and edge caps; ``metadata["truncated"]`` reports a cut-off.
+        """
         try:
             db = self.db
+            tid = caller.tenant_id
 
-            # Determine scope
             if request.organization_id > 0:
-                org = db.organizations[request.organization_id]
-                if not org:
-                    context.set_code(grpc.StatusCode.NOT_FOUND)
-                    context.set_details(
-                        f"Organization with ID {request.organization_id} not found"
+                if not self._scoped_org(db, request.organization_id, tid):
+                    return _not_found(
+                        context,
+                        "Organization",
+                        request.organization_id,
+                        graph_pb2.GetDependencyGraphResponse(),
                     )
-                    return graph_pb2.GetDependencyGraphResponse()
-                entities = db(
-                    db.entities.organization_id == request.organization_id
-                ).select()
+                entities, edges, truncated = self._tenant_graph(
+                    db, tid, request.organization_id
+                )
             elif request.entity_id > 0:
-                entity = db.entities[request.entity_id]
+                entity = self._scoped_entity(db, request.entity_id, tid)
                 if not entity:
-                    context.set_code(grpc.StatusCode.NOT_FOUND)
-                    context.set_details(f"Entity with ID {request.entity_id} not found")
-                    return graph_pb2.GetDependencyGraphResponse()
-                entities = self._get_entity_subgraph(
-                    db, entity, request.depth if request.depth > 0 else 2
+                    return _not_found(
+                        context,
+                        "Entity",
+                        request.entity_id,
+                        graph_pb2.GetDependencyGraphResponse(),
+                    )
+                depth, depth_cut = _resolve_depth(request.depth or 2)
+                entities, walk_cut = _get_entity_subgraph(
+                    db, entity, depth, _tenant_org_ids(db, tid), tid
                 )
+                edges, edges_cut = _entity_edges(db, [e.id for e in entities])
+                edges = [e for e in edges if e.tenant_id in (tid, None)]
+                truncated = depth_cut or walk_cut or edges_cut
             else:
-                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
-                context.set_details(
-                    "Either organization_id or entity_id must be specified"
+                return _invalid(
+                    context,
+                    "Either organization_id or entity_id must be specified",
+                    graph_pb2.GetDependencyGraphResponse(),
                 )
-                return graph_pb2.GetDependencyGraphResponse()
 
-            entity_ids = [e.id for e in entities]
-            dependencies = db(
-                (db.dependencies.source_type == "entity")
-                & (db.dependencies.source_id.belongs(entity_ids))
-                & (db.dependencies.target_type == "entity")
-                & (db.dependencies.target_id.belongs(entity_ids))
-            ).select()
-
-            # Build GraphNode list
-            from apps.api.grpc.converters import (
-                dependency_type_to_proto,
-                entity_type_to_proto,
+            nodes = [self._graph_node(e, {"entity_id": str(e.id)}) for e in entities]
+            graph = graph_pb2.DependencyGraph(
+                nodes=nodes,
+                edges=[self._graph_edge(d) for d in edges],
+                metadata={"truncated": str(bool(truncated)).lower()},
             )
-
-            nodes = []
-            for entity in entities:
-                nodes.append(
-                    graph_pb2.GraphNode(
-                        id=entity.id,
-                        label=entity.name,
-                        type=entity_type_to_proto(entity.entity_type or "compute"),
-                        properties={"entity_id": str(entity.id)},
-                    )
-                )
-
-            # Build GraphEdge list
-            edges = []
-            for dep in dependencies:
-                edges.append(
-                    graph_pb2.GraphEdge(
-                        id=dep.id,
-                        source_id=dep.source_id,
-                        target_id=dep.target_id,
-                        type=dependency_type_to_proto(
-                            dep.dependency_type or "depends_on"
-                        ),
-                        label=dep.dependency_type or "depends_on",
-                        properties={},
-                    )
-                )
-
-            # Return wrapped in DependencyGraph
-            graph = graph_pb2.DependencyGraph(nodes=nodes, edges=edges, metadata={})
             return graph_pb2.GetDependencyGraphResponse(graph=graph)
         except Exception as e:
             self._handle_exception(context, e, "get_dependency_graph")
             return graph_pb2.GetDependencyGraphResponse()
 
-    def AnalyzeGraph(self, request, context):
-        """Analyze graph for issues."""
+    @_rpc(graph_pb2.AnalyzeGraphResponse, GRAPH_READ)
+    def AnalyzeGraph(self, request, context, caller):
+        """Analyze the caller tenant's graph for cycles and orphans.
+
+        A foreign organization id yields NOT_FOUND; cycle enumeration stops
+        after ``ANALYZE_MAX_CYCLES`` cycles.
+        """
         try:
             db = self.db
-            query = db.entities.id > 0
-            if request.organization_id > 0:
-                query &= db.entities.organization_id == request.organization_id
+            tid = caller.tenant_id
+            if request.organization_id > 0 and not self._scoped_org(
+                db, request.organization_id, tid
+            ):
+                return _not_found(
+                    context,
+                    "Organization",
+                    request.organization_id,
+                    graph_pb2.AnalyzeGraphResponse(),
+                )
 
-            entities = db(query).select()
-            entity_ids = [e.id for e in entities]
+            entities, dependencies, truncated = self._tenant_graph(
+                db, tid, request.organization_id
+            )
 
             results = []
 
-            if not entity_ids:
+            if not entities:
                 return graph_pb2.AnalyzeGraphResponse(
                     results=results,
                     status=self._create_status_response(True, "No entities to analyze"),
                 )
 
-            dependencies = db(
-                (db.dependencies.source_type == "entity")
-                & (db.dependencies.source_id.belongs(entity_ids))
-                & (db.dependencies.target_type == "entity")
-                & (db.dependencies.target_id.belongs(entity_ids))
-            ).select()
-
-            # Build networkx graph
             G = nx.DiGraph()
             for entity in entities:
-                G.add_node(entity.id, name=entity.name, entity_type=entity.entity_type)
+                G.add_node(entity.id, name=entity.name, entity_type=entity.type)
             for dep in dependencies:
                 G.add_edge(dep.source_id, dep.target_id)
 
-            # Analyze for cycles
             cycle_items = []
-            try:
-                simple_cycles = list(nx.simple_cycles(G))
-                for cycle in simple_cycles[:10]:
-                    cycle_items.append(
-                        graph_pb2.AnalysisItem(
-                            item_type="cycle",
-                            entity_id=cycle[0] if cycle else 0,
-                            severity="warning",
-                            description=f"Circular dependency detected: {' -> '.join(str(n) for n in cycle)}",
-                            related_entity_ids=list(cycle),
-                        )
+            # Take one past the cap so a cut-off list is reported as such.
+            cycles = list(itertools.islice(nx.simple_cycles(G), ANALYZE_MAX_CYCLES + 1))
+            cycles_cut = len(cycles) > ANALYZE_MAX_CYCLES
+            for cycle in cycles[:ANALYZE_MAX_CYCLES]:
+                cycle_items.append(
+                    graph_pb2.AnalysisItem(
+                        item_type="cycle",
+                        entity_id=cycle[0] if cycle else 0,
+                        severity="warning",
+                        description=f"Circular dependency detected: {' -> '.join(str(n) for n in cycle)}",
+                        related_entity_ids=list(cycle),
                     )
-            except Exception:
-                pass
+                )
 
-            if cycle_items:
+            if cycle_items or cycles_cut:
                 results.append(
                     graph_pb2.GraphAnalysisResult(
                         analysis_type="circular_dependencies",
                         items=cycle_items,
-                        statistics={"count": str(len(cycle_items))},
+                        statistics={
+                            "count": str(len(cycle_items)),
+                            "truncated": str(cycles_cut).lower(),
+                        },
                     )
                 )
 
-            # Analyze for orphaned nodes
             orphaned_items = []
             for n in G.nodes():
                 if G.degree(n) == 0:
@@ -1623,7 +1850,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                         graph_pb2.AnalysisItem(
                             item_type="orphaned_entity",
                             entity_id=n,
-                            entity_name=node_data.get("name", ""),
+                            entity_name=node_data.get("name") or "",
                             severity="info",
                             description="Entity has no dependencies",
                         )
@@ -1638,7 +1865,6 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                     )
                 )
 
-            # Add statistics result
             results.append(
                 graph_pb2.GraphAnalysisResult(
                     analysis_type="statistics",
@@ -1647,6 +1873,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                         "total_nodes": str(len(entities)),
                         "total_edges": str(len(dependencies)),
                         "is_acyclic": str(nx.is_directed_acyclic_graph(G)),
+                        "truncated": str(bool(truncated)).lower(),
                     },
                 )
             )
@@ -1659,155 +1886,124 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "analyze_graph")
             return graph_pb2.AnalyzeGraphResponse()
 
-    def FindPath(self, request, context):
-        """Find path between two entities."""
+    @_rpc(graph_pb2.FindPathResponse, GRAPH_READ)
+    def FindPath(self, request, context, caller):
+        """Find a path between two entities of the caller's tenant.
+
+        Only the tenant's own edges are traversed, and paths longer than the
+        enforced graph depth are reported as not found.
+        """
         try:
             db = self.db
-            from apps.api.grpc.converters import (
-                dependency_type_to_proto,
-                entity_type_to_proto,
-            )
-
-            # Use correct field names from proto
+            tid = caller.tenant_id
             source_id = request.source_entity_id
             target_id = request.target_entity_id
 
-            from_entity = db.entities[source_id]
-            to_entity = db.entities[target_id]
+            for label, eid in (("Source", source_id), ("Target", target_id)):
+                if not self._scoped_entity(db, eid, tid):
+                    return _not_found(
+                        context, f"{label} entity", eid, graph_pb2.FindPathResponse()
+                    )
 
-            if not from_entity:
-                context.set_code(grpc.StatusCode.NOT_FOUND)
-                context.set_details(f"Source entity {source_id} not found")
-                return graph_pb2.FindPathResponse()
-
-            if not to_entity:
-                context.set_code(grpc.StatusCode.NOT_FOUND)
-                context.set_details(f"Target entity {target_id} not found")
-                return graph_pb2.FindPathResponse()
-
-            dependencies = db(
-                (db.dependencies.source_type == "entity")
-                & (db.dependencies.target_type == "entity")
-            ).select()
+            max_hops, _ = _resolve_depth(request.max_depth or None)
+            entities, dependencies, truncated = self._tenant_graph(db, tid)
+            entity_map = {e.id: e for e in entities}
 
             G = nx.DiGraph()
-            dep_map = {}  # Map (source, target) to dependency
+            G.add_nodes_from(entity_map)
+            dep_map = {}
             for dep in dependencies:
                 G.add_edge(dep.source_id, dep.target_id)
                 dep_map[(dep.source_id, dep.target_id)] = dep
 
             try:
                 path = nx.shortest_path(G, source_id, target_id)
-                entities_in_path = db(db.entities.id.belongs(path)).select()
-                entity_map = {e.id: e for e in entities_in_path}
-
-                # Build GraphPath with nodes and edges
-                path_nodes = []
-                for eid in path:
-                    entity = entity_map.get(eid)
-                    if entity:
-                        path_nodes.append(
-                            graph_pb2.GraphNode(
-                                id=eid,
-                                label=entity.name,
-                                type=entity_type_to_proto(
-                                    entity.entity_type or "compute"
-                                ),
-                                properties={},
-                            )
-                        )
-
-                path_edges = []
-                for i in range(len(path) - 1):
-                    dep = dep_map.get((path[i], path[i + 1]))
-                    if dep:
-                        path_edges.append(
-                            graph_pb2.GraphEdge(
-                                id=dep.id,
-                                source_id=dep.source_id,
-                                target_id=dep.target_id,
-                                type=dependency_type_to_proto(
-                                    dep.dependency_type or "depends_on"
-                                ),
-                                properties={},
-                            )
-                        )
-
-                graph_path = graph_pb2.GraphPath(
-                    nodes=path_nodes,
-                    edges=path_edges,
-                    total_hops=len(path) - 1,
+            except (nx.NetworkXNoPath, nx.NodeNotFound):
+                path = []
+            if not path or len(path) - 1 > max_hops:
+                # A capped graph cannot prove absence, so say so.
+                message = (
+                    "No path found within graph size limits (graph truncated)"
+                    if truncated
+                    else "No path exists"
                 )
-
-                return graph_pb2.FindPathResponse(
-                    paths=[graph_path],
-                    path_found=True,
-                    status=self._create_status_response(True, "Path found"),
-                )
-            except nx.NetworkXNoPath:
                 return graph_pb2.FindPathResponse(
                     paths=[],
                     path_found=False,
-                    status=self._create_status_response(True, "No path exists"),
+                    status=self._create_status_response(True, message),
                 )
+
+            path_nodes = [self._graph_node(entity_map[eid]) for eid in path]
+            path_edges = [
+                self._graph_edge(dep_map[(path[i], path[i + 1])], label=False)
+                for i in range(len(path) - 1)
+            ]
+            graph_path = graph_pb2.GraphPath(
+                nodes=path_nodes,
+                edges=path_edges,
+                total_hops=len(path) - 1,
+            )
+            return graph_pb2.FindPathResponse(
+                paths=[graph_path],
+                path_found=True,
+                status=self._create_status_response(True, "Path found"),
+            )
         except Exception as e:
             self._handle_exception(context, e, "find_path")
             return graph_pb2.FindPathResponse()
 
-    def GetEntityImpact(self, request, context):
-        """Get entity impact analysis."""
+    @_rpc(graph_pb2.GetEntityImpactResponse, GRAPH_READ)
+    def GetEntityImpact(self, request, context, caller):
+        """Get the downstream impact of an entity within the caller's tenant.
+
+        Only the tenant's own edges are considered, and the downstream walk
+        stops at the enforced graph depth.
+        """
         try:
             db = self.db
-            entity = db.entities[request.entity_id]
+            tid = caller.tenant_id
+            entity = self._scoped_entity(db, request.entity_id, tid)
             if not entity:
-                context.set_code(grpc.StatusCode.NOT_FOUND)
-                context.set_details(f"Entity {request.entity_id} not found")
-                return graph_pb2.GetEntityImpactResponse()
+                return _not_found(
+                    context,
+                    "Entity",
+                    request.entity_id,
+                    graph_pb2.GetEntityImpactResponse(),
+                )
 
-            dependencies = db(
-                (db.dependencies.source_type == "entity")
-                & (db.dependencies.target_type == "entity")
-            ).select()
+            depth, _ = _resolve_depth(request.max_depth or None)
+            entities, dependencies, truncated = self._tenant_graph(db, tid)
+            entity_map = {e.id: e for e in entities}
 
             G = nx.DiGraph()
             for dep in dependencies:
                 G.add_edge(dep.source_id, dep.target_id)
 
-            # Calculate impact metrics
             direct_deps = 0
-            indirect_deps = 0
             dependents = 0
-            affected_entity_ids = []
+            affected_entity_ids: list[int] = []
 
-            if G.has_node(request.entity_id):
-                try:
-                    # Direct dependencies (entities this one depends on)
-                    direct_deps = G.out_degree(request.entity_id)
-                    # Dependents (entities that depend on this one)
-                    dependents = G.in_degree(request.entity_id)
-                    # All downstream affected entities
-                    downstream = nx.descendants(G, request.entity_id)
-                    indirect_deps = len(downstream)
-                    affected_entity_ids = list(downstream)
-                except Exception:
-                    pass
+            if G.has_node(entity.id):
+                direct_deps = G.out_degree(entity.id)
+                dependents = G.in_degree(entity.id)
+                reach = nx.single_source_shortest_path_length(
+                    G, entity.id, cutoff=depth
+                )
+                affected_entity_ids = sorted(n for n in reach if n != entity.id)
+            indirect_deps = len(affected_entity_ids)
 
-            # Get affected entity details
             affected_entities = []
-            if affected_entity_ids:
-                affected_rows = db(db.entities.id.belongs(affected_entity_ids)).select()
-                for row in affected_rows:
-                    entity_dto = from_pydal_row(row, EntityDTO)
-                    if entity_dto:
-                        affected_entities.append(entity_to_proto(entity_dto))
+            for eid in affected_entity_ids:
+                row = entity_map.get(eid)
+                entity_dto = from_pydal_row(row, EntityDTO) if row else None
+                if entity_dto:
+                    affected_entities.append(entity_to_proto(entity_dto))
 
-            # Calculate simple impact score
             impact_score = direct_deps + (indirect_deps * 2) + dependents
 
-            # Build EntityImpact message
             impact = graph_pb2.EntityImpact(
-                entity_id=request.entity_id,
-                entity_name=entity.name,
+                entity_id=entity.id,
+                entity_name=entity.name or "",
                 direct_dependencies=direct_deps,
                 indirect_dependencies=indirect_deps,
                 dependents_count=dependents,
@@ -1817,7 +2013,12 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
 
             return graph_pb2.GetEntityImpactResponse(
                 impact=impact,
-                status=self._create_status_response(True, "Impact analysis complete"),
+                status=self._create_status_response(
+                    True,
+                    "Impact analysis truncated at graph size limits"
+                    if truncated
+                    else "Impact analysis complete",
+                ),
             )
         except Exception as e:
             self._handle_exception(context, e, "get_entity_impact")
@@ -1840,51 +2041,3 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             return self._create_status_response(
                 success=False, message=f"Health check failed: {str(e)}"
             )
-
-    def _get_entity_subgraph(self, db, entity, depth: int):
-        """Get entities within depth distance from given entity."""
-        if depth <= 0:
-            depth = 2
-        if depth > 10:
-            depth = 10
-
-        visited = {entity.id}
-        current_level = [entity]
-        all_entities = [entity]
-
-        for _ in range(depth):
-            if not current_level:
-                break
-
-            next_level = []
-
-            for e in current_level:
-                # Get outgoing dependencies
-                outgoing = db(
-                    (db.dependencies.source_type == "entity")
-                    & (db.dependencies.source_id == e.id)
-                ).select()
-                for dep in outgoing:
-                    if dep.target_id not in visited:
-                        visited.add(dep.target_id)
-                        target = db.entities[dep.target_id]
-                        if target:
-                            next_level.append(target)
-                            all_entities.append(target)
-
-                # Get incoming dependencies
-                incoming = db(
-                    (db.dependencies.target_type == "entity")
-                    & (db.dependencies.target_id == e.id)
-                ).select()
-                for dep in incoming:
-                    if dep.source_id not in visited:
-                        visited.add(dep.source_id)
-                        source = db.entities[dep.source_id]
-                        if source:
-                            next_level.append(source)
-                            all_entities.append(source)
-
-            current_level = next_level
-
-        return all_entities

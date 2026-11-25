@@ -1,0 +1,161 @@
+{{- $cfg := index .Values "svc-runworker" }}
+{{- if and $cfg $cfg.enabled }}
+{{- $backend := include "elder.runworker.backend" . }}
+{{- $exc := $cfg.kataException | default dict }}
+{{- $tokenSecret := required "svc-runworker.internalTokenSecret.name is required: onboard the worker (POST /api/v1/admin/workers) and store the issued token in a Secret" ($cfg.internalTokenSecret).name }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "elder.componentResourceName" (list "svc-runworker" .) }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-runworker" .) | nindent 4 }}
+spec:
+  replicas: {{ $cfg.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "elder.componentSelectorLabels" (list "svc-runworker" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "elder.componentSelectorLabels" (list "svc-runworker" .) | nindent 8 }}
+        {{- with $cfg.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: svc-runworker
+      # The API token is mounted only when this pod is a pure Job controller.
+      # Whenever tenant code can run inside this pod (sandbox backend) no
+      # token is mounted; "auto" needs both and is gated on a Kata exception.
+      automountServiceAccountToken: {{ ne $backend "sandbox" }}
+      enableServiceLinks: false
+      {{- if $cfg.podRuntimeClassName }}
+      runtimeClassName: {{ $cfg.podRuntimeClassName | quote }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: svc-runworker
+          image: {{ include "elder.image" (list "svc-runworker" .) }}
+          imagePullPolicy: {{ include "elder.imagePullPolicy" (list "svc-runworker" .) }}
+          {{- if .Values.otel.enabled }}
+          envFrom:
+            - configMapRef:
+                name: elder-otel
+          {{- end }}
+          env:
+            - name: ELDER_API_URL
+              value: {{ ($cfg.env).ELDER_API_URL | default "http://hub-api:5000" | quote }}
+            - name: ELDER_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $tokenSecret | quote }}
+                  key: {{ ($cfg.internalTokenSecret).key | default "token" | quote }}
+            - name: RUNS_EXECUTION_NAMESPACE
+              value: {{ $cfg.executionNamespace | default "elder-runs" | quote }}
+            {{- if $cfg.runtimeClassName }}
+            - name: RUNS_RUNTIME_CLASS_NAME
+              value: {{ $cfg.runtimeClassName | quote }}
+            {{- end }}
+            {{- if ($cfg.env).RUNS_WORKER_CLUSTER }}
+            - name: RUNS_WORKER_CLUSTER
+              value: {{ $cfg.env.RUNS_WORKER_CLUSTER | quote }}
+            {{- end }}
+            - name: RUNS_POLL_INTERVAL_SECONDS
+              value: {{ ($cfg.env).RUNS_POLL_INTERVAL_SECONDS | default "3" | quote }}
+            - name: RUNS_LOG_FLUSH_INTERVAL_SECONDS
+              value: {{ ($cfg.env).RUNS_LOG_FLUSH_INTERVAL_SECONDS | default "30" | quote }}
+            - name: RUNS_MAX_CONCURRENT
+              value: {{ ($cfg.env).RUNS_MAX_CONCURRENT | default "5" | quote }}
+            - name: RUNS_S3_FETCH_MODE
+              value: {{ $cfg.s3FetchMode | default (($cfg.env).RUNS_S3_FETCH_MODE | default "worker") | quote }}
+            - name: RUNS_RUNNER_BACKEND
+              value: {{ $backend | quote }}
+            {{- if $cfg.podRuntimeClassName }}
+            - name: RUNS_POD_RUNTIME_CLASS
+              value: {{ $cfg.podRuntimeClassName | quote }}
+            {{- end }}
+            - name: RUNS_SANDBOXED_RUNTIME_CLASSES
+              value: {{ join "," ($cfg.sandboxedRuntimeClasses | default (list "kata" "kata-qemu" "kata-clh" "kata-fc")) | quote }}
+            {{- if $exc.inPodSandbox }}
+            # KATA EXCEPTION (approved): svc-runworker.kataException.inPodSandbox
+            - name: RUNS_KATA_EXCEPTION_SANDBOX
+              value: "approved"
+            {{- end }}
+            {{- if $exc.executionPods }}
+            # KATA EXCEPTION (approved): svc-runworker.kataException.executionPods
+            - name: RUNS_KATA_EXCEPTION_JOBS
+              value: "approved"
+            {{- end }}
+            {{- if ne $backend "sandbox" }}
+            - name: RUNS_EXECUTION_SERVICE_ACCOUNT
+              value: {{ $cfg.executionServiceAccount | default "elder-run-exec" | quote }}
+            - name: RUNS_GATEWAY_PORT_BASE
+              value: {{ ($cfg.gateway).portBase | default 18080 | quote }}
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            {{- end }}
+            - name: LOG_LEVEL
+              value: {{ ($cfg.env).LOG_LEVEL | default "INFO" | quote }}
+            {{- if .Values.otel.enabled }}
+            - name: OTEL_SERVICE_NAME
+              value: "svc-runworker"
+            {{- end }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          {{- if ($cfg.healthcheck).enabled }}
+          livenessProbe:
+            exec:
+              command:
+                - python3
+                - apps/runworker/healthcheck.py
+            initialDelaySeconds: {{ $cfg.healthcheck.initialDelaySeconds | default 20 }}
+            periodSeconds: {{ $cfg.healthcheck.periodSeconds | default 30 }}
+            timeoutSeconds: {{ $cfg.healthcheck.timeoutSeconds | default 10 }}
+            failureThreshold: {{ $cfg.healthcheck.failureThreshold | default 3 }}
+          readinessProbe:
+            exec:
+              command:
+                - python3
+                - apps/runworker/healthcheck.py
+            initialDelaySeconds: {{ $cfg.healthcheck.initialDelaySeconds | default 20 }}
+            periodSeconds: {{ $cfg.healthcheck.periodSeconds | default 30 }}
+            timeoutSeconds: {{ $cfg.healthcheck.timeoutSeconds | default 10 }}
+            failureThreshold: {{ $cfg.healthcheck.failureThreshold | default 3 }}
+          {{- end }}
+          resources:
+            {{- toYaml $cfg.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            {{- include "elder.containerSecurityContext" (list $cfg.securityContext .) | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ $cfg.tmpSizeLimit | default "256Mi" }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

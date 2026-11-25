@@ -7,7 +7,6 @@ and build-dependencies with support for various version specifiers.
 
 # flake8: noqa: E501
 
-
 import re
 import tomllib
 from typing import Any, Dict, List
@@ -39,7 +38,7 @@ class RustDependencyParser(BaseDependencyParser):
         """
         return filename in self.SUPPORTED_FILES
 
-    def get_supported_files(self) -> List[str]:
+    def get_supported_files(self) -> list[str]:
         """Return list of supported dependency filenames.
 
         Returns:
@@ -47,7 +46,7 @@ class RustDependencyParser(BaseDependencyParser):
         """
         return self.SUPPORTED_FILES
 
-    def parse(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def parse(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse Cargo.toml or Cargo.lock and extract dependencies.
 
         Parses TOML format to extract crate dependencies, distinguishing
@@ -79,7 +78,7 @@ class RustDependencyParser(BaseDependencyParser):
         except Exception as e:
             raise ValueError(f"Failed to parse TOML file: {str(e)}")
 
-        dependencies: List[Dict[str, Any]] = []
+        dependencies: list[dict[str, Any]] = []
 
         if filename == "Cargo.toml":
             dependencies = self._parse_cargo_toml(data)
@@ -88,7 +87,7 @@ class RustDependencyParser(BaseDependencyParser):
 
         return dependencies
 
-    def _parse_cargo_toml(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _parse_cargo_toml(self, data: dict[str, Any]) -> list[dict[str, Any]]:
         """Parse Cargo.toml file content.
 
         Extracts dependencies from [dependencies], [dev-dependencies],
@@ -100,7 +99,7 @@ class RustDependencyParser(BaseDependencyParser):
         Returns:
             List of dependency dictionaries.
         """
-        dependencies: List[Dict[str, Any]] = []
+        dependencies: list[dict[str, Any]] = []
 
         # Parse runtime dependencies
         if "dependencies" in data:
@@ -125,7 +124,7 @@ class RustDependencyParser(BaseDependencyParser):
 
         return dependencies
 
-    def _parse_cargo_lock(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _parse_cargo_lock(self, data: dict[str, Any]) -> list[dict[str, Any]]:
         """Parse Cargo.lock file content.
 
         Extracts pinned versions from [[package]] entries.
@@ -136,7 +135,7 @@ class RustDependencyParser(BaseDependencyParser):
         Returns:
             List of dependency dictionaries.
         """
-        dependencies: List[Dict[str, Any]] = []
+        dependencies: list[dict[str, Any]] = []
 
         if "package" not in data:
             return dependencies
@@ -171,8 +170,8 @@ class RustDependencyParser(BaseDependencyParser):
         return dependencies
 
     def _extract_dependencies_from_section(
-        self, section: Dict[str, Any], scope: str
-    ) -> List[Dict[str, Any]]:
+        self, section: dict[str, Any], scope: str
+    ) -> list[dict[str, Any]]:
         """Extract dependencies from a specific section of Cargo.toml.
 
         Handles various dependency formats:
@@ -188,7 +187,7 @@ class RustDependencyParser(BaseDependencyParser):
         Returns:
             List of dependency dictionaries.
         """
-        dependencies: List[Dict[str, Any]] = []
+        dependencies: list[dict[str, Any]] = []
 
         for name, spec in section.items():
             if isinstance(spec, str):
@@ -242,7 +241,7 @@ class RustDependencyParser(BaseDependencyParser):
         scope: str,
         direct: bool,
         source_file: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a standardized dependency dictionary.
 
         Args:

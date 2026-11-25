@@ -10,13 +10,13 @@
 #   gh auth login --scopes "read:packages,write:packages,delete:packages"
 #   ./cleanup-corrupted-manifests.sh [--dry-run]
 
-set -e
+set -euo pipefail
 
 ORG="penguintechinc"
 DRY_RUN=false
 
 # Parse arguments
-if [[ "$1" == "--dry-run" ]]; then
+if [[ "${1:-}" == "--dry-run" ]]; then
   DRY_RUN=true
   echo "🔍 DRY RUN MODE - No changes will be made"
   echo ""
@@ -135,11 +135,18 @@ echo ""
 # List of correct lowercase package names
 CORRECT_PACKAGES=(
   "elder"
+  "elder/hub-api"
+  "elder/hub-webui"
+  "elder/svc-scanner"
+  "elder/svc-integrations"
+  "elder/svc-worker"
   "elder-api"
   "elder-web"
   "elder-grpc"
   "elder-envoy"
   "elder-scanner"
+  "elder-svc-scanning"
+  "elder-svc-integrations"
   "elder-worker"
 )
 
@@ -176,6 +183,6 @@ else
   echo "1. Push new code with lowercase image names"
   echo "2. Trigger a new build via GitHub Actions"
   echo "3. Verify images with:"
-  echo "   docker pull --platform linux/amd64 ghcr.io/$ORG/elder-web:latest"
-  echo "   docker pull --platform linux/arm64 ghcr.io/$ORG/elder-web:latest"
+  echo "   docker pull --platform linux/amd64 ghcr.io/$ORG/elder/hub-webui:latest"
+  echo "   docker pull --platform linux/arm64 ghcr.io/$ORG/elder/hub-webui:latest"
 fi

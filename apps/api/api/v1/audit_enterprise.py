@@ -6,13 +6,14 @@ for SOC 2, ISO 27001, HIPAA, and GDPR requirements.
 
 # flake8: noqa: E501
 
-
 import datetime
 
 from quart import Blueprint, jsonify, request
 
 from apps.api.api.v1.portal_auth import portal_token_required
 from apps.api.services.audit import AuditService
+from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.pagination import parse_limit, parse_offset
 
 bp = Blueprint("audit_enterprise", __name__)
 
@@ -55,7 +56,7 @@ def query_logs():
                 request.args.get("start_date").replace("Z", "+00:00")
             )
         except ValueError:
-            return jsonify({"error": "Invalid start_date format"}), 400
+            return ApiResponse.bad_request("Invalid start_date format")
 
     if request.args.get("end_date"):
         try:
@@ -63,7 +64,7 @@ def query_logs():
                 request.args.get("end_date").replace("Z", "+00:00")
             )
         except ValueError:
-            return jsonify({"error": "Invalid end_date format"}), 400
+            return ApiResponse.bad_request("Invalid end_date format")
 
     # Parse success filter
     success = None
@@ -80,8 +81,8 @@ def query_logs():
         start_date=start_date,
         end_date=end_date,
         success=success,
-        limit=request.args.get("limit", 100, type=int),
-        offset=request.args.get("offset", 0, type=int),
+        limit=parse_limit(request.args, 100),
+        offset=parse_offset(request.args),
     )
 
     return jsonify(result), 200
@@ -113,7 +114,7 @@ def get_compliance_report(report_type):
         request.portal_user.get("global_role") not in ["admin", "support"]
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
     # Get tenant ID
     tenant_id = request.args.get("tenant_id", type=int)
@@ -131,7 +132,7 @@ def get_compliance_report(report_type):
 
         if not start_date_str or not end_date_str:
             # Default to last 30 days
-            end_date = datetime.datetime.now(datetime.timezone.utc)
+            end_date = datetime.datetime.now(datetime.UTC)
             start_date = end_date - datetime.timedelta(days=30)
         else:
             start_date = datetime.datetime.fromisoformat(
@@ -141,7 +142,7 @@ def get_compliance_report(report_type):
                 end_date_str.replace("Z", "+00:00")
             )
     except ValueError:
-        return jsonify({"error": "Invalid date format"}), 400
+        return ApiResponse.bad_request("Invalid date format")
 
     result = AuditService.get_compliance_report(
         tenant_id=tenant_id,
@@ -185,7 +186,7 @@ def get_retention_policy():
 
 @bp.route("/cleanup", methods=["POST"])
 @portal_token_required
-def cleanup_old_logs():
+async def cleanup_old_logs():
     """Clean up audit logs older than retention period.
 
     Requires admin permission.
@@ -201,9 +202,9 @@ def cleanup_old_logs():
         request.portal_user.get("global_role") != "admin"
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
-    data = request.get_json() or {}
+    data = await request.get_json() or {}
     tenant_id = data.get("tenant_id")
 
     if not tenant_id:
@@ -240,7 +241,7 @@ def export_logs():
         request.portal_user.get("global_role") not in ["admin", "support"]
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
     tenant_id = request.args.get("tenant_id", type=int)
     if not tenant_id:
@@ -265,7 +266,7 @@ def export_logs():
         else:
             end_date = None
     except ValueError:
-        return jsonify({"error": "Invalid date format"}), 400
+        return ApiResponse.bad_request("Invalid date format")
 
     # Query all logs for export (no pagination)
     result = AuditService.query_logs(
@@ -280,11 +281,12 @@ def export_logs():
 
     if export_format == "csv":
         # Convert to CSV
-        import csv
         import io
 
+        from shared.csv_safety import safe_writer
+
         output = io.StringIO()
-        writer = csv.writer(output)
+        writer = safe_writer(output)
 
         # Header
         writer.writerow(

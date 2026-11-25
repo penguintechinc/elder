@@ -2,15 +2,16 @@
 
 # flake8: noqa: E501
 
-
 import inspect
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, List
+from typing import List
 
-from quart import current_app, g, jsonify, request
 from penguin_dal import Row
+from quart import current_app, g, jsonify, request
 
-from apps.api.auth.jwt_handler import get_current_user
+from apps.api.auth.jwt_handler import get_current_user, is_system_service_worker
+from apps.api.auth.rbac import check_org_permission, check_permission, enforcer
 
 
 def login_required(f: Callable) -> Callable:
@@ -105,7 +106,7 @@ def permission_required(permission_name: str) -> Callable:
 
 
 def permissions_required(
-    permission_names: List[str], require_all: bool = True
+    permission_names: list[str], require_all: bool = True
 ) -> Callable:
     """
     Decorator to require multiple permissions.
@@ -233,44 +234,95 @@ def org_permission_required(permission_name: str, org_id_param: str = "id") -> C
 
 
 def _check_user_permission(user: Row, permission_name: str) -> bool:
-    """
-    Check if user has a specific permission (global or org-scoped).
-
-    Args:
-        user: PyDAL Row representing identity
-        permission_name: Permission name to check
-
-    Returns:
-        True if user has permission (currently simplified - returns True for all authenticated users)
-
-    TODO: Implement full RBAC permission checking with PyDAL
-    """
-    # Simplified permission check - superusers have all permissions
-    # For non-superusers, we'll need to implement RBAC tables and logic
-    # For now, allow authenticated users to proceed
-    return True
+    """Check if user has a specific permission using RBACEnforcer."""
+    return check_permission(user, permission_name)
 
 
 def _check_org_permission(user: Row, permission_name: str, org_id: int) -> bool:
+    """Check if user has permission in an organization context."""
+    return check_org_permission(user, permission_name, org_id)
+
+
+def require_scope(scope: str) -> Callable:
+    """Require a specific scope claim on the current request.
+
+    Reads ``g.claims["scope"]`` populated by the before_request bridge in main.py.
+    Returns 403 if the scope is absent. Must be placed after ``@login_required``.
+
+    Usage::
+
+        @bp.route("/secrets")
+        @login_required
+        @require_scope("secrets:read")
+        async def list_secrets():
+            ...
     """
-    Check if user has permission for a specific organization.
 
-    Args:
-        user: PyDAL Row representing identity
-        permission_name: Permission name to check
-        org_id: Organization ID
+    def decorator(f: Callable) -> Callable:
+        @wraps(f)
+        async def wrapper(*args, **kwargs):
+            claims = getattr(g, "claims", {}) or {}
+            granted = set(claims.get("scope", []))
+            if getattr(g, "current_user", None) and getattr(
+                g.current_user, "is_superuser", False
+            ):
+                pass  # superusers bypass scope checks
+            elif scope not in granted:
+                return jsonify({"error": f"Missing required scope: '{scope}'"}), 403
+            if inspect.iscoroutinefunction(f):
+                return await f(*args, **kwargs)
+            return f(*args, **kwargs)
 
-    Returns:
-        True if user has permission for this organization (currently simplified)
+        return wrapper
 
-    TODO: Implement full organization-scoped RBAC with PyDAL
+    return decorator
+
+
+def require_role(role: str) -> Callable:
+    """Require a specific role on the current request.
+
+    Reads ``g.claims["roles"]`` populated by the before_request bridge in main.py.
+    Returns 403 if the role is absent. Must be placed after ``@login_required``.
     """
-    # Simplified org permission check
-    # For now, allow authenticated users to proceed
-    return True
+
+    def decorator(f: Callable) -> Callable:
+        @wraps(f)
+        async def wrapper(*args, **kwargs):
+            claims = getattr(g, "claims", {}) or {}
+            granted = set(claims.get("roles", []))
+            if getattr(g, "current_user", None) and getattr(
+                g.current_user, "is_superuser", False
+            ):
+                pass
+            elif role not in granted:
+                return jsonify({"error": f"Missing required role: '{role}'"}), 403
+            if inspect.iscoroutinefunction(f):
+                return await f(*args, **kwargs)
+            return f(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
-def resource_role_required(required_role: str, resource_param: str = "id") -> Callable:
+def _role_level_of(user_role: Row, role_hierarchy: dict[str, int]) -> int:
+    """Return the hierarchy level a ``resource_roles`` row grants.
+
+    Prefers the plain ``role`` string; falls back to the ``role_type`` enum,
+    which penguin-dal may return as an enum member or its stored name.
+    """
+    raw = getattr(user_role, "role", None) or getattr(user_role, "role_type", None)
+    if raw is None:
+        return 0
+    value = getattr(raw, "value", raw)
+    return role_hierarchy.get(str(value).lower(), 0)
+
+
+def resource_role_required(
+    required_role: str,
+    resource_param: str = "id",
+    resource_table: str | None = None,
+) -> Callable:
     """
     Decorator to check resource-level role requirements using PyDAL.
 
@@ -285,13 +337,17 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
     Args:
         required_role: Minimum role required (viewer, operator, maintainer)
         resource_param: Name of route parameter containing resource ID
+        resource_table: For routes whose id names a row of another table
+            (e.g. ``certificates``), the table to load it from. The role is then
+            checked on the row's owning organization. The row is resolved within
+            the caller's verified tenant; a missing or foreign row is a 404.
 
     Usage:
         @bp.route('/entities/<int:id>/metadata', methods=['POST'])
         @login_required
         @license_required('enterprise')
         @resource_role_required('maintainer', resource_param='id')
-        def create_entity_metadata(id):
+        async def create_entity_metadata(id):
             # Only maintainers can create metadata
             pass
 
@@ -299,7 +355,7 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
         @login_required
         @license_required('enterprise')
         @resource_role_required('viewer')
-        def create_issue():
+        async def create_issue():
             # Viewers can create issues
             # Must provide entity_id or organization_id in request body
             pass
@@ -319,8 +375,10 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
             if not user:
                 return jsonify({"error": "Authentication required"}), 401
 
-            # Superusers bypass resource role checks
-            if user.is_superuser:
+            # Superusers and verified PLATFORM (system-tenant) service_worker
+            # tokens bypass per-identity resource_roles rows. Tenant-scoped
+            # workers go through the normal checks like any tenant identity.
+            if user.is_superuser or is_system_service_worker():
                 g.current_user = user
                 if inspect.iscoroutinefunction(f):
                     return await f(*args, **kwargs)
@@ -333,7 +391,9 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
 
             # If not in route params, check request body (for POST/PATCH)
             if not resource_id and request.is_json:
-                data = request.get_json()
+                data = await request.get_json()
+                if not isinstance(data, dict):
+                    return jsonify({"error": "JSON object body required"}), 400
                 if "entity_id" in data:
                     resource_id = data["entity_id"]
                     resource_type = "entity"
@@ -349,6 +409,25 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
                         ),
                         400,
                     )
+            elif resource_id and resource_table:
+                # Registered resource table: check the role on the owning org
+                from apps.api.utils.tenant_scoping import (
+                    get_current_tenant_id,
+                    get_tenant_scoped,
+                )
+
+                tenant_id = get_current_tenant_id()
+                if not tenant_id:
+                    return jsonify({"error": "Tenant context required"}), 403
+                db = current_app.db
+                table = getattr(db, resource_table)
+                row = get_tenant_scoped(
+                    db, table, resource_id, tenant_id, org_fk="organization_id"
+                )
+                if not row:
+                    return jsonify({"error": "Not found"}), 404
+                resource_id = row.organization_id
+                resource_type = "organization"
             elif resource_id:
                 # Determine resource type from route context
                 # Check if we're in an entity or organization route
@@ -370,15 +449,17 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
             # Check if user has required role on this resource using PyDAL
             db = current_app.db
             try:
+                # resource_type is a Postgres enum storing member NAMES
+                # (ENTITY/ORGANIZATION); a lowercase value never matched.
                 user_roles = db(
                     (db.resource_roles.identity_id == user.id)
-                    & (db.resource_roles.resource_type == resource_type)
+                    & (db.resource_roles.resource_type == resource_type.upper())
                     & (db.resource_roles.resource_id == resource_id)
                 ).select()
 
                 has_role = False
                 for user_role in user_roles:
-                    user_level = role_hierarchy.get(user_role.role, 0)
+                    user_level = _role_level_of(user_role, role_hierarchy)
                     # Check if user's role level meets or exceeds required level
                     if user_level >= required_level:
                         has_role = True
@@ -418,12 +499,16 @@ def admin_required(f):
     return role_required("admin")(f)
 
 
-def role_required(allowed_roles):
+def role_required(allowed_roles, *, allow_service_worker_scopes: tuple[str, ...] = ()):
     """
     Decorator to require specific portal roles for an endpoint.
 
     Args:
         allowed_roles: String or list of allowed portal roles ('admin', 'editor', 'observer')
+        allow_service_worker_scopes: Optional scopes permitting an authenticated
+            platform (system-tenant) ``service_worker`` token to access this route
+            when all listed scopes are present in ``g.claims["scope"]``.
+            Tenant-scoped workers are never admitted by this bypass.
 
     Usage:
         @bp.route('/admin-only')
@@ -457,6 +542,20 @@ def role_required(allowed_roles):
                     return await f(*args, **kwargs)
                 else:
                     return f(*args, **kwargs)
+
+            if (
+                allow_service_worker_scopes
+                # Only platform (system-tenant) workers: these routes run
+                # global operations a tenant-scoped worker must never trigger.
+                and is_system_service_worker()
+            ):
+                granted_scopes = set((getattr(g, "claims", {}) or {}).get("scope", []))
+                if all(s in granted_scopes for s in allow_service_worker_scopes):
+                    g.current_user = user
+                    if inspect.iscoroutinefunction(f):
+                        return await f(*args, **kwargs)
+                    else:
+                        return f(*args, **kwargs)
 
             # Check portal role
             user_role = user.get("portal_role", "observer")

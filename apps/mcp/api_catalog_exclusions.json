@@ -1,0 +1,52 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/v1/audit-enterprise/export",
+    "reason": "non-JSON response body (tuple with text/csv Content-Type)"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/backup/export/{filename}/download",
+    "reason": "binary file download response"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/backup/import",
+    "reason": "multipart/form-data request body (file upload)"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/backup/{backup_id}/download",
+    "reason": "binary file download response"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/diagrams/{diagram_id}/export/json",
+    "reason": "binary file download response"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/diagrams/{diagram_id}/export/svg",
+    "reason": "binary file download response"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/import/templates/{resource}/download",
+    "reason": "non-JSON response body (raw Response)"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/import/{resource}",
+    "reason": "multipart/form-data request body (file upload)"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/services/{id}/sbom/export",
+    "reason": "non-JSON response body (raw Response)"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/software/{id}/sbom/export",
+    "reason": "non-JSON response body (raw Response)"
+  }
+]

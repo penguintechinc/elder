@@ -79,16 +79,16 @@ Each dependency is returned as a dictionary with the following fields:
 
 ```python
 {
-    "name": str,              # Crate name (e.g., "serde")
-    "version": str,           # Semantic version (e.g., "1.0.130")
-    "purl": str,              # Package URL (e.g., "pkg:cargo/serde@1.0.130")
-    "package_type": str,      # Always "cargo"
-    "scope": str,             # "runtime", "dev", or "build"
-    "direct": bool,           # True for Cargo.toml, False for Cargo.lock
-    "source_file": str,       # "Cargo.toml" or "Cargo.lock"
+    "name": str,  # Crate name (e.g., "serde")
+    "version": str,  # Semantic version (e.g., "1.0.130")
+    "purl": str,  # Package URL (e.g., "pkg:cargo/serde@1.0.130")
+    "package_type": str,  # Always "cargo"
+    "scope": str,  # "runtime", "dev", or "build"
+    "direct": bool,  # True for Cargo.toml, False for Cargo.lock
+    "source_file": str,  # "Cargo.toml" or "Cargo.lock"
     # Optional fields for special dependency types:
-    "git": str,               # Git URL (if git dependency)
-    "path": str,              # Local path (if path dependency)
+    "git": str,  # Git URL (if git dependency)
+    "path": str,  # Local path (if path dependency)
 }
 ```
 
@@ -175,11 +175,11 @@ The parser normalizes various version specifier formats to semantic versions:
 parser = RustDependencyParser()
 
 # All these normalize to "1.0"
-parser._normalize_cargo_version("1.0")      # "1.0"
-parser._normalize_cargo_version("^1.0")     # "1.0"
-parser._normalize_cargo_version("~1.0")     # "1.0"
-parser._normalize_cargo_version(">=1.0")    # "1.0"
-parser._normalize_cargo_version(">1.0")     # "1.0"
+parser._normalize_cargo_version("1.0")  # "1.0"
+parser._normalize_cargo_version("^1.0")  # "1.0"
+parser._normalize_cargo_version("~1.0")  # "1.0"
+parser._normalize_cargo_version(">=1.0")  # "1.0"
+parser._normalize_cargo_version(">1.0")  # "1.0"
 ```
 
 ## Error Handling

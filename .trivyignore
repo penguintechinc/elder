@@ -1,0 +1,49 @@
+# Trivy misconfig suppressions — Kubernetes manifests.
+#
+# NOTE: trivy's Kubernetes/Helm misconfig scanner does not honor inline
+# `# trivy:ignore:<ID>` comments (verified empirically against trivy 0.69.3 —
+# unlike the Dockerfile scanner, which does support them; see
+# apps/api/Dockerfile for that working pattern). This file is the only
+# mechanism trivy respects for these findings. Run with `--ignorefile
+# .trivyignore` (or from this directory, since ".trivyignore" is trivy's
+# default) for it to take effect — a `trivy fs /repo` invocation from an
+# unrelated working directory will not discover it.
+#
+# Each entry below is a genuine, reviewed exception — not a blanket suppression
+# of the check. See the referenced file for in-context justification.
+
+# AVD-KSV-0056: infrastructure/k8s/github-ci/rbac.yaml
+# Namespace-scoped (elder only) Role for the GitHub Actions CI/CD
+# ServiceAccount that deploys Elder via `helm upgrade --install`. Write
+# access to Services/Ingress is required for Helm to create/update (and, for
+# Services, delete on `helm uninstall`/resource pruning) the chart's own
+# Service/Ingress objects. Already least-privilege: a Role (not ClusterRole),
+# scoped to the elder namespace only, with no access to cluster-scoped
+# resources (nodes, namespaces, ClusterRoles/ClusterRoleBindings).
+AVD-KSV-0056
+
+# AVD-KSV-0119: k8s/helm/elder/values.yaml (scanner.securityContext) — rendered
+# via k8s/helm/elder/templates/deployment.yaml
+# ROOT CAPABILITY EXCEPTION (approved): the scanner component's masscan
+# process (apps/scanner/scanners/network.py) requires CAP_NET_RAW for raw
+# socket SYN scanning. Runs as non-root UID 1000 with every other capability
+# dropped and a read-only root filesystem. Matching documentation lives in
+# apps/scanner/Dockerfile and k8s/helm/elder/values.yaml.
+AVD-KSV-0119
+
+# AVD-KSV-0109: k8s/helm/elder/templates/configmap-modules.yaml
+# False positive: the flagged key "ELDER_MODULE_SECRETS" is a boolean
+# feature-toggle for Elder's own "Secrets" module (.Values.modules.secrets),
+# not a credential. Every value in this ConfigMap is a true/false module
+# flag — no secret material is ever placed here.
+AVD-KSV-0109
+
+# AVD-DS-0031: apps/api/Dockerfile
+# False positive: JWT_ACCESS_TOKEN_HOURS / JWT_REFRESH_TOKEN_DAYS are integer
+# JWT lifetime durations (hours / days), not credentials. DS-0031 substring-
+# matches "TOKEN" in the ARG/ENV name — same root cause as the hadolint DL3064
+# suppressed inline on those same lines. No secret is passed as a build arg.
+# (Kept here rather than inline: the Dockerfile inline `# trivy:ignore` comment
+# sits between hadolint's `# hadolint ignore` and the ARG, breaking hadolint's
+# immediately-above adjacency requirement.)
+AVD-DS-0031

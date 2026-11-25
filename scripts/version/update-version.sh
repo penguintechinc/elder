@@ -3,7 +3,7 @@
 # Version Management Script for Project Template
 # Format: vMajor.Minor.Patch.EpochTimestamp
 
-set -e
+set -euo pipefail
 
 VERSION_FILE=".version"
 VERSION_MD="VERSION.md"
@@ -40,7 +40,9 @@ fi
 
 # Read current version
 current_version=$(cat "$VERSION_FILE")
-IFS='.' read -r major minor patch build <<< "$current_version"
+# 4th field (build epoch) intentionally discarded here — new_build below
+# always recomputes a fresh epoch timestamp rather than reusing the old one.
+IFS='.' read -r major minor patch _ <<< "$current_version"
 
 print_info "Current version: v$current_version"
 
@@ -127,13 +129,13 @@ if [ -f "$VERSION_MD" ]; then
         echo ""
         echo "## v$new_version - $timestamp"
         echo ""
-        if [ "$1" = "major" ]; then
+        if [ "${1:-}" = "major" ]; then
             echo "### Major Release"
             echo "- Breaking changes or major new features"
-        elif [ "$1" = "minor" ]; then
+        elif [ "${1:-}" = "minor" ]; then
             echo "### Minor Release"
             echo "- New features and improvements"
-        elif [ "$1" = "patch" ]; then
+        elif [ "${1:-}" = "patch" ]; then
             echo "### Patch Release"
             echo "- Bug fixes and minor improvements"
         else
@@ -188,7 +190,6 @@ fi
 update_version_in_file() {
     local file=$1
     local pattern=$2
-    local replacement=$3
 
     if [ -f "$file" ]; then
         if sed -i.bak "$pattern" "$file" 2>/dev/null; then
@@ -233,7 +234,7 @@ if [ -d ".git" ]; then
         echo "  git add .version VERSION.md package.json web/package.json"
         echo "  git commit -m \"chore: bump version to v$new_version\""
 
-        if [ "$1" != "build" ]; then
+        if [ "${1:-}" != "build" ]; then
             echo "  git tag v$major.$minor.$patch"
             echo "  git push origin main --tags"
         fi

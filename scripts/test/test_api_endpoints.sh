@@ -1,6 +1,13 @@
 #!/bin/bash
 # Comprehensive Elder API Test Script
 # Tests all API endpoints against local dev cluster
+#
+# Deliberately no `set -euo pipefail`: check_response() returns 1 on a failed
+# endpoint check and is called unguarded (not inside `if`) at the top level
+# dozens of times below, by design — the harness aggregates every endpoint's
+# pass/fail and only exits nonzero in the final summary if any failed. Adding
+# `-e` would abort the whole run at the first failing endpoint instead of
+# exercising the rest.
 
 BASE_URL="http://localhost:4000/api/v1"
 TENANT_ID=1
@@ -20,7 +27,6 @@ FAILED=0
 SKIPPED=0
 
 # Test results array
-declare -a RESULTS
 declare -a FAILED_ENDPOINTS
 
 log_test() {
@@ -80,8 +86,10 @@ check_response() {
     fi
 
     # Extract HTTP code from last line
-    local http_code=$(echo "$response" | tail -n1)
-    local body=$(echo "$response" | sed '$d')
+    local http_code
+    http_code=$(echo "$response" | tail -n1)
+    local body
+    body=$(echo "$response" | sed '$d')
 
     # Check if code is in expected codes
     local found=0
@@ -98,7 +106,8 @@ check_response() {
         return 0
     else
         # Check for specific error messages
-        local error=$(echo "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error','') or d.get('message',''))" 2>/dev/null || echo "$body" | head -c 100)
+        local error
+        error=$(echo "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error','') or d.get('message',''))" 2>/dev/null || echo "$body" | head -c 100)
         log_test "FAIL" "$endpoint" "$method" "HTTP $http_code - $error"
         return 1
     fi

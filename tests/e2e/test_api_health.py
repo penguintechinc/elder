@@ -24,9 +24,9 @@ class TestAPIHealth:
             data = response.json()
             assert "version" in data or "api_version" in data
             version = data.get("version") or data.get("api_version", "")
-            assert version != "0.0.0", (
-                f"Version is '0.0.0' — APP_VERSION build-arg was not injected correctly"
-            )
+            assert (
+                version != "0.0.0"
+            ), f"Version is '0.0.0' — APP_VERSION build-arg was not injected correctly"
 
 
 class TestAPIAuthentication:
@@ -36,7 +36,7 @@ class TestAPIAuthentication:
         """Test successful login returns a token."""
         response = requests.post(
             f"{api_url}/api/v1/auth/login",
-            json={"email": "admin@localhost.local", "password": "admin123"},
+            json={"username": "admin@localhost.local", "password": "admin123"},
         )
 
         assert response.status_code == 200
@@ -47,7 +47,7 @@ class TestAPIAuthentication:
         """Test login with invalid credentials fails."""
         response = requests.post(
             f"{api_url}/api/v1/auth/login",
-            json={"email": "invalid@example.com", "password": "wrongpassword"},
+            json={"username": "invalid@example.com", "password": "wrongpassword"},
         )
 
         assert response.status_code in [401, 403, 400]

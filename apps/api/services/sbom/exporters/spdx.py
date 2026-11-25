@@ -6,9 +6,8 @@ Includes package information, licenses, checksums, and relationships.
 
 # flake8: noqa: E501
 
-
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -25,8 +24,8 @@ class SPDXExporter:
 
     def export_json(
         self,
-        components: List[Dict[str, Any]],
-        metadata: Optional[Dict[str, Any]] = None,
+        components: list[dict[str, Any]],
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Export components to SPDX JSON format.
 
@@ -42,9 +41,9 @@ class SPDXExporter:
 
     def _build_spdx_dict(
         self,
-        components: List[Dict[str, Any]],
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        components: list[dict[str, Any]],
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Build SPDX dictionary structure.
 
         Args:
@@ -55,7 +54,7 @@ class SPDXExporter:
             Dictionary representing SPDX document.
         """
         doc_namespace = f"https://elder.penguintech.io/spdx/{uuid4()}"
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Build document name
         doc_name = "Elder-SBOM"
@@ -126,8 +125,8 @@ class SPDXExporter:
         return spdx
 
     def _convert_component_to_spdx(
-        self, component: Dict[str, Any], index: int
-    ) -> Optional[Dict[str, Any]]:
+        self, component: dict[str, Any], index: int
+    ) -> dict[str, Any] | None:
         """Convert Elder component to SPDX package format.
 
         Args:

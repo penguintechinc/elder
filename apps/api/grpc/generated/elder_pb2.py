@@ -4,50 +4,52 @@
 # source: elder.proto
 # Protobuf Python Version: 5.29.0
 """Generated protocol buffer code."""
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
+
 _runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC,
-    5,
-    29,
-    0,
-    '',
-    'elder.proto'
+    _runtime_version.Domain.PUBLIC, 5, 29, 0, "", "elder.proto"
 )
 # @@protoc_insertion_point(imports)
 
 _sym_db = _symbol_database.Default()
 
 
-from . import common_pb2 as common__pb2
-from . import organization_pb2 as organization__pb2
-from . import entity_pb2 as entity__pb2
-from . import dependency_pb2 as dependency__pb2
-from . import graph_pb2 as graph__pb2
 from . import auth_pb2 as auth__pb2
+from . import common_pb2 as common__pb2
+from . import dependency_pb2 as dependency__pb2
+from . import entity_pb2 as entity__pb2
+from . import graph_pb2 as graph__pb2
+from . import organization_pb2 as organization__pb2
 
-
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0b\x65lder.proto\x12\x05\x65lder\x1a\x0c\x63ommon.proto\x1a\x12organization.proto\x1a\x0c\x65ntity.proto\x1a\x10\x64\x65pendency.proto\x1a\x0bgraph.proto\x1a\nauth.proto\"\xc8\x01\n\x0fServiceMetadata\x12\x0f\n\x07version\x18\x01 \x01(\t\x12\x13\n\x0b\x61pi_version\x18\x02 \x01(\t\x12\x1a\n\x12supported_features\x18\x03 \x03(\t\x12>\n\x0c\x63\x61pabilities\x18\x04 \x03(\x0b\x32(.elder.ServiceMetadata.CapabilitiesEntry\x1a\x33\n\x11\x43\x61pabilitiesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"?\n\x19GetServiceMetadataRequest\x12\"\n\x05\x65mpty\x18\x01 \x01(\x0b\x32\x13.elder.common.Empty\"F\n\x1aGetServiceMetadataResponse\x12(\n\x08metadata\x18\x01 \x01(\x0b\x32\x16.elder.ServiceMetadata2\xad\x1c\n\x0c\x45lderService\x12<\n\x05Login\x12\x18.elder.auth.LoginRequest\x1a\x19.elder.auth.LoginResponse\x12Q\n\x0cRefreshToken\x12\x1f.elder.auth.RefreshTokenRequest\x1a .elder.auth.RefreshTokenResponse\x12?\n\x06Logout\x12\x19.elder.auth.LogoutRequest\x1a\x1a.elder.auth.LogoutResponse\x12\x63\n\x12GetCurrentIdentity\x12%.elder.auth.GetCurrentIdentityRequest\x1a&.elder.auth.GetCurrentIdentityResponse\x12W\n\x0e\x43hangePassword\x12!.elder.auth.ChangePasswordRequest\x1a\".elder.auth.ChangePasswordResponse\x12]\n\x10RegisterIdentity\x12#.elder.auth.RegisterIdentityRequest\x1a$.elder.auth.RegisterIdentityResponse\x12T\n\rValidateToken\x12 .elder.auth.ValidateTokenRequest\x1a!.elder.auth.ValidateTokenResponse\x12W\n\x0eListIdentities\x12!.elder.auth.ListIdentitiesRequest\x1a\".elder.auth.ListIdentitiesResponse\x12N\n\x0bGetIdentity\x12\x1e.elder.auth.GetIdentityRequest\x1a\x1f.elder.auth.GetIdentityResponse\x12W\n\x0eUpdateIdentity\x12!.elder.auth.UpdateIdentityRequest\x1a\".elder.auth.UpdateIdentityResponse\x12W\n\x0e\x44\x65leteIdentity\x12!.elder.auth.DeleteIdentityRequest\x1a\".elder.auth.DeleteIdentityResponse\x12p\n\x11ListOrganizations\x12,.elder.organization.ListOrganizationsRequest\x1a-.elder.organization.ListOrganizationsResponse\x12j\n\x0fGetOrganization\x12*.elder.organization.GetOrganizationRequest\x1a+.elder.organization.GetOrganizationResponse\x12s\n\x12\x43reateOrganization\x12-.elder.organization.CreateOrganizationRequest\x1a..elder.organization.CreateOrganizationResponse\x12s\n\x12UpdateOrganization\x12-.elder.organization.UpdateOrganizationRequest\x1a..elder.organization.UpdateOrganizationResponse\x12s\n\x12\x44\x65leteOrganization\x12-.elder.organization.DeleteOrganizationRequest\x1a..elder.organization.DeleteOrganizationResponse\x12\x82\x01\n\x17GetOrganizationChildren\x12\x32.elder.organization.GetOrganizationChildrenRequest\x1a\x33.elder.organization.GetOrganizationChildrenResponse\x12\x85\x01\n\x18GetOrganizationHierarchy\x12\x33.elder.organization.GetOrganizationHierarchyRequest\x1a\x34.elder.organization.GetOrganizationHierarchyResponse\x12U\n\x0cListEntities\x12!.elder.entity.ListEntitiesRequest\x1a\".elder.entity.ListEntitiesResponse\x12L\n\tGetEntity\x12\x1e.elder.entity.GetEntityRequest\x1a\x1f.elder.entity.GetEntityResponse\x12U\n\x0c\x43reateEntity\x12!.elder.entity.CreateEntityRequest\x1a\".elder.entity.CreateEntityResponse\x12U\n\x0cUpdateEntity\x12!.elder.entity.UpdateEntityRequest\x1a\".elder.entity.UpdateEntityResponse\x12U\n\x0c\x44\x65leteEntity\x12!.elder.entity.DeleteEntityRequest\x1a\".elder.entity.DeleteEntityResponse\x12p\n\x15GetEntityDependencies\x12*.elder.entity.GetEntityDependenciesRequest\x1a+.elder.entity.GetEntityDependenciesResponse\x12j\n\x13\x42\x61tchCreateEntities\x12(.elder.entity.BatchCreateEntitiesRequest\x1a).elder.entity.BatchCreateEntitiesResponse\x12i\n\x10ListDependencies\x12).elder.dependency.ListDependenciesRequest\x1a*.elder.dependency.ListDependenciesResponse\x12`\n\rGetDependency\x12&.elder.dependency.GetDependencyRequest\x1a\'.elder.dependency.GetDependencyResponse\x12i\n\x10\x43reateDependency\x12).elder.dependency.CreateDependencyRequest\x1a*.elder.dependency.CreateDependencyResponse\x12i\n\x10UpdateDependency\x12).elder.dependency.UpdateDependencyRequest\x1a*.elder.dependency.UpdateDependencyResponse\x12i\n\x10\x44\x65leteDependency\x12).elder.dependency.DeleteDependencyRequest\x1a*.elder.dependency.DeleteDependencyResponse\x12{\n\x16\x42ulkCreateDependencies\x12/.elder.dependency.BulkCreateDependenciesRequest\x1a\x30.elder.dependency.BulkCreateDependenciesResponse\x12{\n\x16\x42ulkDeleteDependencies\x12/.elder.dependency.BulkDeleteDependenciesRequest\x1a\x30.elder.dependency.BulkDeleteDependenciesResponse\x12\x65\n\x12GetDependencyGraph\x12&.elder.graph.GetDependencyGraphRequest\x1a\'.elder.graph.GetDependencyGraphResponse\x12S\n\x0c\x41nalyzeGraph\x12 .elder.graph.AnalyzeGraphRequest\x1a!.elder.graph.AnalyzeGraphResponse\x12G\n\x08\x46indPath\x12\x1c.elder.graph.FindPathRequest\x1a\x1d.elder.graph.FindPathResponse\x12\\\n\x0fGetEntityImpact\x12#.elder.graph.GetEntityImpactRequest\x1a$.elder.graph.GetEntityImpactResponse\x12@\n\x0bHealthCheck\x12\x13.elder.common.Empty\x1a\x1c.elder.common.StatusResponseB=\n\x14io.penguintech.elderZ%github.com/penguintechinc/elder/protob\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x0b\x65lder.proto\x12\x05\x65lder\x1a\x0c\x63ommon.proto\x1a\x12organization.proto\x1a\x0c\x65ntity.proto\x1a\x10\x64\x65pendency.proto\x1a\x0bgraph.proto\x1a\nauth.proto"\xc8\x01\n\x0fServiceMetadata\x12\x0f\n\x07version\x18\x01 \x01(\t\x12\x13\n\x0b\x61pi_version\x18\x02 \x01(\t\x12\x1a\n\x12supported_features\x18\x03 \x03(\t\x12>\n\x0c\x63\x61pabilities\x18\x04 \x03(\x0b\x32(.elder.ServiceMetadata.CapabilitiesEntry\x1a\x33\n\x11\x43\x61pabilitiesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01"?\n\x19GetServiceMetadataRequest\x12"\n\x05\x65mpty\x18\x01 \x01(\x0b\x32\x13.elder.common.Empty"F\n\x1aGetServiceMetadataResponse\x12(\n\x08metadata\x18\x01 \x01(\x0b\x32\x16.elder.ServiceMetadata2\xad\x1c\n\x0c\x45lderService\x12<\n\x05Login\x12\x18.elder.auth.LoginRequest\x1a\x19.elder.auth.LoginResponse\x12Q\n\x0cRefreshToken\x12\x1f.elder.auth.RefreshTokenRequest\x1a .elder.auth.RefreshTokenResponse\x12?\n\x06Logout\x12\x19.elder.auth.LogoutRequest\x1a\x1a.elder.auth.LogoutResponse\x12\x63\n\x12GetCurrentIdentity\x12%.elder.auth.GetCurrentIdentityRequest\x1a&.elder.auth.GetCurrentIdentityResponse\x12W\n\x0e\x43hangePassword\x12!.elder.auth.ChangePasswordRequest\x1a".elder.auth.ChangePasswordResponse\x12]\n\x10RegisterIdentity\x12#.elder.auth.RegisterIdentityRequest\x1a$.elder.auth.RegisterIdentityResponse\x12T\n\rValidateToken\x12 .elder.auth.ValidateTokenRequest\x1a!.elder.auth.ValidateTokenResponse\x12W\n\x0eListIdentities\x12!.elder.auth.ListIdentitiesRequest\x1a".elder.auth.ListIdentitiesResponse\x12N\n\x0bGetIdentity\x12\x1e.elder.auth.GetIdentityRequest\x1a\x1f.elder.auth.GetIdentityResponse\x12W\n\x0eUpdateIdentity\x12!.elder.auth.UpdateIdentityRequest\x1a".elder.auth.UpdateIdentityResponse\x12W\n\x0e\x44\x65leteIdentity\x12!.elder.auth.DeleteIdentityRequest\x1a".elder.auth.DeleteIdentityResponse\x12p\n\x11ListOrganizations\x12,.elder.organization.ListOrganizationsRequest\x1a-.elder.organization.ListOrganizationsResponse\x12j\n\x0fGetOrganization\x12*.elder.organization.GetOrganizationRequest\x1a+.elder.organization.GetOrganizationResponse\x12s\n\x12\x43reateOrganization\x12-.elder.organization.CreateOrganizationRequest\x1a..elder.organization.CreateOrganizationResponse\x12s\n\x12UpdateOrganization\x12-.elder.organization.UpdateOrganizationRequest\x1a..elder.organization.UpdateOrganizationResponse\x12s\n\x12\x44\x65leteOrganization\x12-.elder.organization.DeleteOrganizationRequest\x1a..elder.organization.DeleteOrganizationResponse\x12\x82\x01\n\x17GetOrganizationChildren\x12\x32.elder.organization.GetOrganizationChildrenRequest\x1a\x33.elder.organization.GetOrganizationChildrenResponse\x12\x85\x01\n\x18GetOrganizationHierarchy\x12\x33.elder.organization.GetOrganizationHierarchyRequest\x1a\x34.elder.organization.GetOrganizationHierarchyResponse\x12U\n\x0cListEntities\x12!.elder.entity.ListEntitiesRequest\x1a".elder.entity.ListEntitiesResponse\x12L\n\tGetEntity\x12\x1e.elder.entity.GetEntityRequest\x1a\x1f.elder.entity.GetEntityResponse\x12U\n\x0c\x43reateEntity\x12!.elder.entity.CreateEntityRequest\x1a".elder.entity.CreateEntityResponse\x12U\n\x0cUpdateEntity\x12!.elder.entity.UpdateEntityRequest\x1a".elder.entity.UpdateEntityResponse\x12U\n\x0c\x44\x65leteEntity\x12!.elder.entity.DeleteEntityRequest\x1a".elder.entity.DeleteEntityResponse\x12p\n\x15GetEntityDependencies\x12*.elder.entity.GetEntityDependenciesRequest\x1a+.elder.entity.GetEntityDependenciesResponse\x12j\n\x13\x42\x61tchCreateEntities\x12(.elder.entity.BatchCreateEntitiesRequest\x1a).elder.entity.BatchCreateEntitiesResponse\x12i\n\x10ListDependencies\x12).elder.dependency.ListDependenciesRequest\x1a*.elder.dependency.ListDependenciesResponse\x12`\n\rGetDependency\x12&.elder.dependency.GetDependencyRequest\x1a\'.elder.dependency.GetDependencyResponse\x12i\n\x10\x43reateDependency\x12).elder.dependency.CreateDependencyRequest\x1a*.elder.dependency.CreateDependencyResponse\x12i\n\x10UpdateDependency\x12).elder.dependency.UpdateDependencyRequest\x1a*.elder.dependency.UpdateDependencyResponse\x12i\n\x10\x44\x65leteDependency\x12).elder.dependency.DeleteDependencyRequest\x1a*.elder.dependency.DeleteDependencyResponse\x12{\n\x16\x42ulkCreateDependencies\x12/.elder.dependency.BulkCreateDependenciesRequest\x1a\x30.elder.dependency.BulkCreateDependenciesResponse\x12{\n\x16\x42ulkDeleteDependencies\x12/.elder.dependency.BulkDeleteDependenciesRequest\x1a\x30.elder.dependency.BulkDeleteDependenciesResponse\x12\x65\n\x12GetDependencyGraph\x12&.elder.graph.GetDependencyGraphRequest\x1a\'.elder.graph.GetDependencyGraphResponse\x12S\n\x0c\x41nalyzeGraph\x12 .elder.graph.AnalyzeGraphRequest\x1a!.elder.graph.AnalyzeGraphResponse\x12G\n\x08\x46indPath\x12\x1c.elder.graph.FindPathRequest\x1a\x1d.elder.graph.FindPathResponse\x12\\\n\x0fGetEntityImpact\x12#.elder.graph.GetEntityImpactRequest\x1a$.elder.graph.GetEntityImpactResponse\x12@\n\x0bHealthCheck\x12\x13.elder.common.Empty\x1a\x1c.elder.common.StatusResponseB=\n\x14io.penguintech.elderZ%github.com/penguintechinc/elder/protob\x06proto3'
+)
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'elder_pb2', _globals)
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "elder_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'\n\024io.penguintech.elderZ%github.com/penguintechinc/elder/proto'
-  _globals['_SERVICEMETADATA_CAPABILITIESENTRY']._loaded_options = None
-  _globals['_SERVICEMETADATA_CAPABILITIESENTRY']._serialized_options = b'8\001'
-  _globals['_SERVICEMETADATA']._serialized_start=114
-  _globals['_SERVICEMETADATA']._serialized_end=314
-  _globals['_SERVICEMETADATA_CAPABILITIESENTRY']._serialized_start=263
-  _globals['_SERVICEMETADATA_CAPABILITIESENTRY']._serialized_end=314
-  _globals['_GETSERVICEMETADATAREQUEST']._serialized_start=316
-  _globals['_GETSERVICEMETADATAREQUEST']._serialized_end=379
-  _globals['_GETSERVICEMETADATARESPONSE']._serialized_start=381
-  _globals['_GETSERVICEMETADATARESPONSE']._serialized_end=451
-  _globals['_ELDERSERVICE']._serialized_start=454
-  _globals['_ELDERSERVICE']._serialized_end=4083
+    _globals["DESCRIPTOR"]._loaded_options = None
+    _globals[
+        "DESCRIPTOR"
+    ]._serialized_options = (
+        b"\n\024io.penguintech.elderZ%github.com/penguintechinc/elder/proto"
+    )
+    _globals["_SERVICEMETADATA_CAPABILITIESENTRY"]._loaded_options = None
+    _globals["_SERVICEMETADATA_CAPABILITIESENTRY"]._serialized_options = b"8\001"
+    _globals["_SERVICEMETADATA"]._serialized_start = 114
+    _globals["_SERVICEMETADATA"]._serialized_end = 314
+    _globals["_SERVICEMETADATA_CAPABILITIESENTRY"]._serialized_start = 263
+    _globals["_SERVICEMETADATA_CAPABILITIESENTRY"]._serialized_end = 314
+    _globals["_GETSERVICEMETADATAREQUEST"]._serialized_start = 316
+    _globals["_GETSERVICEMETADATAREQUEST"]._serialized_end = 379
+    _globals["_GETSERVICEMETADATARESPONSE"]._serialized_start = 381
+    _globals["_GETSERVICEMETADATARESPONSE"]._serialized_end = 451
+    _globals["_ELDERSERVICE"]._serialized_start = 454
+    _globals["_ELDERSERVICE"]._serialized_end = 4083
 # @@protoc_insertion_point(module_scope)

@@ -1,0 +1,362 @@
+# Teradata Connector Manifest for IceCharts
+connector:
+  id: db_teradata
+  name: Teradata
+  description: Teradata database connector for IceCharts workflows
+  icon: "🟠"
+  color: "#F37440"
+  version: "1.0.0"
+  vendor: database
+
+  auth:
+    methods:
+      - type: api_key
+        env_var: TERADATA_CONNECTION_STRING
+
+  connection:
+    base_url_env: ICECHARTS_API_URL
+    default_url: http://localhost:5000
+    health_endpoint: /api/v1/database-ops/health
+
+  triggers:
+    - id: data_changed
+      name: Data Changed
+      description: Poll for data changes in a Teradata table
+      icon: "🔄"
+      webhook_path: /webhooks/database/teradata/data_changed
+      outputs:
+        - name: out
+          type: object
+          description: Changed data with operation type
+      config_schema:
+        - field: table
+          type: string
+          label: Table Name
+          required: true
+        - field: poll_interval
+          type: number
+          label: Poll Interval (seconds)
+          default: 60
+        - field: track_column
+          type: string
+          label: Track Column
+          placeholder: "updated_at"
+
+    - id: scheduled_query
+      name: Scheduled Query
+      description: Run a query on a schedule
+      icon: "⏰"
+      webhook_path: /webhooks/database/teradata/scheduled
+      outputs:
+        - name: out
+          type: object
+          description: Query results
+      config_schema:
+        - field: query
+          type: textarea
+          label: SQL Query
+          required: true
+        - field: schedule
+          type: string
+          label: Cron Schedule
+          required: true
+          placeholder: "*/5 * * * *"
+
+  actions:
+    - id: execute_query
+      name: Execute Query
+      description: Execute a SELECT query against Teradata
+      icon: "🔍"
+      endpoint: /api/v1/database-ops/query
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Query results
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: fields
+          type: string
+          label: Fields
+          placeholder: "id, name, email"
+          description: Comma-separated fields (empty for all)
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          supports_variables: true
+          placeholder: '{"status": "active"}'
+        - field: limit
+          type: number
+          label: Limit
+          default: 100
+
+    - id: insert_row
+      name: Insert Row
+      description: Insert a row into a Teradata table
+      icon: "➕"
+      endpoint: /api/v1/database-ops/insert
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: data
+          type: textarea
+          label: Row Data (JSON)
+          required: true
+          supports_variables: true
+          placeholder: '{"name": "John", "email": "john@example.com"}'
+
+    - id: update_rows
+      name: Update Rows
+      description: Update rows matching conditions
+      icon: "✏️"
+      endpoint: /api/v1/database-ops/update
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          required: true
+          supports_variables: true
+          placeholder: '{"id": 1}'
+        - field: data
+          type: textarea
+          label: Update Data (JSON)
+          required: true
+          supports_variables: true
+
+    - id: delete_rows
+      name: Delete Rows
+      description: Delete rows matching conditions
+      icon: "🗑️"
+      endpoint: /api/v1/database-ops/delete
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          required: true
+          supports_variables: true
+
+    - id: bulk_insert
+      name: Bulk Insert
+      description: Insert multiple rows at once
+      icon: "📥"
+      endpoint: /api/v1/database-ops/bulk-insert
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: rows
+          type: textarea
+          label: Rows (JSON Array)
+          required: true
+          supports_variables: true
+
+    - id: call_procedure
+      name: Call Procedure
+      description: Call a stored procedure
+      icon: "⚡"
+      endpoint: /api/v1/database-ops/procedure
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: procedure
+          type: string
+          label: Procedure Name
+          required: true
+          supports_variables: true
+        - field: params
+          type: textarea
+          label: Parameters (JSON Array)
+          supports_variables: true
+          placeholder: '["param1", 42]'
+
+    - id: export_data
+      name: Export Data
+      description: Export query results to file
+      icon: "📤"
+      endpoint: /api/v1/database-ops/query
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: query
+          type: textarea
+          label: SQL Query
+          required: true
+          supports_variables: true
+        - field: format
+          type: select
+          label: Export Format
+          options:
+            - csv
+            - json
+            - parquet
+          default: csv
+        - field: destination
+          type: string
+          label: Destination Path
+          required: true
+          supports_variables: true
+          placeholder: "s3://bucket/path"
+
+  transforms:
+    - id: query_lookup
+      name: Query Lookup
+      description: Lookup data from a Teradata table
+      icon: "🔎"
+      endpoint: /api/v1/database-ops/query
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          supports_variables: true
+        - field: limit
+          type: number
+          label: Limit
+          default: 1
+
+    - id: count_rows
+      name: Count Rows
+      description: Count rows matching criteria
+      icon: "🔢"
+      endpoint: /api/v1/database-ops/count
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          supports_variables: true
+
+    - id: check_exists
+      name: Check Exists
+      description: Check if a record exists
+      icon: "❓"
+      endpoint: /api/v1/database-ops/exists
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          required: true
+          supports_variables: true
+
+    - id: get_schema
+      name: Get Schema
+      description: Get table schema information
+      icon: "📋"
+      endpoint: /api/v1/database-ops/schema
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table Name
+          supports_variables: true

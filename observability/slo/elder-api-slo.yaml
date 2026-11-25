@@ -1,0 +1,87 @@
+# SLO definitions for elder-api, in the OpenSLO (openslo.com) v1 shape.
+# SLIs query the real http.server.duration / http.server.duration_count
+# series (see ../README.md for the OTel->PromQL name translation) --
+# no fabricated metric names.
+#
+# These are specs to import into whatever SLO/error-budget tool your OTLP
+# backend offers (SigNoz alerts, Grafana SLO plugin, Sloth, Pyrra, OpenSLO's
+# own CLI) -- not a vendor-specific export.
+
+apiVersion: openslo/v1
+kind: SLO
+metadata:
+  name: elder-api-availability
+  displayName: Elder API Availability
+spec:
+  service: elder-api
+  description: >
+    Fraction of elder-api requests that do not return a 5xx, measured from
+    the http.server.duration histogram's implicit request count
+    (apps/api auto-instrumentation via shared/observability.py:auto_instrument_app).
+  indicator:
+    metadata:
+      name: elder-api-non-5xx-ratio
+    spec:
+      ratioMetric:
+        counter: true
+        good:
+          metricSource:
+            type: prometheus
+            spec:
+              query: >
+                sum(rate(http_server_duration_count{http_status_code!~"5.."}[5m]))
+        total:
+          metricSource:
+            type: prometheus
+            spec:
+              query: >
+                sum(rate(http_server_duration_count[5m]))
+  timeWindow:
+    - duration: 30d
+      isRolling: true
+  budgetingMethod: Occurrences
+  objectives:
+    - displayName: 99.5% availability
+      target: 0.995
+      # Error budget: 0.5% of 30d ~= 3h 36m of allowed 5xx-equivalent downtime.
+
+---
+apiVersion: openslo/v1
+kind: SLO
+metadata:
+  name: elder-api-latency
+  displayName: Elder API Request Latency
+spec:
+  service: elder-api
+  description: >
+    Fraction of elder-api requests served within 1000ms, using the
+    http.server.duration histogram's default OTel SDK bucket boundary at
+    1000 (unit is ms, no custom View is configured in shared/observability.py,
+    so the SDK's default explicit bucket boundaries apply -- 1000 is one of
+    them).
+  indicator:
+    metadata:
+      name: elder-api-fast-ratio
+    spec:
+      ratioMetric:
+        counter: true
+        good:
+          metricSource:
+            type: prometheus
+            spec:
+              query: >
+                sum(rate(http_server_duration_bucket{le="1000"}[5m]))
+        total:
+          metricSource:
+            type: prometheus
+            spec:
+              query: >
+                sum(rate(http_server_duration_count[5m]))
+  timeWindow:
+    - duration: 30d
+      isRolling: true
+  budgetingMethod: Occurrences
+  objectives:
+    - displayName: 95% of requests under 1s
+      target: 0.95
+      # Error budget: 5% of requests may exceed 1000ms over the rolling 30d window.

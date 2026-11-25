@@ -10,11 +10,10 @@ monitors webhook health to automatically trigger fallback syncs when needed.
 
 # flake8: noqa: E501
 
-
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -42,11 +41,11 @@ class BatchSyncJob:
     job_id: str
     platform: str
     sync_config_id: int
-    resource_types: List[ResourceType]
+    resource_types: list[ResourceType]
     interval_seconds: int
     enabled: bool = True
-    last_run: Optional[datetime] = None
-    next_run: Optional[datetime] = None
+    last_run: datetime | None = None
+    next_run: datetime | None = None
 
 
 class BatchSyncScheduler:
@@ -59,7 +58,7 @@ class BatchSyncScheduler:
     def __init__(
         self,
         db: DAL,
-        sync_clients: Dict[str, BaseSyncClient],
+        sync_clients: dict[str, BaseSyncClient],
         logger: Any,
     ):
         """Initialize batch sync scheduler.
@@ -73,10 +72,10 @@ class BatchSyncScheduler:
         self.sync_clients = sync_clients
         self.logger = logger
         self.scheduler = AsyncIOScheduler()
-        self.jobs: Dict[str, BatchSyncJob] = {}
+        self.jobs: dict[str, BatchSyncJob] = {}
 
         # Webhook timeout tracking
-        self.webhook_timeouts: Dict[int, int] = {}  # sync_config_id -> timeout_count
+        self.webhook_timeouts: dict[int, int] = {}  # sync_config_id -> timeout_count
         self.max_webhook_timeouts = 3  # Trigger fallback after N timeouts
 
     def start(self) -> None:
@@ -108,8 +107,8 @@ class BatchSyncScheduler:
         self,
         platform: str,
         sync_config_id: int,
-        resource_types: List[ResourceType],
-        interval_seconds: Optional[int] = None,
+        resource_types: list[ResourceType],
+        interval_seconds: int | None = None,
     ) -> str:
         """Add a new batch sync job.
 
@@ -175,14 +174,15 @@ class BatchSyncScheduler:
         Args:
             job: Batch sync job to execute
         """
-        correlation_id = f"batch_{job.job_id}_{int(datetime.now().timestamp())}"
+        now_start = datetime.now(UTC)
+        correlation_id = f"batch_{job.job_id}_{int(now_start.timestamp())}"
 
         self.logger.info(
             f"Starting batch sync: {job.job_id}",
             extra={"correlation_id": correlation_id, "job_id": job.job_id},
         )
 
-        job.last_run = datetime.now()
+        job.last_run = now_start
 
         # Get sync client
         sync_client = self.sync_clients.get(job.platform)
@@ -192,7 +192,7 @@ class BatchSyncScheduler:
 
         # Update sync config last_batch_sync_at
         self.db(self.db.sync_configs.id == job.sync_config_id).update(
-            last_batch_sync_at=datetime.now()
+            last_batch_sync_at=now_start
         )
         self.db.commit()
 
@@ -240,13 +240,11 @@ class BatchSyncScheduler:
                 total_failed += 1
 
         # Update sync config last_sync_at
-        self.db(self.db.sync_configs.id == job.sync_config_id).update(
-            last_sync_at=datetime.now()
-        )
+        now = datetime.now(UTC)
+        self.db(self.db.sync_configs.id == job.sync_config_id).update(last_sync_at=now)
         self.db.commit()
 
         # Record in sync history
-        now = datetime.now(timezone.utc)
         self.db.sync_history.insert(
             sync_config_id=job.sync_config_id,
             correlation_id=correlation_id,
@@ -260,8 +258,6 @@ class BatchSyncScheduler:
                 "job_id": job.job_id,
                 "resource_types": [rt.value for rt in job.resource_types],
             },
-            created_at=now,
-            updated_at=now,
         )
         self.db.commit()
 
@@ -284,16 +280,16 @@ class BatchSyncScheduler:
         self.logger.debug("Monitoring webhook health")
 
         # Query sync history for recent webhook failures
-        cutoff_time = datetime.now() - timedelta(minutes=30)
+        cutoff_time = datetime.now(UTC) - timedelta(minutes=30)
 
         recent_failures = self.db(
             (self.db.sync_history.sync_type == "webhook")
-            & (self.db.sync_history.success is False)
+            & (self.db.sync_history.success == False)  # noqa: E712
             & (self.db.sync_history.started_at > cutoff_time)
         ).select()
 
         # Count failures per sync_config
-        failure_counts: Dict[int, int] = {}
+        failure_counts: dict[int, int] = {}
         for failure in recent_failures:
             sync_config_id = failure.sync_config_id
             failure_counts[sync_config_id] = failure_counts.get(sync_config_id, 0) + 1
@@ -316,8 +312,8 @@ class BatchSyncScheduler:
     def _load_sync_configs(self) -> None:
         """Load sync configurations from database and create batch jobs."""
         configs = self.db(
-            (self.db.sync_configs.enabled is True)
-            & (self.db.sync_configs.batch_fallback_enabled is True)
+            (self.db.sync_configs.enabled == True)  # noqa: E712
+            & (self.db.sync_configs.batch_fallback_enabled == True)  # noqa: E712
         ).select()
 
         for config in configs:
@@ -337,7 +333,7 @@ class BatchSyncScheduler:
                 interval_seconds=config.sync_interval,
             )
 
-    def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
+    def get_job_status(self, job_id: str) -> dict[str, Any] | None:
         """Get status of a batch sync job.
 
         Args:
@@ -364,7 +360,7 @@ class BatchSyncScheduler:
             ),
         }
 
-    def list_jobs(self) -> List[Dict[str, Any]]:
+    def list_jobs(self) -> list[dict[str, Any]]:
         """List all batch sync jobs.
 
         Returns:

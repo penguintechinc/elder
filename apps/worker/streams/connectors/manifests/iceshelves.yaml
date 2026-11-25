@@ -1,0 +1,172 @@
+# IceShelves Connector Manifest
+# High-performance storage with XDP packet processing and NUMA-aware memory management
+# Version: 1.0.0
+# Vendor: PenguinTech
+
+connector:
+  id: iceshelves
+  name: IceShelves
+  description: High-performance storage with XDP packet processing, NUMA-aware memory pools, and AF_XDP socket support
+  icon: "iceshelves-logo"
+  color: "#06B6D4"
+  version: "1.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: api_key
+        header: X-API-Key
+        env_var: ICESHELVES_API_KEY
+
+  connection:
+    base_url_env: ICESHELVES_URL
+    default_url: http://localhost:8080
+    health_endpoint: /health
+
+  triggers:
+    - id: packet_received
+      name: Packet Received
+      description: Triggered when a packet is received via XDP on the configured network interface
+      icon: "📦"
+      webhook_path: /webhooks/iceshelves/packet
+      outputs:
+        - name: out
+          type: object
+          description: Packet metadata and payload information
+      config_schema:
+        - field: interface
+          type: string
+          label: Network Interface
+          description: Network interface to monitor for packets
+          placeholder: "eth0"
+          required: true
+        - field: protocol_filter
+          type: multiselect
+          label: Protocol Filter
+          description: Filter packets by protocol type
+          options:
+            - value: tcp
+              label: TCP
+            - value: udp
+              label: UDP
+            - value: icmp
+              label: ICMP
+          required: false
+
+  actions:
+    - id: forward_packet
+      name: Forward Packet
+      description: Forward a packet to a destination using XDP fast path
+      icon: "➡️"
+      endpoint: /api/v1/forward
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Forward operation result with success status and metrics
+      config_schema:
+        - field: destination
+          type: string
+          label: Destination
+          description: Target destination for packet forwarding
+          supports_variables: true
+          required: true
+        - field: interface
+          type: string
+          label: Network Interface
+          description: Network interface to use for forwarding
+          default: "eth0"
+          required: false
+        - field: priority
+          type: select
+          label: Priority
+          description: Packet forwarding priority level
+          options:
+            - value: low
+              label: Low
+            - value: normal
+              label: Normal
+            - value: high
+              label: High
+          default: normal
+          required: false
+
+    - id: hello
+      name: Hello
+      description: Send a hello/keepalive packet to a target
+      icon: "👋"
+      endpoint: /api/v1/hello
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Hello packet response with RTT and status
+      config_schema:
+        - field: target
+          type: string
+          label: Target
+          description: Target host or IP address for hello packet
+          supports_variables: true
+          required: true
+
+  transforms:
+    - id: get_status
+      name: Get Status
+      description: Get XDP program status and runtime information
+      icon: "📊"
+      endpoint: /api/v1/status
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: XDP program status including loaded programs, interfaces, and statistics
+      config_schema: []
+
+    - id: get_memory_stats
+      name: Get Memory Stats
+      description: Get NUMA-aware memory pool statistics and allocation information
+      icon: "💾"
+      endpoint: /api/v1/memory/stats
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Memory pool statistics including allocations, free space, and NUMA node information
+      config_schema:
+        - field: node_id
+          type: number
+          label: NUMA Node ID
+          description: NUMA node ID for statistics, leave empty for all nodes
+          required: false
+
+    - id: get_numa_info
+      name: Get NUMA Info
+      description: Get NUMA topology information and node configuration
+      icon: "🗺️"
+      endpoint: /api/v1/numa/info
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: NUMA topology including node count, CPU mapping, and memory affinity
+      config_schema: []

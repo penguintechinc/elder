@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
 from typing import List, Optional, Union
 
@@ -10,7 +9,7 @@ from apps.api.grpc.generated import auth_pb2, common_pb2, entity_pb2, organizati
 from apps.api.models import DependencyDTO, EntityDTO, IdentityDTO, OrganizationDTO
 
 
-def datetime_to_timestamp(dt: Optional[Union[datetime, str]]) -> common_pb2.Timestamp:
+def datetime_to_timestamp(dt: datetime | str | None) -> common_pb2.Timestamp:
     """Convert datetime or ISO string to protobuf Timestamp.
 
     Args:
@@ -31,7 +30,7 @@ def datetime_to_timestamp(dt: Optional[Union[datetime, str]]) -> common_pb2.Time
     return common_pb2.Timestamp(seconds=timestamp, nanos=nanos)
 
 
-def dict_to_metadata_fields(data: dict) -> List[common_pb2.MetadataField]:
+def dict_to_metadata_fields(data: dict) -> list[common_pb2.MetadataField]:
     """Convert dict to list of MetadataField."""
     if not data:
         return []
@@ -71,8 +70,10 @@ def organization_to_proto(org: OrganizationDTO) -> organization_pb2.Organization
         parent_id=org.parent_id or 0,
         name=org.name,
         description=org.description or "",
-        ldap_dn=org.ldap_dn or "",
-        saml_group=org.saml_group or "",
+        # The organizations table has no LDAP/SAML columns; the proto fields
+        # are kept for wire compatibility.
+        ldap_dn=getattr(org, "ldap_dn", None) or "",
+        saml_group=getattr(org, "saml_group", None) or "",
         owner_identity_id=org.owner_identity_id or 0,
         owner_group_id=org.owner_group_id or 0,
         metadata=[],  # DTOs don't have metadata dict, would need to fetch separately
@@ -114,11 +115,11 @@ def entity_to_proto(entity: EntityDTO) -> entity_pb2.Entity:
     return entity_pb2.Entity(
         id=entity.id,
         unique_id=entity.village_id or "",
-        organization_id=entity.organization_id,
-        entity_type=entity_type_to_proto(entity.entity_type),
-        name=entity.name,
-        description=entity.description or "",
-        metadata=dict_to_metadata_fields(entity.attributes or {}),
+        organization_id=entity.organization_id or 0,
+        entity_type=entity_type_to_proto(entity.type),
+        name=entity.name or "",
+        description="",  # entities carry no description column
+        metadata=dict_to_metadata_fields(entity.metadata or {}),
         owner_identity_id=0,  # DTOs don't have this field
         created_at=datetime_to_timestamp(entity.created_at),
         updated_at=datetime_to_timestamp(entity.updated_at),
@@ -189,11 +190,12 @@ def identity_to_proto(identity: IdentityDTO) -> auth_pb2.Identity:
         username=identity.username,
         email=identity.email or "",
         display_name=identity.full_name or "",
-        auth_provider=auth_provider_to_proto(identity.auth_provider),
-        auth_provider_id=identity.auth_provider_id or "",
-        is_active=identity.is_active,
-        is_superuser=identity.is_superuser,
-        last_login=datetime_to_timestamp(identity.last_login_at),
+        # IdentityDTO deliberately omits provider/privilege fields.
+        auth_provider=auth_provider_to_proto(getattr(identity, "auth_provider", None)),
+        auth_provider_id=getattr(identity, "auth_provider_id", None) or "",
+        is_active=bool(identity.is_active),
+        is_superuser=bool(getattr(identity, "is_superuser", False)),
+        last_login=datetime_to_timestamp(getattr(identity, "last_login_at", None)),
         created_at=datetime_to_timestamp(identity.created_at),
         updated_at=datetime_to_timestamp(identity.updated_at),
     )

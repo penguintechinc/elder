@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import os
 import signal
 import sys
@@ -13,6 +12,11 @@ import grpc
 import structlog
 from grpc_reflection.v1alpha import reflection
 
+from apps.api.common.modules.licensing import (
+    get_matched_bypass_domain,
+    is_bypass_domain,
+)
+from apps.api.grpc.auth import GrpcAuthInterceptor
 from apps.api.grpc.generated import elder_pb2, elder_pb2_grpc
 from apps.api.grpc.servicers.elder_servicer import ElderServicer
 from apps.api.licensing_fallback import get_license_client
@@ -20,9 +24,33 @@ from apps.api.licensing_fallback import get_license_client
 logger = structlog.get_logger(__name__)
 
 
+def create_server(app, max_workers: int = 10) -> grpc.Server:
+    """Build the Elder gRPC server with caller authentication wired in.
+
+    Every ElderService RPC other than Login/RefreshToken/HealthCheck passes
+    through ``GrpcAuthInterceptor``, which rejects calls without a valid
+    bearer JWT with UNAUTHENTICATED. The caller still has to bind a port
+    and start the server.
+    """
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=max_workers),
+        interceptors=[GrpcAuthInterceptor(app)],
+        options=[
+            ("grpc.max_send_message_length", 100 * 1024 * 1024),  # 100MB
+            ("grpc.max_receive_message_length", 100 * 1024 * 1024),  # 100MB
+            ("grpc.keepalive_time_ms", 30000),  # 30 seconds
+            ("grpc.keepalive_timeout_ms", 10000),  # 10 seconds
+            ("grpc.http2.max_pings_without_data", 0),
+            ("grpc.http2.min_time_between_pings_ms", 10000),
+        ],
+    )
+    elder_pb2_grpc.add_ElderServiceServicer_to_server(ElderServicer(app), server)
+    return server
+
+
 def serve(
     app,
-    host: str = "0.0.0.0",
+    host: str = "0.0.0.0",  # nosec B104
     port: int = 50051,
     max_workers: int = 10,
     require_license: bool = True,
@@ -41,7 +69,13 @@ def serve(
     app.db.engine.dispose()
     # Validate license if required
     if require_license:
-        if get_license_client is None:
+        if is_bypass_domain():
+            logger.info(
+                "grpc_server_license_bypassed",
+                tier="enterprise",
+                bypass_domain=get_matched_bypass_domain(),
+            )
+        elif get_license_client is None:
             logger.warning(
                 "grpc_server_no_licensing_module",
                 message="penguin_licensing not available, skipping license check",
@@ -49,44 +83,37 @@ def serve(
         else:
             try:
                 license_client = get_license_client()
-                validation = license_client.validate()
-
-                if not validation.valid:
-                    logger.error(
-                        "grpc_server_license_invalid", message=validation.message
+                if license_client is None:
+                    logger.warning(
+                        "grpc_server_no_licensing_module",
+                        message="penguin_licensing not available, skipping license check",
                     )
-                    sys.exit(1)
+                else:
+                    validation = license_client.validate()
 
-                if validation.tier != "enterprise":
-                    logger.error(
-                        "grpc_server_requires_enterprise", tier=validation.tier
+                    if not validation.valid:
+                        logger.error(
+                            "grpc_server_license_invalid", message=validation.message
+                        )
+                        sys.exit(1)
+
+                    if validation.tier != "enterprise":
+                        logger.error(
+                            "grpc_server_requires_enterprise", tier=validation.tier
+                        )
+                        sys.exit(1)
+
+                    logger.info(
+                        "grpc_server_license_validated",
+                        tier=validation.tier,
+                        customer=validation.customer,
                     )
-                    sys.exit(1)
-
-                logger.info(
-                    "grpc_server_license_validated",
-                    tier=validation.tier,
-                    customer=validation.customer,
-                )
             except Exception as e:
                 logger.error("grpc_server_license_error", error=str(e))
                 sys.exit(1)
 
-    # Create gRPC server
-    server = grpc.server(
-        futures.ThreadPoolExecutor(max_workers=max_workers),
-        options=[
-            ("grpc.max_send_message_length", 100 * 1024 * 1024),  # 100MB
-            ("grpc.max_receive_message_length", 100 * 1024 * 1024),  # 100MB
-            ("grpc.keepalive_time_ms", 30000),  # 30 seconds
-            ("grpc.keepalive_timeout_ms", 10000),  # 10 seconds
-            ("grpc.http2.max_pings_without_data", 0),
-            ("grpc.http2.min_time_between_pings_ms", 10000),
-        ],
-    )
-
-    # Add servicer to server
-    elder_pb2_grpc.add_ElderServiceServicer_to_server(ElderServicer(app), server)
+    # Create gRPC server (authentication interceptor + servicer)
+    server = create_server(app, max_workers=max_workers)
 
     # Enable reflection for grpcurl/grpcui
     service_names = (
@@ -128,7 +155,7 @@ def serve(
 
 if __name__ == "__main__":
     # Get configuration from environment
-    host = os.getenv("GRPC_HOST", "0.0.0.0")
+    host = os.getenv("GRPC_HOST", "0.0.0.0")  # nosec B104
     port = int(os.getenv("GRPC_PORT", "50051"))
     max_workers = int(os.getenv("GRPC_MAX_WORKERS", "10"))
     require_license = os.getenv("GRPC_REQUIRE_LICENSE", "true").lower() == "true"

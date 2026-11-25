@@ -1,0 +1,12 @@
+# gh-237 ratchet baseline: known unscoped tenant-owned-resource
+# lookups -- bare `db.<table>[<id>]` bracket lookups, and calls into
+# the tenant-scoped resolver family (apps/api/common/refs) missing
+# `tenant_id=`.
+# scripts/check_tenant_scoping.py fails if this count rises.
+# Fix a bracket lookup with apps.api.utils.tenant_scoping.get_tenant_scoped(),
+# or pass tenant_id= to a resolver call.
+# list_count = whole-table `db.<t>.id > 0` queries in functions with no
+# tenant/org predicate (routes + services); ratcheted separately.
+# Regenerate with: scripts/check_tenant_scoping.py --update
+count=0
+list_count=43

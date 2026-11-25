@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from typing import Dict, List, Optional
 
 import httpx
@@ -22,17 +21,17 @@ class IBossConnector(BaseConnector):
     def __init__(self):
         """Initialize iBoss connector."""
         super().__init__("iboss")
-        self.elder_client: Optional[ElderAPIClient] = None
-        self.http_client: Optional[httpx.AsyncClient] = None
-        self.organization_cache: Dict[str, int] = {}
+        self.elder_client: ElderAPIClient | None = None
+        self.http_client: httpx.AsyncClient | None = None
+        self.organization_cache: dict[str, int] = {}
         # Cache for entity IDs to create relationships
-        self.user_entity_cache: Dict[str, int] = {}  # iboss_user_id -> elder_entity_id
-        self.group_entity_cache: Dict[str, int] = (
-            {}
-        )  # iboss_group_id -> elder_entity_id
-        self.app_entity_cache: Dict[str, int] = {}  # iboss_app_id -> elder_entity_id
+        self.user_entity_cache: dict[str, int] = {}  # iboss_user_id -> elder_entity_id
+        self.group_entity_cache: dict[
+            str, int
+        ] = {}  # iboss_group_id -> elder_entity_id
+        self.app_entity_cache: dict[str, int] = {}  # iboss_app_id -> elder_entity_id
         # Cache user-group memberships for relationships
-        self.user_groups: Dict[str, List[str]] = {}  # user_id -> [group_ids]
+        self.user_groups: dict[str, list[str]] = {}  # user_id -> [group_ids]
 
     async def connect(self) -> None:
         """Establish connection to iBoss API and Elder API."""
@@ -85,7 +84,7 @@ class IBossConnector(BaseConnector):
         self,
         name: str,
         description: str,
-        parent_id: Optional[int] = None,
+        parent_id: int | None = None,
     ) -> int:
         """Get or create an organization in Elder.
 

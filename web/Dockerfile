@@ -21,21 +21,53 @@ ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_VERSION=$VITE_VERSION
 ENV VITE_BUILD_TIME=$VITE_BUILD_TIME
 
-# Copy source code
+# Copy source code and .version for build metadata
+COPY .version /tmp/.version
 COPY web/ .
 
-# Build the application
-RUN npm run build
+# Build the application (fall back to .version when VITE_VERSION / VITE_BUILD_TIME aren't passed)
+RUN set -eu; \
+    if [ -z "${VITE_VERSION:-}" ] || [ "${VITE_VERSION}" = "0.0.0" ]; then \
+      if [ -f /tmp/.version ]; then \
+        VITE_VERSION="$(tr -d '[:space:]' < /tmp/.version)"; \
+      fi; \
+    fi; \
+    if [ -z "${VITE_BUILD_TIME:-}" ]; then \
+      printf '%s' "${VITE_VERSION:-}" > /tmp/.ver; \
+      EPOCH="$(awk -F. 'NF>=4 && $4 ~ /^[0-9]+$/ {print $4}' /tmp/.ver)"; \
+      rm -f /tmp/.ver; \
+      if [ -n "$EPOCH" ]; then \
+        VITE_BUILD_TIME="$EPOCH"; \
+      else \
+        VITE_BUILD_TIME="$(date +%s)"; \
+      fi; \
+    fi; \
+    export VITE_VERSION VITE_BUILD_TIME; \
+    rm -f /tmp/.version; \
+    npm run build
 
-# Production stage — serve built files with a lightweight static server
+# Production stage — serve built SPA via rootless Express on Node 24 (PenguinTech standard).
+# In-cluster, Envoy (Cilium Gateway API HTTPRoute) routes /api directly to hub-api
+# and / to hub-webui. Express also proxies /api for local/port-forward access.
 FROM node:24-bookworm-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c AS runner
-RUN npm install -g serve
-RUN useradd --create-home --shell /bin/bash appuser
+
 WORKDIR /app
-COPY --chown=appuser:appuser --from=builder /app/dist ./dist
-RUN chown -R appuser:appuser /app
-EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000/', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
-USER appuser
-CMD ["serve", "-s", "dist", "-l", "3000"]
+
+ENV NODE_ENV=production
+ENV PORT=8080
+
+COPY web/package.json web/package-lock.json web/.npmrc ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+
+COPY --from=builder /app/dist ./dist
+COPY web/server.ts ./server.ts
+
+# Run as the built-in unprivileged `node` user (uid 1000, matching Helm securityContext.runAsUser: 1000).
+USER 1000
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/livez').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+
+CMD ["node", "server.ts"]

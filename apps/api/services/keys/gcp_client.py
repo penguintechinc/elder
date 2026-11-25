@@ -2,28 +2,26 @@
 
 # flake8: noqa: E501
 
-
 import base64
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 try:
     from google.api_core import exceptions as google_exceptions
     from google.cloud import kms
-    from google.oauth2 import service_account
 except ImportError:
     kms = None
     google_exceptions = None
-    service_account = None
 
+from apps.api.common.providers.gcp import resolve_gcp_credentials
 from apps.api.services.keys.base import BaseKeyProvider
 
 
 class GCPKMSClient(BaseKeyProvider):
     """Google Cloud KMS implementation of key management provider."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize GCP Cloud KMS client.
 
@@ -50,10 +48,8 @@ class GCPKMSClient(BaseKeyProvider):
             raise ValueError("project_id is required for GCP KMS")
 
         # Initialize client with credentials if provided
-        if config.get("credentials_json"):
-            credentials = service_account.Credentials.from_service_account_info(
-                json.loads(config["credentials_json"])
-            )
+        credentials = resolve_gcp_credentials(config)
+        if credentials:
             self.client = kms.KeyManagementServiceClient(credentials=credentials)
         else:
             # Use default credentials (from GOOGLE_APPLICATION_CREDENTIALS env var)
@@ -85,10 +81,10 @@ class GCPKMSClient(BaseKeyProvider):
         self,
         key_name: str,
         key_type: str = "symmetric",
-        key_spec: Optional[str] = None,
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+        key_spec: str | None = None,
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """
         Create a new Cloud KMS key.
 
@@ -125,21 +121,17 @@ class GCPKMSClient(BaseKeyProvider):
 
             # Set algorithm based on key type
             if key_type == "symmetric":
-                crypto_key["version_template"][
-                    "algorithm"
-                ] = (
+                crypto_key["version_template"]["algorithm"] = (
                     kms.CryptoKeyVersion.CryptoKeyVersionAlgorithm.GOOGLE_SYMMETRIC_ENCRYPTION
                 )
             elif key_type == "asymmetric":
-                crypto_key["version_template"][
-                    "algorithm"
-                ] = (
+                crypto_key["version_template"]["algorithm"] = (
                     kms.CryptoKeyVersion.CryptoKeyVersionAlgorithm.RSA_SIGN_PSS_2048_SHA256
                 )
             elif key_type == "hmac":
-                crypto_key["version_template"][
-                    "algorithm"
-                ] = kms.CryptoKeyVersion.CryptoKeyVersionAlgorithm.HMAC_SHA256
+                crypto_key["version_template"]["algorithm"] = (
+                    kms.CryptoKeyVersion.CryptoKeyVersionAlgorithm.HMAC_SHA256
+                )
 
             # Add labels if provided
             if tags:
@@ -169,7 +161,7 @@ class GCPKMSClient(BaseKeyProvider):
         except Exception as e:
             raise Exception(f"GCP KMS create key error: {str(e)}")
 
-    def get_key(self, key_id: str) -> Dict[str, Any]:
+    def get_key(self, key_id: str) -> dict[str, Any]:
         """
         Get key metadata.
 
@@ -215,8 +207,8 @@ class GCPKMSClient(BaseKeyProvider):
             raise Exception(f"GCP KMS get key error: {str(e)}")
 
     def list_keys(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """
         List all Cloud KMS keys.
 
@@ -264,12 +256,12 @@ class GCPKMSClient(BaseKeyProvider):
         except Exception as e:
             raise Exception(f"GCP KMS list keys error: {str(e)}")
 
-    def enable_key(self, key_id: str) -> Dict[str, Any]:
+    def enable_key(self, key_id: str) -> dict[str, Any]:
         """Enable a disabled key version."""
         # GCP doesn't have a direct enable/disable - we restore from destroyed state
         raise NotImplementedError("GCP KMS doesn't support direct key enable")
 
-    def disable_key(self, key_id: str) -> Dict[str, Any]:
+    def disable_key(self, key_id: str) -> dict[str, Any]:
         """Disable a key version."""
         try:
             # Get primary version
@@ -299,7 +291,7 @@ class GCPKMSClient(BaseKeyProvider):
 
     def schedule_key_deletion(
         self, key_id: str, pending_days: int = 30
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Schedule key deletion.
 
@@ -323,14 +315,14 @@ class GCPKMSClient(BaseKeyProvider):
         except Exception as e:
             raise Exception(f"GCP KMS schedule deletion error: {str(e)}")
 
-    def cancel_key_deletion(self, key_id: str) -> Dict[str, Any]:
+    def cancel_key_deletion(self, key_id: str) -> dict[str, Any]:
         """Cancel scheduled key deletion."""
         # GCP doesn't support canceling destruction
         raise NotImplementedError("GCP KMS doesn't support canceling key destruction")
 
     def encrypt(
-        self, key_id: str, plaintext: str, context: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+        self, key_id: str, plaintext: str, context: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         """
         Encrypt data using Cloud KMS key.
 
@@ -375,8 +367,8 @@ class GCPKMSClient(BaseKeyProvider):
             raise Exception(f"GCP KMS encrypt error: {str(e)}")
 
     def decrypt(
-        self, ciphertext: str, context: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+        self, ciphertext: str, context: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         """
         Decrypt data.
 
@@ -420,8 +412,8 @@ class GCPKMSClient(BaseKeyProvider):
         self,
         key_id: str,
         key_spec: str = "AES_256",
-        context: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+        context: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """
         Generate a data encryption key.
 
@@ -454,7 +446,7 @@ class GCPKMSClient(BaseKeyProvider):
         key_id: str,
         message: str,
         signing_algorithm: str = "RSA_SIGN_PSS_2048_SHA256",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Sign a message using an asymmetric key.
 
@@ -501,7 +493,7 @@ class GCPKMSClient(BaseKeyProvider):
 
     def verify(
         self, key_id: str, message: str, signature: str, signing_algorithm: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Verify a message signature.
 
@@ -510,7 +502,7 @@ class GCPKMSClient(BaseKeyProvider):
         """
         raise NotImplementedError("GCP KMS verify not yet implemented")
 
-    def rotate_key(self, key_id: str) -> Dict[str, Any]:
+    def rotate_key(self, key_id: str) -> dict[str, Any]:
         """
         Enable automatic key rotation or rotate key immediately.
 
@@ -538,7 +530,7 @@ class GCPKMSClient(BaseKeyProvider):
             crypto_key = {
                 "name": key_name,
                 "rotation_period": rotation_period,
-                "next_rotation_time": datetime.now(timezone.utc) + timedelta(days=90),
+                "next_rotation_time": datetime.now(UTC) + timedelta(days=90),
             }
 
             update_mask = {"paths": ["rotation_period", "next_rotation_time"]}

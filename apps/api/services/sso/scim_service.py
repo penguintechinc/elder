@@ -6,12 +6,19 @@ from identity providers like Okta, Azure AD, etc.
 
 # flake8: noqa: E501
 
-
 import datetime
 import secrets
 from typing import Optional
 
+import structlog
 from quart import current_app
+
+from apps.api.services.webhooks.user_events import (
+    UserCreatedEvent,
+    schedule_user_created_webhooks,
+)
+
+logger = structlog.get_logger(__name__)
 
 
 class SCIMService:
@@ -24,7 +31,7 @@ class SCIMService:
     @staticmethod
     def create_scim_config(
         tenant_id: int,
-        endpoint_url: Optional[str] = None,
+        endpoint_url: str | None = None,
     ) -> dict:
         """Create SCIM configuration for a tenant.
 
@@ -56,7 +63,7 @@ class SCIMService:
         }
 
     @staticmethod
-    def get_scim_config(tenant_id: int) -> Optional[dict]:
+    def get_scim_config(tenant_id: int) -> dict | None:
         """Get SCIM configuration for a tenant.
 
         Args:
@@ -154,22 +161,43 @@ class SCIMService:
         )
 
         # Create portal user
+        is_active = bool(scim_user.get("active", True))
         user_id = db.portal_users.insert(
             tenant_id=tenant_id,
             email=email.lower(),
             password_hash=None,  # SCIM users authenticate via SSO
             full_name=full_name or None,
             tenant_role="reader",  # Default role
-            is_active=scim_user.get("active", True),
+            is_active=is_active,
             email_verified=True,  # SCIM validates email
         )
         db.commit()
 
         # Update SCIM sync timestamp
         db(db.scim_configurations.tenant_id == tenant_id).update(
-            last_sync_at=datetime.datetime.now(datetime.timezone.utc)
+            last_sync_at=datetime.datetime.now(datetime.UTC)
         )
         db.commit()
+
+        try:
+            schedule_user_created_webhooks(
+                db,
+                UserCreatedEvent(
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    user_source="portal_user",
+                    identity_type="portal_user",
+                    auth_provider="scim",
+                    tenant_role="reader",
+                    is_active=is_active,
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "user_created_webhook_schedule_failed",
+                user_id=user_id,
+                error=str(exc)[:200],
+            )
 
         return SCIMService._user_to_scim(user_id, email.lower(), full_name, True)
 
@@ -291,7 +319,7 @@ class SCIMService:
         tenant_id: int,
         start_index: int = 1,
         count: int = 100,
-        filter_str: Optional[str] = None,
+        filter_str: str | None = None,
     ) -> dict:
         """List users in SCIM format.
 
@@ -332,7 +360,7 @@ class SCIMService:
 
     @staticmethod
     def _user_to_scim(
-        user_id: int, email: str, full_name: Optional[str], is_active: bool
+        user_id: int, email: str, full_name: str | None, is_active: bool
     ) -> dict:
         """Convert portal user to SCIM format.
 

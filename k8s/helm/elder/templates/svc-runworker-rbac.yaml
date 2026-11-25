@@ -1,0 +1,88 @@
+{{- $cfg := index .Values "svc-runworker" }}
+{{- if and $cfg $cfg.enabled }}
+{{- $execNs := $cfg.executionNamespace | default "elder-runs" }}
+{{- $backend := include "elder.runworker.backend" . }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: svc-runworker
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-runworker" .) | nindent 4 }}
+automountServiceAccountToken: false
+{{- if $cfg.createExecutionNamespace }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $execNs }}
+  labels:
+    {{- include "elder.labels" . | nindent 4 }}
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+{{- end }}
+{{- if ne $backend "sandbox" }}
+---
+# Identity for execution pods: no token is mounted and no Role is bound, so
+# tenant code has no Kubernetes API access even if it obtained a token.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $cfg.executionServiceAccount | default "elder-run-exec" }}
+  namespace: {{ $execNs }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-runworker" .) | nindent 4 }}
+automountServiceAccountToken: false
+---
+# Controller Role, scoped to executionNamespace only — zero cluster-wide
+# permissions. Minimum for the Job backend: create a Job, poll its status,
+# find its pod, read that pod's log, create/remove the code ConfigMap and
+# create/remove the per-execution gateway token Secret (no get/list/watch).
+# Finished Jobs are removed by ttlSecondsAfterFinished, so no Job delete.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: svc-runworker-executor
+  namespace: {{ $execNs }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-runworker" .) | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create"]
+  - apiGroups: ["batch"]
+    resources: ["jobs/status"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "delete"]
+  # Per-execution restriction gateway token. Write-only: the controller can
+  # create and remove these Secrets but can never read any Secret back.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: svc-runworker-executor
+  namespace: {{ $execNs }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-runworker" .) | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: svc-runworker
+    namespace: {{ .Values.namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: svc-runworker-executor
+{{- end }}
+{{- end }}

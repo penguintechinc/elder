@@ -10,12 +10,11 @@ the required abstract methods.
 
 # flake8: noqa: E501
 
-
 import abc
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from penguin_dal import DAL
 
@@ -70,9 +69,9 @@ class SyncMapping:
     external_platform: str
     external_id: str
     sync_config_id: int
-    last_synced_at: Optional[datetime] = None
-    elder_updated_at: Optional[datetime] = None
-    external_updated_at: Optional[datetime] = None
+    last_synced_at: datetime | None = None
+    elder_updated_at: datetime | None = None
+    external_updated_at: datetime | None = None
 
 
 @dataclass
@@ -93,11 +92,11 @@ class SyncOperation:
     operation_type: str  # create, update, delete
     resource_type: ResourceType
     direction: SyncDirection
-    elder_data: Optional[Dict[str, Any]] = None
-    external_data: Optional[Dict[str, Any]] = None
-    mapping: Optional[SyncMapping] = None
-    correlation_id: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    elder_data: dict[str, Any] | None = None
+    external_data: dict[str, Any] | None = None
+    mapping: SyncMapping | None = None
+    correlation_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -120,11 +119,11 @@ class SyncResult:
     operation: SyncOperation
     items_synced: int = 0
     items_failed: int = 0
-    conflicts: List[Dict[str, Any]] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
-    created_mappings: List[SyncMapping] = field(default_factory=list)
-    updated_mappings: List[SyncMapping] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    conflicts: list[dict[str, Any]] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    created_mappings: list[SyncMapping] = field(default_factory=list)
+    updated_mappings: list[SyncMapping] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_success(self) -> bool:
@@ -151,11 +150,11 @@ class ConflictResolution:
     """
 
     conflict_type: str
-    elder_data: Dict[str, Any]
-    external_data: Dict[str, Any]
+    elder_data: dict[str, Any]
+    external_data: dict[str, Any]
     resolution_strategy: str = "manual"  # manual, elder_wins, external_wins, merge
     resolved: bool = False
-    resolution_data: Optional[Dict[str, Any]] = None
+    resolution_data: dict[str, Any] | None = None
 
 
 class BaseSyncClient(abc.ABC):
@@ -175,7 +174,7 @@ class BaseSyncClient(abc.ABC):
     def __init__(
         self,
         platform_name: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         db: DAL,
         sync_config_id: int,
         logger: Any,
@@ -194,6 +193,33 @@ class BaseSyncClient(abc.ABC):
         self.db = db
         self.sync_config_id = sync_config_id
         self.logger = logger
+
+    def close(self) -> None:
+        """Close underlying network/HTTP client resources if present."""
+        client = getattr(self, "client", None)
+        if client is not None and hasattr(client, "close"):
+            client.close()
+
+    def __enter__(self) -> "BaseSyncClient":
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Exit context manager and close underlying client."""
+        self.close()
+
+    def test_connection_detail(self) -> dict[str, Any]:
+        """Test connection and return structured diagnostic details.
+
+        Returns:
+            Dictionary containing at least ``connected`` and ``platform`` keys.
+        """
+        connected = self.test_connection()
+        return {
+            "connected": connected,
+            "success": connected,
+            "platform": self.platform_name,
+        }
 
     @abc.abstractmethod
     def validate_config(self) -> bool:
@@ -271,13 +297,15 @@ class BaseSyncClient(abc.ABC):
     def batch_sync(
         self,
         resource_type: ResourceType,
-        since: Optional[datetime] = None,
+        since: datetime | None = None,
+        direction: str = "pull",
     ) -> SyncResult:
         """Perform batch synchronization for a resource type.
 
         Args:
             resource_type: Type of resources to sync
             since: Only sync resources modified after this timestamp
+            direction: Sync direction (``"pull"``, ``"push"``, or ``"bidirectional"``)
 
         Returns:
             Aggregate result of batch sync
@@ -286,7 +314,7 @@ class BaseSyncClient(abc.ABC):
     @abc.abstractmethod
     def handle_webhook(
         self,
-        webhook_data: Dict[str, Any],
+        webhook_data: dict[str, Any],
     ) -> SyncResult:
         """Handle incoming webhook from external platform.
 
@@ -300,9 +328,9 @@ class BaseSyncClient(abc.ABC):
     def get_mapping(
         self,
         resource_type: ResourceType,
-        elder_id: Optional[int] = None,
-        external_id: Optional[str] = None,
-    ) -> Optional[SyncMapping]:
+        elder_id: int | None = None,
+        external_id: str | None = None,
+    ) -> SyncMapping | None:
         """Get sync mapping for a resource.
 
         Args:
@@ -354,7 +382,7 @@ class BaseSyncClient(abc.ABC):
         Returns:
             ID of created mapping
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         mapping_id = self.db.sync_mappings.insert(
             elder_type=mapping.elder_type,
             elder_id=mapping.elder_id,
@@ -396,11 +424,13 @@ class BaseSyncClient(abc.ABC):
             & (self.db.sync_mappings.sync_config_id == mapping.sync_config_id)
         )
 
+        now = datetime.now(UTC)
         self.db(query).update(
             sync_status=sync_status,
-            last_synced_at=datetime.now(),
+            last_synced_at=now,
             elder_updated_at=mapping.elder_updated_at,
             external_updated_at=mapping.external_updated_at,
+            updated_at=now,
         )
         self.db.commit()
 
@@ -415,7 +445,7 @@ class BaseSyncClient(abc.ABC):
             result: Sync result to record
             sync_type: Type of sync operation
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         self.db.sync_history.insert(
             sync_config_id=self.sync_config_id,
             correlation_id=result.operation.correlation_id,
@@ -427,8 +457,6 @@ class BaseSyncClient(abc.ABC):
             success=result.is_success,
             error_message="; ".join(result.errors) if result.errors else None,
             sync_metadata=result.metadata,
-            created_at=now,
-            updated_at=now,
         )
         self.db.commit()
 
@@ -446,7 +474,7 @@ class BaseSyncClient(abc.ABC):
         Returns:
             ID of created conflict record
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         conflict_id = self.db.sync_conflicts.insert(
             mapping_id=mapping_id,
             conflict_type=conflict.conflict_type,
@@ -455,7 +483,6 @@ class BaseSyncClient(abc.ABC):
             resolution_strategy=conflict.resolution_strategy,
             resolved=conflict.resolved,
             created_at=now,
-            updated_at=now,
         )
         self.db.commit()
 

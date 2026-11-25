@@ -10,7 +10,6 @@ All logs include correlation IDs for distributed tracing across sync operations.
 
 # flake8: noqa: E501
 
-
 import json
 import logging
 import socket
@@ -36,7 +35,7 @@ class KillKrillHandler(logging.Handler):
     def __init__(
         self,
         killkrill_url: str,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         use_http3: bool = True,
         batch_size: int = 100,
         flush_interval: int = 5,
@@ -84,7 +83,7 @@ class KillKrillHandler(logging.Handler):
                 "logger": record.name,
                 "message": record.getMessage(),
                 "correlation_id": getattr(record, "correlation_id", None),
-                "service": "elder-worker",
+                "service": "svc-worker",
                 "hostname": socket.gethostname(),
             }
 
@@ -213,7 +212,7 @@ def configure_multi_destination_logging() -> None:
 
             # Syslog uses standard format
             syslog_formatter = logging.Formatter(
-                "elder-worker[%(process)d]: [%(levelname)s] %(name)s [%(correlation_id)s]: %(message)s"
+                "svc-worker[%(process)d]: [%(levelname)s] %(name)s [%(correlation_id)s]: %(message)s"
             )
             syslog_handler.setFormatter(syslog_formatter)
             syslog_handler.addFilter(correlation_filter)
@@ -264,7 +263,7 @@ def configure_multi_destination_logging() -> None:
     )
 
 
-def get_logger(name: str, correlation_id: Optional[str] = None) -> Any:
+def get_logger(name: str, correlation_id: str | None = None) -> Any:
     """Get a configured logger instance with optional correlation ID.
 
     Args:

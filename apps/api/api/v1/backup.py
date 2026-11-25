@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import logging
 import os
 import tempfile
@@ -13,6 +12,8 @@ from werkzeug.utils import secure_filename
 from apps.api.auth.decorators import admin_required, login_required
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.backup import BackupService
+from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.pagination import parse_limit
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ def list_backup_jobs():
 @bp.route("/jobs", methods=["POST"])
 @login_required
 @admin_required
-def create_backup_job():
+async def create_backup_job():
     """
     Create a new backup job.
 
@@ -82,13 +83,13 @@ def create_backup_job():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
-            return jsonify({"error": "Request body required"}), 400
+            return ApiResponse.bad_request("Request body required")
 
         if "name" not in data:
-            return jsonify({"error": "name is required"}), 400
+            return ApiResponse.bad_request("name is required")
 
         service = get_backup_service()
 
@@ -138,7 +139,7 @@ def get_backup_job(job_id):
 
 @bp.route("/jobs/<int:job_id>", methods=["PUT"])
 @admin_required
-def update_backup_job(job_id):
+async def update_backup_job(job_id):
     """
     Update backup job configuration.
 
@@ -156,10 +157,10 @@ def update_backup_job(job_id):
         404: Job not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
-            return jsonify({"error": "Request body required"}), 400
+            return ApiResponse.bad_request("Request body required")
 
         service = get_backup_service()
 
@@ -246,7 +247,7 @@ def list_backups():
         service = get_backup_service()
 
         job_id = request.args.get("job_id", type=int)
-        limit = request.args.get("limit", 50, type=int)
+        limit = parse_limit(request.args, 50)
 
         backups = service.list_backups(job_id=job_id, limit=limit)
 
@@ -329,7 +330,7 @@ def delete_backup(backup_id):
 
 @bp.route("/<int:backup_id>/restore", methods=["POST"])
 @admin_required
-def restore_backup(backup_id):
+async def restore_backup(backup_id):
     """
     Restore from backup.
 
@@ -349,7 +350,7 @@ def restore_backup(backup_id):
         404: Backup not found
     """
     try:
-        data = request.get_json() or {}
+        data = await request.get_json() or {}
 
         service = get_backup_service()
 
@@ -374,7 +375,7 @@ def restore_backup(backup_id):
 
 @bp.route("/export", methods=["POST"])
 @admin_required
-def export_data():
+async def export_data():
     """
     Export data to various formats.
 
@@ -390,16 +391,16 @@ def export_data():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
-            return jsonify({"error": "Request body required"}), 400
+            return ApiResponse.bad_request("Request body required")
 
         required = ["format", "resource_types"]
         missing = [f for f in required if f not in data]
         if missing:
             return (
-                jsonify({"error": f'Missing required fields: {", ".join(missing)}'}),
+                jsonify({"error": f"Missing required fields: {', '.join(missing)}"}),
                 400,
             )
 
@@ -433,7 +434,7 @@ def download_export(filename):
         filepath = os.path.join(tempfile.gettempdir(), filename)
 
         if not os.path.exists(filepath):
-            return jsonify({"error": "Export file not found"}), 404
+            return ApiResponse.error("Export file not found", 404)
 
         return send_file(filepath, as_attachment=True, download_name=filename)
 
@@ -462,12 +463,12 @@ def import_data():
     """
     try:
         if "file" not in request.files:
-            return jsonify({"error": "No file provided"}), 400
+            return ApiResponse.bad_request("No file provided")
 
         file = request.files["file"]
 
         if file.filename == "":
-            return jsonify({"error": "Empty filename"}), 400
+            return ApiResponse.bad_request("Empty filename")
 
         # Secure the filename
         filename = secure_filename(file.filename)

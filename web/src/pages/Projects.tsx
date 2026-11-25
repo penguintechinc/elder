@@ -1,215 +1,252 @@
-import { useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Edit, Trash2, FolderKanban, Calendar } from 'lucide-react'
-import toast from 'react-hot-toast'
-import api from '@/lib/api'
-import { getStatusColor } from '@/lib/colorHelpers'
-import { confirmDelete } from '@/lib/confirmActions'
-import Button from '@/components/Button'
-import Card, { CardContent } from '@/components/Card'
-import Input from '@/components/Input'
-import Select from '@/components/Select'
-import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
+import { useState, useMemo } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  FolderKanban,
+  Calendar,
+  GitBranch,
+} from "lucide-react";
+import toast from "react-hot-toast";
+import api from "@/lib/api";
+import { getStatusColor } from "@/lib/colorHelpers";
+import { confirmDelete } from "@/lib/confirmActions";
+import { Organization } from "@/types";
+import Button from "@/components/Button";
+import Card, { CardContent } from "@/components/Card";
+import Input from "@/components/Input";
+import Select from "@/components/Select";
+import ModalFormBuilder from "@/components/ModalFormBuilder";
+import VillageIdBadge from "@/components/VillageIdBadge";
+import { FormField } from "@/types/form";
 
 const PROJECT_STATUSES = [
-  { value: 'active', label: 'Active' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'archived', label: 'Archived' },
-  { value: 'on_hold', label: 'On Hold' },
-]
+  { value: "active", label: "Active" },
+  { value: "completed", label: "Completed" },
+  { value: "archived", label: "Archived" },
+  { value: "on_hold", label: "On Hold" },
+];
+
+interface Project {
+  id: number;
+  name: string;
+  description?: string;
+  status: string;
+  organization_id: number;
+  start_date?: string;
+  end_date?: string;
+  village_id?: string | null;
+}
 
 export default function Projects() {
-  const navigate = useNavigate()
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('')
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingProject, setEditingProject] = useState<any>(null)
-  const queryClient = useQueryClient()
+  const navigate = useNavigate();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['projects', { search, status: statusFilter }],
-    queryFn: () => api.getProjects({ search, status: statusFilter || undefined }),
-  })
+    queryKey: ["projects", { search, status: statusFilter }],
+    queryFn: () =>
+      api.getProjects({ search, status: statusFilter || undefined }),
+  });
 
   const { data: organizations, isLoading: orgsLoading } = useQuery({
-    queryKey: ['organizations-all'],
+    queryKey: ["organizations-all"],
     queryFn: () => api.getOrganizations({ per_page: 1000 }),
-  })
+  });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteProject(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: ['projects'],
-        refetchType: 'all'
-      })
-      toast.success('Project deleted successfully')
+        queryKey: ["projects"],
+        refetchType: "all",
+      });
+      toast.success("Project deleted successfully");
     },
     onError: () => {
-      toast.error('Failed to delete project')
+      toast.error("Failed to delete project");
     },
-  })
+  });
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createProject(data),
+    mutationFn: (data: Project) => api.createProject(data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: ['projects'],
-        refetchType: 'all'
-      })
-      toast.success('Project created successfully')
-      setShowCreateModal(false)
+        queryKey: ["projects"],
+        refetchType: "all",
+      });
+      toast.success("Project created successfully");
+      setShowCreateModal(false);
     },
     onError: () => {
-      toast.error('Failed to create project')
+      toast.error("Failed to create project");
     },
-  })
+  });
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => api.updateProject(editingProject.id, data),
+    mutationFn: (data: Project) => {
+      if (!editingProject) throw new Error("No project selected");
+      return api.updateProject(editingProject.id, data);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: ['projects'],
-        refetchType: 'all'
-      })
-      toast.success('Project updated successfully')
-      setEditingProject(null)
+        queryKey: ["projects"],
+        refetchType: "all",
+      });
+      toast.success("Project updated successfully");
+      setEditingProject(null);
     },
     onError: () => {
-      toast.error('Failed to update project')
+      toast.error("Failed to update project");
     },
-  })
+  });
 
   const handleDelete = (id: number, name: string) => {
     confirmDelete(`project "${name}"`, () => {
-      deleteMutation.mutate(id)
-    })
-  }
+      deleteMutation.mutate(id);
+    });
+  };
 
-  const handleCreate = (data: Record<string, any>) => {
+  const handleCreate = (data: Record<string, unknown>) => {
     createMutation.mutate({
-      ...data,
-      organization_id: parseInt(data.organization_id),
-      start_date: data.start_date || undefined,
-      end_date: data.end_date || undefined,
-    })
-  }
+      name: data.name as string,
+      description: (data.description as string) || undefined,
+      status: data.status as string,
+      organization_id: parseInt(data.organization_id as string),
+      start_date: (data.start_date as string) || undefined,
+      end_date: (data.end_date as string) || undefined,
+    } as Project);
+  };
 
-  const handleUpdate = (data: Record<string, any>) => {
+  const handleUpdate = (data: Record<string, unknown>) => {
     updateMutation.mutate({
-      ...data,
-      organization_id: parseInt(data.organization_id),
-      start_date: data.start_date || undefined,
-      end_date: data.end_date || undefined,
-    })
-  }
+      name: data.name as string,
+      description: (data.description as string) || undefined,
+      status: data.status as string,
+      organization_id: parseInt(data.organization_id as string),
+      start_date: (data.start_date as string) || undefined,
+      end_date: (data.end_date as string) || undefined,
+    } as Project);
+  };
 
   // Build organization options
   const orgOptions = useMemo(() => {
     if (orgsLoading) {
-      return [{ value: '', label: 'Loading...' }]
+      return [{ value: "", label: "Loading..." }];
     }
     if (!organizations?.items?.length) {
-      return [{ value: '', label: 'No organizations found - create one first' }]
+      return [
+        { value: "", label: "No organizations found - create one first" },
+      ];
     }
-    return organizations.items.map((org: any) => ({
+    return organizations.items.map((org: Organization) => ({
       value: org.id.toString(),
       label: org.name,
-    }))
-  }, [organizations, orgsLoading])
+    }));
+  }, [organizations, orgsLoading]);
 
   // Form fields for project creation
-  const projectFields: FormField[] = useMemo(() => [
-    {
-      name: 'name',
-      label: 'Name',
-      type: 'text',
-      required: true,
-      placeholder: 'Q1 2024 Infrastructure Upgrade',
-    },
-    {
-      name: 'description',
-      label: 'Description',
-      type: 'textarea',
-      placeholder: 'Project description (optional)',
-      rows: 3,
-    },
-    {
-      name: 'organization_id',
-      label: 'Organization',
-      type: 'select',
-      required: true,
-      options: orgOptions,
-    },
-    {
-      name: 'status',
-      label: 'Status',
-      type: 'select',
-      defaultValue: 'active',
-      options: PROJECT_STATUSES,
-    },
-    {
-      name: 'start_date',
-      label: 'Start Date',
-      type: 'date',
-    },
-    {
-      name: 'end_date',
-      label: 'End Date',
-      type: 'date',
-    },
-  ], [orgOptions])
+  const projectFields: FormField[] = useMemo(
+    () => [
+      {
+        name: "name",
+        label: "Name",
+        type: "text",
+        required: true,
+        placeholder: "Q1 2024 Infrastructure Upgrade",
+      },
+      {
+        name: "description",
+        label: "Description",
+        type: "textarea",
+        placeholder: "Project description (optional)",
+        rows: 3,
+      },
+      {
+        name: "organization_id",
+        label: "Organization",
+        type: "select",
+        required: true,
+        searchable: true,
+        options: orgOptions,
+      },
+      {
+        name: "status",
+        label: "Status",
+        type: "select",
+        defaultValue: "active",
+        options: PROJECT_STATUSES,
+      },
+      {
+        name: "start_date",
+        label: "Start Date",
+        type: "date",
+      },
+      {
+        name: "end_date",
+        label: "End Date",
+        type: "date",
+      },
+    ],
+    [orgOptions],
+  );
 
   // Edit form fields with current values as defaults
   const editFields: FormField[] = useMemo(() => {
-    if (!editingProject) return projectFields
+    if (!editingProject) return projectFields;
     return [
       {
-        name: 'name',
-        label: 'Name',
-        type: 'text',
+        name: "name",
+        label: "Name",
+        type: "text",
         required: true,
-        placeholder: 'Q1 2024 Infrastructure Upgrade',
+        placeholder: "Q1 2024 Infrastructure Upgrade",
         defaultValue: editingProject.name,
       },
       {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'Project description (optional)',
+        name: "description",
+        label: "Description",
+        type: "textarea",
+        placeholder: "Project description (optional)",
         rows: 3,
-        defaultValue: editingProject.description || '',
+        defaultValue: editingProject.description || "",
       },
       {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
+        name: "organization_id",
+        label: "Organization",
+        type: "select",
         required: true,
+        searchable: true,
         options: orgOptions,
-        defaultValue: editingProject.organization_id?.toString() || '',
+        defaultValue: editingProject.organization_id?.toString() || "",
       },
       {
-        name: 'status',
-        label: 'Status',
-        type: 'select',
+        name: "status",
+        label: "Status",
+        type: "select",
         options: PROJECT_STATUSES,
         defaultValue: editingProject.status,
       },
       {
-        name: 'start_date',
-        label: 'Start Date',
-        type: 'date',
-        defaultValue: editingProject.start_date || '',
+        name: "start_date",
+        label: "Start Date",
+        type: "date",
+        defaultValue: editingProject.start_date || "",
       },
       {
-        name: 'end_date',
-        label: 'End Date',
-        type: 'date',
-        defaultValue: editingProject.end_date || '',
+        name: "end_date",
+        label: "End Date",
+        type: "date",
+        defaultValue: editingProject.end_date || "",
       },
-    ]
-  }, [editingProject, orgOptions, projectFields])
+    ];
+  }, [editingProject, orgOptions, projectFields]);
 
   return (
     <div className="p-8">
@@ -221,10 +258,19 @@ export default function Projects() {
             Manage projects and their milestones
           </p>
         </div>
-        <Button onClick={() => setShowCreateModal(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Create Project
-        </Button>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/admin/integrations?tab=work-management"
+            className="inline-flex items-center px-3.5 py-2 text-sm font-medium rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <GitBranch className="w-4 h-4 mr-2 text-yellow-500" />
+            GitHub & Jira Sync
+          </Link>
+          <Button onClick={() => setShowCreateModal(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Create Project
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -272,8 +318,12 @@ export default function Projects() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data?.items?.map((project: any) => (
-            <Card key={project.id} className="cursor-pointer hover:border-primary-500/50 transition-colors" onClick={() => navigate(`/projects/${project.id}`)}>
+          {data?.items?.map((project: Project) => (
+            <Card
+              key={project.id}
+              className="cursor-pointer hover:border-primary-500/50 transition-colors"
+              onClick={() => navigate(`/projects/${project.id}`)}
+            >
               <CardContent>
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -285,8 +335,8 @@ export default function Projects() {
                   <div className="flex gap-2 flex-shrink-0">
                     <button
                       onClick={(e) => {
-                        e.stopPropagation()
-                        setEditingProject(project)
+                        e.stopPropagation();
+                        setEditingProject(project);
                       }}
                       className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
                     >
@@ -294,8 +344,8 @@ export default function Projects() {
                     </button>
                     <button
                       onClick={(e) => {
-                        e.stopPropagation()
-                        handleDelete(project.id, project.name)
+                        e.stopPropagation();
+                        handleDelete(project.id, project.name);
                       }}
                       className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
                     >
@@ -311,8 +361,10 @@ export default function Projects() {
                 )}
 
                 <div className="flex items-center justify-between mb-3">
-                  <span className={`text-xs px-2 py-1 rounded ${getStatusColor(project.status)}`}>
-                    {project.status.replace('_', ' ')}
+                  <span
+                    className={`text-xs px-2 py-1 rounded ${getStatusColor(project.status)}`}
+                  >
+                    {project.status.replace("_", " ")}
                   </span>
                   {project.start_date && (
                     <div className="flex items-center gap-1 text-xs text-slate-500">
@@ -327,6 +379,12 @@ export default function Projects() {
                     Due: {new Date(project.end_date).toLocaleDateString()}
                   </div>
                 )}
+
+                {project.village_id && (
+                  <div className="mt-3 pt-2 border-t border-slate-700/50">
+                    <VillageIdBadge villageId={project.village_id} compact />
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -335,27 +393,27 @@ export default function Projects() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <FormModalBuilder
+        <ModalFormBuilder
           title="Create Project"
           fields={projectFields}
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSubmit={handleCreate}
-          submitButtonText="Create"
+          submitLabel="Create"
         />
       )}
 
       {/* Edit Modal */}
       {editingProject && (
-        <FormModalBuilder
+        <ModalFormBuilder
           title="Edit Project"
           fields={editFields}
           isOpen={!!editingProject}
           onClose={() => setEditingProject(null)}
           onSubmit={handleUpdate}
-          submitButtonText="Update"
+          submitLabel="Update"
         />
       )}
     </div>
-  )
+  );
 }

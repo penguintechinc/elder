@@ -1,0 +1,12 @@
+{{- if .Values.otel.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elder-otel
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.labels" . | nindent 4 }}
+data:
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.otel.endpoint | quote }}
+  OTEL_EXPORTER_OTLP_PROTOCOL: {{ .Values.otel.protocol | quote }}
+{{- end }}

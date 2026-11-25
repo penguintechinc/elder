@@ -9,7 +9,6 @@ Provides validated Pydantic 2 equivalents of Dependency dataclasses:
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
 from typing import Optional
 
@@ -45,10 +44,10 @@ class DependencyDTO(ImmutableModel):
     target_type: str
     target_id: int
     dependency_type: str
-    metadata: Optional[dict] = None
+    metadata: dict | None = None
     created_at: datetime
     updated_at: datetime
-    village_id: Optional[str] = None
+    village_id: str | None = None
 
 
 class CreateDependencyRequest(RequestModel):
@@ -89,7 +88,7 @@ class CreateDependencyRequest(RequestModel):
         ...,
         description="Type of dependency relationship",
     )
-    metadata: Optional[dict] = Field(
+    metadata: dict | None = Field(
         default=None,
         description="Optional custom metadata",
     )
@@ -111,29 +110,29 @@ class UpdateDependencyRequest(RequestModel):
         metadata: Custom metadata (optional)
     """
 
-    source_type: Optional[str] = Field(
+    source_type: str | None = Field(
         default=None,
         description="Type of source resource",
     )
-    source_id: Optional[int] = Field(
+    source_id: int | None = Field(
         default=None,
         ge=1,
         description="ID of source resource (must be positive)",
     )
-    target_type: Optional[str] = Field(
+    target_type: str | None = Field(
         default=None,
         description="Type of target resource",
     )
-    target_id: Optional[int] = Field(
+    target_id: int | None = Field(
         default=None,
         ge=1,
         description="ID of target resource (must be positive)",
     )
-    dependency_type: Optional[str] = Field(
+    dependency_type: str | None = Field(
         default=None,
         description="Type of dependency relationship",
     )
-    metadata: Optional[dict] = Field(
+    metadata: dict | None = Field(
         default=None,
         description="Custom metadata",
     )

@@ -2,8 +2,7 @@
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List
 
 try:
@@ -21,7 +20,7 @@ from apps.worker.discovery.base import BaseDiscoveryProvider
 class GCPDiscoveryClient(BaseDiscoveryProvider):
     """GCP cloud resource discovery implementation."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize GCP discovery client."""
         super().__init__(config)
 
@@ -59,13 +58,13 @@ class GCPDiscoveryClient(BaseDiscoveryProvider):
         except:
             return False
 
-    def get_supported_services(self) -> List[str]:
+    def get_supported_services(self) -> list[str]:
         """Get supported GCP services."""
         return ["compute", "storage", "functions", "sql", "vpc"]
 
-    def discover_all(self) -> Dict[str, Any]:
+    def discover_all(self) -> dict[str, Any]:
         """Discover all GCP resources."""
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
 
         results = {
             "compute": self.discover_compute(),
@@ -80,13 +79,11 @@ class GCPDiscoveryClient(BaseDiscoveryProvider):
         return {
             **results,
             "resources_count": resources_count,
-            "discovery_time": datetime.now(timezone.utc),
-            "duration_seconds": (
-                datetime.now(timezone.utc) - start_time
-            ).total_seconds(),
+            "discovery_time": datetime.now(UTC),
+            "duration_seconds": (datetime.now(UTC) - start_time).total_seconds(),
         }
 
-    def discover_compute(self) -> List[Dict[str, Any]]:
+    def discover_compute(self) -> list[dict[str, Any]]:
         """Discover GCE instances."""
         resources = []
         try:
@@ -118,7 +115,7 @@ class GCPDiscoveryClient(BaseDiscoveryProvider):
             pass
         return resources
 
-    def discover_storage(self) -> List[Dict[str, Any]]:
+    def discover_storage(self) -> list[dict[str, Any]]:
         """Discover GCS buckets."""
         resources = []
         try:
@@ -147,7 +144,7 @@ class GCPDiscoveryClient(BaseDiscoveryProvider):
             pass
         return resources
 
-    def discover_network(self) -> List[Dict[str, Any]]:
+    def discover_network(self) -> list[dict[str, Any]]:
         """Discover VPCs and subnets."""
         resources = []
         try:
@@ -168,13 +165,13 @@ class GCPDiscoveryClient(BaseDiscoveryProvider):
             pass
         return resources
 
-    def discover_databases(self) -> List[Dict[str, Any]]:
+    def discover_databases(self) -> list[dict[str, Any]]:
         """Discover Cloud SQL instances."""
         resources = []
         # Simplified - would use Cloud SQL API
         return resources
 
-    def discover_serverless(self) -> List[Dict[str, Any]]:
+    def discover_serverless(self) -> list[dict[str, Any]]:
         """Discover Cloud Functions."""
         resources = []
         # Simplified - would use Cloud Functions API

@@ -1,0 +1,92 @@
+{
+  "title": "Elder API - RED",
+  "description": "Rate/Errors/Duration for elder-api, built against the metrics apps/api actually emits via OpenTelemetry ASGI auto-instrumentation (opentelemetry-instrumentation-asgi==0.64b0, default/old HTTP semantic conventions -- no OTEL_SEMCONV_STABILITY_OPT_IN is set anywhere in this repo). See ../README.md for the OTel-name -> PromQL-name translation this dashboard assumes.",
+  "tags": ["elder", "api", "red"],
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "utc",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request rate by status code",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_server_duration_count[5m])) by (http_status_code)",
+          "legendFormat": "{{http_status_code}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error rate (5xx / total)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_server_duration_count{http_status_code=~\"5..\"}[5m])) / sum(rate(http_server_duration_count[5m]))",
+          "legendFormat": "5xx ratio"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Latency p50 / p95 / p99 (ms)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum(rate(http_server_duration_bucket[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_duration_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum(rate(http_server_duration_bucket[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "In-flight requests",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(http_server_active_requests) by (http_method)",
+          "legendFormat": "{{http_method}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Request rate by method",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_server_duration_count[5m])) by (http_method)",
+          "legendFormat": "{{http_method}}"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,804 @@
+"""Dependency API endpoints using PyDAL with async/await and Pydantic validation."""
+
+# flake8: noqa: E501
+
+import asyncio
+import logging
+from dataclasses import asdict
+from typing import Optional
+
+from penguin_libs.pydantic import RequestModel
+from pydantic import Field
+from quart import Blueprint, current_app, jsonify, request
+
+from apps.api.auth.decorators import login_required, require_scope
+from apps.api.logging_config import log_error_and_respond
+from apps.api.models.dataclasses import (
+    DependencyDTO,
+    PaginatedResponse,
+    from_pydal_row,
+    from_pydal_rows,
+)
+from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.pagination import MAX_OFFSET, clamp_int, parse_limit
+from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
+from apps.api.utils.village_id import mint_village_id
+
+logger = logging.getLogger(__name__)
+
+bp = Blueprint("dependencies", __name__)
+
+# Valid resource types for dependencies
+VALID_RESOURCE_TYPES = [
+    "entity",
+    "identity",
+    "project",
+    "milestone",
+    "issue",
+    "organization",
+]
+
+# Map resource types to their database tables
+RESOURCE_TABLE_MAP = {
+    "entity": "entities",
+    "identity": "identities",
+    "project": "projects",
+    "milestone": "milestones",
+    "issue": "issues",
+    "organization": "organizations",
+}
+
+
+# Pydantic request models
+class CreateDependencyRequest(RequestModel):
+    """Request to create a new dependency."""
+
+    source_type: str = Field(
+        ...,
+        description="Type of source resource",
+    )
+    source_id: int = Field(
+        ...,
+        ge=1,
+        description="ID of source resource (must be positive)",
+    )
+    target_type: str = Field(
+        ...,
+        description="Type of target resource",
+    )
+    target_id: int = Field(
+        ...,
+        ge=1,
+        description="ID of target resource (must be positive)",
+    )
+    dependency_type: str = Field(
+        ...,
+        description="Type of dependency relationship",
+    )
+    metadata: dict | None = Field(
+        default=None,
+        description="Optional custom metadata",
+    )
+
+
+class UpdateDependencyRequest(RequestModel):
+    """Request to update an existing dependency."""
+
+    source_type: str | None = Field(
+        default=None,
+        description="Type of source resource",
+    )
+    source_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="ID of source resource (must be positive)",
+    )
+    target_type: str | None = Field(
+        default=None,
+        description="Type of target resource",
+    )
+    target_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="ID of target resource (must be positive)",
+    )
+    dependency_type: str | None = Field(
+        default=None,
+        description="Type of dependency relationship",
+    )
+    metadata: dict | None = Field(
+        default=None,
+        description="Custom metadata",
+    )
+
+
+class BulkCreateDependenciesRequest(RequestModel):
+    """Request to create multiple dependencies."""
+
+    dependencies: list[CreateDependencyRequest] = Field(
+        ...,
+        min_items=1,
+        max_items=100,
+        description="Array of dependencies to create",
+    )
+
+
+class BulkDeleteDependenciesRequest(RequestModel):
+    """Request to delete multiple dependencies."""
+
+    ids: list[int] = Field(
+        ...,
+        min_items=1,
+        max_items=100,
+        description="Array of dependency IDs to delete",
+    )
+
+
+def _lookup_resource(db, resource_type: str, resource_id: int):
+    """Unscoped lookup by type and ID; callers must verify tenant ownership."""
+    table_name = RESOURCE_TABLE_MAP.get(resource_type)
+    if not table_name:
+        return None
+    table = getattr(db, table_name, None)
+    if not table:
+        return None
+    return table[resource_id]  # tenant-scope-exempt: get_tenant_resource verifies
+
+
+def get_resource(db, resource_type: str, resource_id: int, tenant_id: int | None):
+    """Get a dependency endpoint by type and ID, scoped to ``tenant_id``.
+
+    Returns None when the type is unknown, the row is missing, or it belongs
+    to another tenant -- callers map that to a 404 so foreign ids are
+    indistinguishable from missing ones.
+    """
+    return get_tenant_resource(db, resource_type, resource_id, tenant_id)
+
+
+def _caller_tenant() -> int | None:
+    """Return the caller's tenant id from verified claims, or None (-> 403)."""
+    tid = get_current_tenant_id()
+    return tid if tid and tid > 0 else None
+
+
+def _tenant_required():
+    """403 response for a token that carries no usable tenant claim."""
+    return jsonify({"error": "Tenant context required"}), 403
+
+
+def _owned_by_tenant(db, row, tenant_id: int) -> bool | None:
+    """Report whether ``row`` belongs to ``tenant_id``.
+
+    Reads the row's own ``tenant_id`` when present, otherwise its
+    organization's. Returns ``None`` when the row carries neither, so the
+    caller can try a parent row or fail closed.
+    """
+    row_tenant = getattr(row, "tenant_id", None)
+    if row_tenant is not None:
+        return row_tenant == tenant_id
+    org_id = getattr(row, "organization_id", None)
+    if org_id:
+        return bool(get_tenant_scoped(db, db.organizations, org_id, tenant_id))
+    return None
+
+
+def get_tenant_resource(
+    db, resource_type: str, resource_id: int, tenant_id: int | None
+):
+    """Get a resource by type and ID only if it belongs to ``tenant_id``.
+
+    Ownership comes from the row itself or, failing that, its parent
+    project. A resource whose ownership cannot be established is treated as
+    not found (fail closed), the same answer as a missing row.
+    """
+    if not tenant_id:
+        return None
+    resource = _lookup_resource(db, resource_type, resource_id)
+    if not resource:
+        return None
+    owned = _owned_by_tenant(db, resource, tenant_id)
+    project_id = getattr(resource, "project_id", None)
+    if owned is None and project_id:
+        # Ownership of the parent is checked on the next line.
+        project = db.projects[project_id]  # tenant-scope-exempt: verified below
+        owned = _owned_by_tenant(db, project, tenant_id) if project else None
+    return resource if owned else None
+
+
+@bp.route("", methods=["GET"])
+@login_required
+@require_scope("infrastructure:read")
+async def list_dependencies():
+    """
+    List all dependencies with pagination and filtering.
+
+    Query Parameters:
+        - page: Page number (default: 1)
+        - per_page: Items per page (default: 50, max: 1000)
+        - source_type: Filter by source type (entity, identity, project, etc.)
+        - source_id: Filter by source ID
+        - target_type: Filter by target type
+        - target_id: Filter by target ID
+        - dependency_type: Filter by dependency type
+
+    Returns:
+        200: List of dependencies with pagination metadata
+        403: Token carries no tenant claim
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Missing tenant claim in token"}), 403
+
+    # Get pagination params
+    page = clamp_int(request.args.get("page"), 1, 1, MAX_OFFSET)
+    per_page = parse_limit(request.args, 50, 1000, key="per_page")
+
+    # Every listing is restricted to the caller's tenant (gh-237).
+    query = db.dependencies.tenant_id == tenant_id
+
+    # Apply filters
+    if request.args.get("source_type"):
+        query &= db.dependencies.source_type == request.args.get("source_type")
+
+    if request.args.get("source_id"):
+        source_id = request.args.get("source_id", type=int)
+        query &= db.dependencies.source_id == source_id
+
+    if request.args.get("target_type"):
+        query &= db.dependencies.target_type == request.args.get("target_type")
+
+    if request.args.get("target_id"):
+        target_id = request.args.get("target_id", type=int)
+        query &= db.dependencies.target_id == target_id
+
+    if request.args.get("dependency_type"):
+        dep_type = request.args.get("dependency_type")
+        query &= db.dependencies.dependency_type == dep_type
+
+    # Calculate pagination
+    offset = (page - 1) * per_page
+
+    # Use asyncio TaskGroup for concurrent queries (Python 3.12)
+    async with asyncio.TaskGroup() as tg:
+        count_task = tg.create_task(run_in_threadpool(lambda: db(query).count()))
+        rows_task = tg.create_task(
+            run_in_threadpool(
+                lambda: db(query).select(
+                    orderby=~db.dependencies.created_at,
+                    limitby=(offset, offset + per_page),
+                )
+            )
+        )
+
+    total = count_task.result()
+    rows = rows_task.result()
+
+    # Calculate total pages
+    pages = (total + per_page - 1) // per_page if total > 0 else 0
+
+    # Convert PyDAL rows to DTOs
+    items = from_pydal_rows(rows, DependencyDTO)
+
+    # Create paginated response
+    response = PaginatedResponse(
+        items=[asdict(item) for item in items],
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=pages,
+    )
+
+    return jsonify(asdict(response)), 200
+
+
+@bp.route("", methods=["POST"])
+@login_required
+@require_scope("infrastructure:write")
+@validated_request(body_model=CreateDependencyRequest)
+async def create_dependency(body: CreateDependencyRequest):
+    """
+    Create a new dependency relationship between any resource types.
+
+    Request Body:
+        {
+            "source_type": "entity",
+            "source_id": 1,
+            "target_type": "identity",
+            "target_id": 5,
+            "dependency_type": "manages",
+            "metadata": {}
+        }
+
+    Returns:
+        201: Created dependency
+        400: Validation error or invalid resource IDs
+        409: Dependency already exists
+    """
+    db = current_app.db
+
+    source_type = body.source_type
+    source_id = body.source_id
+    target_type = body.target_type
+    target_id = body.target_id
+
+    # Tenant from the verified token only; resolved before the threadpool.
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return _tenant_required()
+
+    # Validate resource types
+    if source_type not in VALID_RESOURCE_TYPES:
+        return (
+            jsonify(
+                {
+                    "error": f"Invalid source_type. Must be one of: {VALID_RESOURCE_TYPES}"
+                }
+            ),
+            400,
+        )
+    if target_type not in VALID_RESOURCE_TYPES:
+        return (
+            jsonify(
+                {
+                    "error": f"Invalid target_type. Must be one of: {VALID_RESOURCE_TYPES}"
+                }
+            ),
+            400,
+        )
+
+    # Prevent self-dependencies (same type and ID)
+    if source_type == target_type and source_id == target_id:
+        return (
+            jsonify({"error": "Cannot create dependency from resource to itself"}),
+            400,
+        )
+
+    # Check if resources exist and dependency doesn't already exist
+    redis_client = getattr(current_app, "redis_client", None)
+
+    def validate_and_create():
+        # Both endpoints must exist inside the caller's tenant (404 otherwise)
+        source = get_resource(db, source_type, source_id, tenant_id)
+        if not source:
+            return {"error": f"Source {source_type} {source_id} not found"}, 404, None
+
+        target = get_resource(db, target_type, target_id, tenant_id)
+        if not target:
+            return {"error": f"Target {target_type} {target_id} not found"}, 404, None
+
+        # Check if dependency already exists
+        existing = (
+            db(
+                (db.dependencies.source_type == source_type)
+                & (db.dependencies.source_id == source_id)
+                & (db.dependencies.target_type == target_type)
+                & (db.dependencies.target_id == target_id)
+                & (db.dependencies.dependency_type == body.dependency_type)
+                & (db.dependencies.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+
+        if existing:
+            return (
+                {"error": "Dependency already exists", "dependency_id": existing.id},
+                409,
+                None,
+            )
+
+        # Create dependency
+        dep_id = db.dependencies.insert(
+            tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
+            source_type=source_type,
+            source_id=source_id,
+            target_type=target_type,
+            target_id=target_id,
+            dependency_type=body.dependency_type,
+            metadata=body.metadata,
+        )
+        db.commit()
+        return None, None, get_tenant_scoped(db, db.dependencies, dep_id, tenant_id)
+
+    error, status, row = await run_in_threadpool(validate_and_create)
+
+    if error:
+        return jsonify(error), status
+
+    dependency_dto = from_pydal_row(row, DependencyDTO)
+    return jsonify(asdict(dependency_dto)), 201
+
+
+@bp.route("/<int:id>", methods=["GET"])
+@login_required
+@require_scope("infrastructure:read")
+async def get_dependency(id: int):
+    """
+    Get a single dependency by ID.
+
+    Path Parameters:
+        - id: Dependency ID
+
+    Returns:
+        200: Dependency details
+        404: Dependency not found
+    """
+    db = current_app.db
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return _tenant_required()
+
+    row = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.dependencies, id, tenant_id)
+    )
+
+    if not row:
+        return jsonify({"error": "Dependency not found"}), 404
+
+    dependency_dto = from_pydal_row(row, DependencyDTO)
+    return jsonify(asdict(dependency_dto)), 200
+
+
+@bp.route("/<int:id>", methods=["PATCH", "PUT"])
+@login_required
+@require_scope("infrastructure:write")
+@validated_request(body_model=UpdateDependencyRequest)
+async def update_dependency(id: int, body: UpdateDependencyRequest):
+    """
+    Update a dependency (edit relationship type, metadata, or endpoints).
+
+    Path Parameters:
+        - id: Dependency ID
+
+    Request Body:
+        JSON object with fields to update
+
+    Returns:
+        200: Updated dependency
+        400: Validation error
+        404: Dependency not found
+    """
+    db = current_app.db
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return _tenant_required()
+
+    # Check if dependency exists and belongs to caller's tenant (gh-237)
+    existing = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.dependencies, id, tenant_id)
+    )
+    if not existing:
+        return jsonify({"error": "Dependency not found"}), 404
+
+    # Validate resource types if being updated
+    if body.source_type and body.source_type not in VALID_RESOURCE_TYPES:
+        return (
+            jsonify(
+                {
+                    "error": f"Invalid source_type. Must be one of: {VALID_RESOURCE_TYPES}"
+                }
+            ),
+            400,
+        )
+    if body.target_type and body.target_type not in VALID_RESOURCE_TYPES:
+        return (
+            jsonify(
+                {
+                    "error": f"Invalid target_type. Must be one of: {VALID_RESOURCE_TYPES}"
+                }
+            ),
+            400,
+        )
+
+    # Re-pointed endpoints must also live in the caller's tenant (404 otherwise)
+    def endpoints_in_tenant():
+        new_source = (
+            body.source_type or existing.source_type,
+            body.source_id or existing.source_id,
+        )
+        new_target = (
+            body.target_type or existing.target_type,
+            body.target_id or existing.target_id,
+        )
+        for label, (rtype, rid) in (("Source", new_source), ("Target", new_target)):
+            if not get_resource(db, rtype, rid, tenant_id):
+                return f"{label} {rtype} {rid} not found"
+        return None
+
+    if any(
+        v is not None
+        for v in (body.source_type, body.source_id, body.target_type, body.target_id)
+    ):
+        missing = await run_in_threadpool(endpoints_in_tenant)
+        if missing:
+            return jsonify({"error": missing}), 404
+
+    # Update dependency
+    def update_in_db():
+        update_fields = {}
+        if body.dependency_type is not None:
+            update_fields["dependency_type"] = body.dependency_type
+        if body.metadata is not None:
+            update_fields["metadata"] = body.metadata
+        if body.source_type is not None:
+            update_fields["source_type"] = body.source_type
+        if body.source_id is not None:
+            update_fields["source_id"] = body.source_id
+        if body.target_type is not None:
+            update_fields["target_type"] = body.target_type
+        if body.target_id is not None:
+            update_fields["target_id"] = body.target_id
+
+        db(db.dependencies.id == id).update(**update_fields)
+        db.commit()
+        return db.dependencies[id]  # tenant-scope-exempt: verified above
+
+    row = await run_in_threadpool(update_in_db)
+
+    dependency_dto = from_pydal_row(row, DependencyDTO)
+    return jsonify(asdict(dependency_dto)), 200
+
+
+@bp.route("/<int:id>", methods=["DELETE"])
+@login_required
+@require_scope("infrastructure:write")
+async def delete_dependency(id: int):
+    """
+    Delete a dependency relationship.
+
+    Path Parameters:
+        - id: Dependency ID
+
+    Returns:
+        204: Dependency deleted
+        404: Dependency not found
+    """
+    db = current_app.db
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return _tenant_required()
+
+    # Check if dependency exists and belongs to caller's tenant (gh-237)
+    existing = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.dependencies, id, tenant_id)
+    )
+    if not existing:
+        return jsonify({"error": "Dependency not found"}), 404
+
+    # Delete dependency
+    await run_in_threadpool(
+        lambda: (db(db.dependencies.id == id).delete(), db.commit())
+    )
+
+    return "", 204
+
+
+@bp.route("/bulk", methods=["POST"])
+@login_required
+@require_scope("infrastructure:write")
+async def create_bulk_dependencies():
+    """
+    Create multiple dependencies at once.
+
+    Request Body:
+        {
+            "dependencies": [
+                {
+                    "source_type": "entity",
+                    "source_id": 1,
+                    "target_type": "identity",
+                    "target_id": 5,
+                    "dependency_type": "manages"
+                }
+            ]
+        }
+
+    Returns:
+        201: Created dependencies
+        400: Validation error
+    """
+    db = current_app.db
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return _tenant_required()
+
+    try:
+        data = await request.get_json()
+        if not data:
+            return jsonify({"error": "Request body must be JSON"}), 400
+
+        # Validate using Pydantic model
+        request_data = {"dependencies": data.get("dependencies", [])}
+        validated = BulkCreateDependenciesRequest(**request_data)
+
+        # Validate and create dependencies
+        redis_client = getattr(current_app, "redis_client", None)
+
+        # Validate every endpoint against the caller's tenant before inserting
+        # anything, so one foreign id rejects the whole batch with a 404.
+        for i, dep_req in enumerate(validated.dependencies):
+            if (
+                dep_req.source_type not in VALID_RESOURCE_TYPES
+                or dep_req.target_type not in VALID_RESOURCE_TYPES
+            ):
+                return jsonify({"error": f"Invalid resource type at index {i}"}), 400
+
+        def first_missing_endpoint():
+            for i, dep_req in enumerate(validated.dependencies):
+                for label, rtype, rid in (
+                    ("Source", dep_req.source_type, dep_req.source_id),
+                    ("Target", dep_req.target_type, dep_req.target_id),
+                ):
+                    if not get_resource(db, rtype, rid, tenant_id):
+                        return f"{label} {rtype} {rid} not found at index {i}"
+            return None
+
+        missing = await run_in_threadpool(first_missing_endpoint)
+        if missing:
+            return jsonify({"error": missing}), 404
+
+        def create_all():
+            created_ids = []
+            for dep_req in validated.dependencies:
+                # Create dependency
+                dep_id = db.dependencies.insert(
+                    tenant_id=tenant_id,
+                    village_id=mint_village_id(tenant_id, redis_client),
+                    source_type=dep_req.source_type,
+                    source_id=dep_req.source_id,
+                    target_type=dep_req.target_type,
+                    target_id=dep_req.target_id,
+                    dependency_type=dep_req.dependency_type,
+                    metadata=dep_req.metadata,
+                )
+                created_ids.append(dep_id)
+
+            db.commit()
+
+            # Fetch created dependencies
+            return db(
+                db.dependencies.id.belongs(created_ids)
+                & (db.dependencies.tenant_id == tenant_id)
+            ).select()
+
+        rows = await run_in_threadpool(create_all)
+        dependencies = from_pydal_rows(rows, DependencyDTO)
+        return jsonify([asdict(d) for d in dependencies]), 201
+    except ValueError as e:
+        return log_error_and_respond(logger, e, "Failed to process request", 400)
+    except Exception as e:
+        return log_error_and_respond(logger, e, "Failed to process request", 500)
+
+
+@bp.route("/bulk", methods=["DELETE"])
+@login_required
+@require_scope("infrastructure:write")
+@validated_request(body_model=BulkDeleteDependenciesRequest)
+async def delete_bulk_dependencies(body: BulkDeleteDependenciesRequest):
+    """
+    Delete multiple dependencies at once.
+
+    Request Body:
+        {
+            "ids": [1, 2, 3]
+        }
+
+    Returns:
+        200: Number of deleted dependencies
+        400: Validation error
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Missing tenant claim in token"}), 403
+
+    # Delete dependencies owned by the caller's tenant only.
+    def delete_all():
+        deleted = db(
+            db.dependencies.id.belongs(body.ids)
+            & (db.dependencies.tenant_id == tenant_id)
+        ).delete()
+        db.commit()
+        return deleted
+
+    deleted = await run_in_threadpool(delete_all)
+
+    return jsonify({"deleted": deleted, "requested": len(body.ids)}), 200
+
+
+@bp.route("/resource/<resource_type>/<int:resource_id>", methods=["GET"])
+@login_required
+@require_scope("infrastructure:read")
+async def get_resource_dependencies(resource_type: str, resource_id: int):
+    """
+    Get all dependencies for a specific resource.
+
+    Path Parameters:
+        - resource_type: Type of resource (entity, identity, project, etc.)
+        - resource_id: Resource ID
+
+    Query Parameters:
+        - direction: 'outgoing', 'incoming', or 'all' (default)
+
+    Returns:
+        200: Dependencies for the resource
+        400: Invalid resource type
+        404: Resource not found
+    """
+    db = current_app.db
+
+    if resource_type not in VALID_RESOURCE_TYPES:
+        return (
+            jsonify(
+                {
+                    "error": f"Invalid resource_type. Must be one of: {VALID_RESOURCE_TYPES}"
+                }
+            ),
+            400,
+        )
+
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Missing tenant claim in token"}), 403
+
+    # Check the resource exists in the caller's tenant (404 either way).
+    resource = await run_in_threadpool(
+        lambda: get_tenant_resource(db, resource_type, resource_id, tenant_id)
+    )
+    if not resource:
+        return jsonify({"error": f"{resource_type.title()} not found"}), 404
+
+    direction = request.args.get("direction", "all")
+
+    def get_deps():
+        result = {
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "resource_name": getattr(
+                resource, "name", getattr(resource, "username", str(resource_id))
+            ),
+        }
+
+        if direction in ("outgoing", "all"):
+            # This resource depends on others
+            outgoing = db(
+                (db.dependencies.source_type == resource_type)
+                & (db.dependencies.source_id == resource_id)
+                & (db.dependencies.tenant_id == tenant_id)
+            ).select(limitby=(0, 1000))
+            result["depends_on"] = [
+                {
+                    "id": dep.id,
+                    "target_type": dep.target_type,
+                    "target_id": dep.target_id,
+                    "dependency_type": dep.dependency_type,
+                    "metadata": dep.metadata,
+                }
+                for dep in outgoing
+            ]
+
+        if direction in ("incoming", "all"):
+            # Others depend on this resource
+            incoming = db(
+                (db.dependencies.target_type == resource_type)
+                & (db.dependencies.target_id == resource_id)
+                & (db.dependencies.tenant_id == tenant_id)
+            ).select(limitby=(0, 1000))
+            result["depended_by"] = [
+                {
+                    "id": dep.id,
+                    "source_type": dep.source_type,
+                    "source_id": dep.source_id,
+                    "dependency_type": dep.dependency_type,
+                    "metadata": dep.metadata,
+                }
+                for dep in incoming
+            ]
+
+        return result
+
+    result = await run_in_threadpool(get_deps)
+    return jsonify(result), 200

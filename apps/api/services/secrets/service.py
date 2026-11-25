@@ -2,10 +2,9 @@
 
 # flake8: noqa: E501
 
-
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from quart import current_app
 
@@ -13,6 +12,12 @@ from .aws_client import AWSSecretsManagerClient
 from .base import SecretNotFoundException, SecretProviderClient, SecretProviderException
 from .gcp_client import GCPSecretManagerClient
 from .infisical_client import InfisicalClient
+from .tenancy import (
+    TenantResourceNotFound,
+    org_in_tenant,
+    require_tenant,
+    tenant_org_ids,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +32,54 @@ class SecretsService:
         "infisical": InfisicalClient,
     }
 
-    def __init__(self, db_instance=None):
+    def __init__(self, db_instance=None, *, tenant_id: int | None):
         """
         Initialize secrets service.
 
         Args:
             db_instance: Database instance (optional, uses current_app.db if not provided)
+            tenant_id: Required. The caller's tenant from the verified JWT
+                claim. Every operation is confined to organizations of this
+                tenant; a missing tenant raises ``TenantScopeError``.
         """
         self.db = db_instance or current_app.db
+        self.tenant_id = tenant_id
+
+    # Tenant scoping
+
+    def _org_ids(self) -> list[int]:
+        """Return the caller tenant's organization ids (fail closed)."""
+        return tenant_org_ids(self.db, self.tenant_id)
+
+    def _provider_row(self, provider_id: int) -> Any:
+        """Load a secret provider owned by the caller's tenant, or None."""
+        db = self.db
+        return (
+            db(
+                (db.secret_providers.id == provider_id)
+                & (db.secret_providers.organization_id.belongs(self._org_ids()))
+            )
+            .select()
+            .first()
+        )
+
+    def _secret_row(self, secret_id: int) -> Any:
+        """Load a secret owned by the caller's tenant, or None."""
+        db = self.db
+        return (
+            db(
+                (db.secrets.id == secret_id)
+                & (db.secrets.organization_id.belongs(self._org_ids()))
+            )
+            .select()
+            .first()
+        )
+
+    def _require_org(self, organization_id: Any) -> int:
+        """Return ``organization_id`` if it belongs to the tenant, else raise."""
+        if not org_in_tenant(self.db, organization_id, self.tenant_id):
+            raise TenantResourceNotFound(f"Organization {organization_id} not found")
+        return int(organization_id)
 
     def get_provider_client(self, provider_id: int) -> SecretProviderClient:
         """
@@ -50,9 +95,9 @@ class SecretsService:
             ValueError: If provider not found or invalid type
             SecretProviderException: If client initialization fails
         """
-        provider = self.db.secret_providers[provider_id]
+        provider = self._provider_row(provider_id)
         if not provider:
-            raise ValueError(f"Secret provider {provider_id} not found")
+            raise TenantResourceNotFound(f"Secret provider {provider_id} not found")
 
         if not provider.enabled:
             raise ValueError(f"Secret provider {provider_id} is disabled")
@@ -78,8 +123,8 @@ class SecretsService:
             )
 
     def get_secret(
-        self, secret_id: int, unmask: bool = False, identity_id: Optional[int] = None
-    ) -> Dict[str, Any]:
+        self, secret_id: int, unmask: bool = False, identity_id: int | None = None
+    ) -> dict[str, Any]:
         """
         Retrieve a secret, masked or unmasked.
 
@@ -95,9 +140,9 @@ class SecretsService:
             ValueError: If secret not found
             SecretProviderException: If provider error occurs
         """
-        secret = self.db.secrets[secret_id]
+        secret = self._secret_row(secret_id)
         if not secret:
-            raise ValueError(f"Secret {secret_id} not found")
+            raise TenantResourceNotFound(f"Secret {secret_id} not found")
 
         try:
             client = self.get_provider_client(secret.provider_id)
@@ -118,6 +163,7 @@ class SecretsService:
 
             return {
                 "id": secret_id,
+                "village_id": getattr(secret, "village_id", None),
                 "name": secret.name,
                 "provider_path": secret.provider_path,
                 "secret_type": secret.secret_type,
@@ -139,10 +185,10 @@ class SecretsService:
 
     def list_secrets(
         self,
-        organization_id: Optional[int] = None,
-        provider_id: Optional[int] = None,
-        secret_type: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        organization_id: int | None = None,
+        provider_id: int | None = None,
+        secret_type: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         List secrets with optional filters.
 
@@ -154,7 +200,7 @@ class SecretsService:
         Returns:
             List of secret dictionaries (masked)
         """
-        query = self.db.secrets.id > 0
+        query = self.db.secrets.organization_id.belongs(self._org_ids())
 
         if organization_id:
             query &= self.db.secrets.organization_id == organization_id
@@ -168,6 +214,7 @@ class SecretsService:
         return [
             {
                 "id": s.id,
+                "village_id": getattr(s, "village_id", None),
                 "name": s.name,
                 "provider_path": s.provider_path,
                 "secret_type": s.secret_type,
@@ -190,9 +237,9 @@ class SecretsService:
         secret_type: str,
         organization_id: int,
         is_kv: bool = False,
-        metadata: Optional[Dict[str, Any]] = None,
-        identity_id: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        metadata: dict[str, Any] | None = None,
+        identity_id: int | None = None,
+    ) -> dict[str, Any]:
         """
         Register a new secret.
 
@@ -213,10 +260,12 @@ class SecretsService:
             ValueError: If validation fails
             SecretProviderException: If provider error occurs
         """
-        # Validate provider exists
-        provider = self.db.secret_providers[provider_id]
+        organization_id = self._require_org(organization_id)
+
+        # Validate provider exists within the caller's tenant
+        provider = self._provider_row(provider_id)
         if not provider:
-            raise ValueError(f"Provider {provider_id} not found")
+            raise TenantResourceNotFound(f"Provider {provider_id} not found")
 
         # Test that we can access the secret
         try:
@@ -225,7 +274,10 @@ class SecretsService:
         except SecretNotFoundException:
             raise ValueError(f"Secret at path '{provider_path}' not found in provider")
 
+        from apps.api.utils.village_id import mint_village_id
+
         # Create secret record
+        tenant_id = require_tenant(self.tenant_id)
         secret_id = self.db.secrets.insert(
             name=name,
             provider_id=provider_id,
@@ -235,7 +287,8 @@ class SecretsService:
             organization_id=organization_id,
             parent_id=None,
             metadata=metadata or {},
-            last_synced_at=datetime.now(timezone.utc),
+            village_id=mint_village_id(tenant_id),
+            last_synced_at=datetime.now(UTC),
         )
         self.db.commit()
 
@@ -250,9 +303,10 @@ class SecretsService:
 
         logger.info(f"Created secret {secret_id} (name: {name})")
 
-        secret = self.db.secrets[secret_id]
+        secret = self._secret_row(secret_id)
         return {
             "id": secret_id,
+            "village_id": getattr(secret, "village_id", None),
             "name": secret.name,
             "provider_path": secret.provider_path,
             "secret_type": secret.secret_type,
@@ -264,11 +318,11 @@ class SecretsService:
     def update_secret_metadata(
         self,
         secret_id: int,
-        name: Optional[str] = None,
-        secret_type: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        identity_id: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        name: str | None = None,
+        secret_type: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        identity_id: int | None = None,
+    ) -> dict[str, Any]:
         """
         Update secret metadata (not the actual value in provider).
 
@@ -285,9 +339,9 @@ class SecretsService:
         Raises:
             ValueError: If secret not found
         """
-        secret = self.db.secrets[secret_id]
+        secret = self._secret_row(secret_id)
         if not secret:
-            raise ValueError(f"Secret {secret_id} not found")
+            raise TenantResourceNotFound(f"Secret {secret_id} not found")
 
         update_data = {}
         if name:
@@ -313,7 +367,7 @@ class SecretsService:
 
         return self.get_secret(secret_id, unmask=False)
 
-    def delete_secret(self, secret_id: int, identity_id: Optional[int] = None) -> bool:
+    def delete_secret(self, secret_id: int, identity_id: int | None = None) -> bool:
         """
         Delete a secret registration (does not delete from provider).
 
@@ -327,28 +381,34 @@ class SecretsService:
         Raises:
             ValueError: If secret not found
         """
-        secret = self.db.secrets[secret_id]
+        secret = self._secret_row(secret_id)
         if not secret:
-            raise ValueError(f"Secret {secret_id} not found")
+            raise TenantResourceNotFound(f"Secret {secret_id} not found")
 
-        # Log deletion before removing
-        if identity_id:
-            self._log_secret_access(
-                secret_id=secret_id,
-                identity_id=identity_id,
-                action="delete",
-                masked=True,
-            )
+        logger.info(
+            "Deleting secret %s (organization %s) by identity %s",
+            secret_id,
+            secret.organization_id,
+            identity_id,
+        )
 
-        del self.db.secrets[secret_id]
+        # The access log references the secret (FK, no cascade), so the
+        # registration's log rows go with it; the deletion is recorded in the
+        # application log below.
+        self.db(self.db.secret_access_log.secret_id == secret_id).delete()
+        # penguin-dal has no ``del table[id]``; delete through a scoped set
+        self.db(
+            (self.db.secrets.id == secret_id)
+            & (self.db.secrets.organization_id.belongs(self._org_ids()))
+        ).delete()
         self.db.commit()
 
         logger.info(f"Deleted secret {secret_id}")
         return True
 
     def sync_secret(
-        self, secret_id: int, identity_id: Optional[int] = None
-    ) -> Dict[str, Any]:
+        self, secret_id: int, identity_id: int | None = None
+    ) -> dict[str, Any]:
         """
         Force sync secret metadata from provider.
 
@@ -363,9 +423,9 @@ class SecretsService:
             ValueError: If secret not found
             SecretProviderException: If provider error occurs
         """
-        secret = self.db.secrets[secret_id]
+        secret = self._secret_row(secret_id)
         if not secret:
-            raise ValueError(f"Secret {secret_id} not found")
+            raise TenantResourceNotFound(f"Secret {secret_id} not found")
 
         try:
             client = self.get_provider_client(secret.provider_id)
@@ -373,7 +433,7 @@ class SecretsService:
 
             # Update sync timestamp and KV status
             self.db(self.db.secrets.id == secret_id).update(
-                is_kv=secret_value.is_kv, last_synced_at=datetime.now(timezone.utc)
+                is_kv=secret_value.is_kv, last_synced_at=datetime.now(UTC)
             )
 
             logger.info(f"Synced secret {secret_id} from provider")
@@ -386,7 +446,7 @@ class SecretsService:
 
     def get_secret_access_log(
         self, secret_id: int, limit: int = 100
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get access log for a secret.
 
@@ -397,6 +457,9 @@ class SecretsService:
         Returns:
             List of access log entries
         """
+        if not self._secret_row(secret_id):
+            raise TenantResourceNotFound(f"Secret {secret_id} not found")
+
         logs = self.db(self.db.secret_access_log.secret_id == secret_id).select(
             orderby=~self.db.secret_access_log.accessed_at, limitby=(0, limit)
         )
@@ -423,7 +486,7 @@ class SecretsService:
                 identity_id=identity_id,
                 action=action,
                 masked=masked,
-                accessed_at=datetime.now(timezone.utc),
+                accessed_at=datetime.now(UTC),
             )
             self.db.commit()
         except Exception as e:
@@ -433,10 +496,10 @@ class SecretsService:
     # Provider Management Methods
 
     def list_providers(
-        self, organization_id: Optional[int] = None, provider_type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self, organization_id: int | None = None, provider_type: str | None = None
+    ) -> list[dict[str, Any]]:
         """List secret providers."""
-        query = self.db.secret_providers.id > 0
+        query = self.db.secret_providers.organization_id.belongs(self._org_ids())
 
         if organization_id:
             query &= self.db.secret_providers.organization_id == organization_id
@@ -448,6 +511,7 @@ class SecretsService:
         return [
             {
                 "id": p.id,
+                "village_id": getattr(p, "village_id", None),
                 "name": p.name,
                 "provider": p.provider,
                 "organization_id": p.organization_id,
@@ -459,14 +523,15 @@ class SecretsService:
             for p in providers
         ]
 
-    def get_provider(self, provider_id: int) -> Dict[str, Any]:
+    def get_provider(self, provider_id: int) -> dict[str, Any]:
         """Get provider details."""
-        provider = self.db.secret_providers[provider_id]
+        provider = self._provider_row(provider_id)
         if not provider:
-            raise ValueError(f"Provider {provider_id} not found")
+            raise TenantResourceNotFound(f"Provider {provider_id} not found")
 
         return {
             "id": provider.id,
+            "village_id": getattr(provider, "village_id", None),
             "name": provider.name,
             "provider": provider.provider,
             "organization_id": provider.organization_id,
@@ -480,10 +545,11 @@ class SecretsService:
         self,
         name: str,
         provider_type: str,
-        config_json: Dict[str, Any],
+        config_json: dict[str, Any],
         organization_id: int,
-    ) -> Dict[str, Any]:
-        """Create a new secret provider."""
+    ) -> dict[str, Any]:
+        """Create a new secret provider in one of the caller's organizations."""
+        organization_id = self._require_org(organization_id)
         if provider_type not in self.PROVIDER_CLIENTS:
             raise ValueError(f"Unknown provider type: {provider_type}")
 
@@ -496,12 +562,16 @@ class SecretsService:
         except Exception as e:
             raise ValueError(f"Provider validation failed: {str(e)}")
 
+        from apps.api.utils.village_id import mint_village_id
+
+        tenant_id = require_tenant(self.tenant_id)
         provider_id = self.db.secret_providers.insert(
             name=name,
             provider=provider_type,
             config_json=config_json,
             organization_id=organization_id,
             enabled=True,
+            village_id=mint_village_id(tenant_id),
         )
         self.db.commit()
 
@@ -512,14 +582,14 @@ class SecretsService:
     def update_provider(
         self,
         provider_id: int,
-        name: Optional[str] = None,
-        config_json: Optional[Dict[str, Any]] = None,
-        enabled: Optional[bool] = None,
-    ) -> Dict[str, Any]:
+        name: str | None = None,
+        config_json: dict[str, Any] | None = None,
+        enabled: bool | None = None,
+    ) -> dict[str, Any]:
         """Update provider configuration."""
-        provider = self.db.secret_providers[provider_id]
+        provider = self._provider_row(provider_id)
         if not provider:
-            raise ValueError(f"Provider {provider_id} not found")
+            raise TenantResourceNotFound(f"Provider {provider_id} not found")
 
         update_data = {}
         if name:
@@ -547,9 +617,9 @@ class SecretsService:
 
     def delete_provider(self, provider_id: int) -> bool:
         """Delete a provider."""
-        provider = self.db.secret_providers[provider_id]
+        provider = self._provider_row(provider_id)
         if not provider:
-            raise ValueError(f"Provider {provider_id} not found")
+            raise TenantResourceNotFound(f"Provider {provider_id} not found")
 
         # Check if any secrets are using this provider
         secrets_count = self.db(self.db.secrets.provider_id == provider_id).count()
@@ -558,17 +628,21 @@ class SecretsService:
                 f"Cannot delete provider {provider_id}: {secrets_count} secrets are still using it"
             )
 
-        del self.db.secret_providers[provider_id]
+        # penguin-dal has no ``del table[id]``; delete through a scoped set
+        self.db(
+            (self.db.secret_providers.id == provider_id)
+            & (self.db.secret_providers.organization_id.belongs(self._org_ids()))
+        ).delete()
         self.db.commit()
 
         logger.info(f"Deleted provider {provider_id}")
         return True
 
-    def sync_provider(self, provider_id: int) -> Dict[str, Any]:
+    def sync_provider(self, provider_id: int) -> dict[str, Any]:
         """Sync all secrets from a provider."""
-        provider = self.db.secret_providers[provider_id]
+        provider = self._provider_row(provider_id)
         if not provider:
-            raise ValueError(f"Provider {provider_id} not found")
+            raise TenantResourceNotFound(f"Provider {provider_id} not found")
 
         try:
             client = self.get_provider_client(provider_id)
@@ -590,13 +664,13 @@ class SecretsService:
                     # Update sync timestamp
                     self.db(self.db.secrets.id == existing.id).update(
                         is_kv=provider_secret.is_kv,
-                        last_synced_at=datetime.now(timezone.utc),
+                        last_synced_at=datetime.now(UTC),
                     )
                     synced_count += 1
 
             # Update provider sync timestamp
             self.db(self.db.secret_providers.id == provider_id).update(
-                last_sync_at=datetime.now(timezone.utc)
+                last_sync_at=datetime.now(UTC)
             )
 
             logger.info(f"Synced {synced_count} secrets from provider {provider_id}")
@@ -605,7 +679,7 @@ class SecretsService:
                 "provider_id": provider_id,
                 "secrets_synced": synced_count,
                 "total_provider_secrets": len(provider_secrets),
-                "synced_at": datetime.now(timezone.utc),
+                "synced_at": datetime.now(UTC),
             }
 
         except Exception as e:

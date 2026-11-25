@@ -6,47 +6,54 @@ This document extends the [company-wide standards](STANDARDS.md) with Elder-spec
 
 ---
 
-## Microservices Architecture
+## Microservices Architecture (6-Image Architecture)
 
-Elder implements a **stateless, multi-container microservices architecture** with specialized role separation for cloud discovery, local scanning, and REST API operations.
+Elder implements a **stateless, 6-image Kubernetes architecture** with strict role and credential separation across hub control-plane services and background/remote workers:
 
 ### Service Roles & Responsibilities
 
-**API Service** (Flask backend, port 5000)
-- REST CRUD endpoints for all domain resources (entities, organizations, services, etc.)
-- Discovery job management (create, update, delete, list, test)
-- Job queuing via `POST /api/v1/discovery/jobs/<id>/run` (sets `next_run_at = now()`, returns 202)
-- Scanner job status queries (fetch pending jobs for scanner)
-- Discovery history tracking and reporting
-- Legacy discovery execution via `?legacy=true` query parameter (deprecated, sunset v4.0.0)
+**`hub-api`** (`apps/api/`, Quart ASGI/uvicorn)
+- REST CRUD endpoints (OpenAPI 3.0) and gRPC server for all 17 modules
+- Discovery job management (`POST /api/v1/discovery/jobs/<id>/run` → 202 Accepted)
+- CSV bulk import intake (`POST /api/v1/import/<resource>`): streams uploaded CSVs to an S3-compatible bucket and dispatches job IDs to Valkey (`LPUSH elder:csv_import:queue`)
+- CodeRuns control plane (`/api/v1/runs`): manages versioned function definitions, validates per-CodeRun scoped permissions (`granted_scopes`, `allowed_egress_domains`), mints short-lived ephemeral CodeRun JWTs and presigned S3 artifact URLs, and ingests live stdout log flushes
+- Remote Workers Fleet registry (`/api/v1/admin/workers`): onboarding (one-time `ewk_` token), offboarding/revocation, live config, heartbeats, and liveness (`online`/`stale`/`offline`/`revoked`)
 
-**Worker Service** (Python background service, no public ports)
-- Direct PostgreSQL polling of `discovery_jobs` table every 5 minutes
-- Executes cloud discovery jobs (AWS, GCP, Azure, Kubernetes) directly against cloud provider APIs
-- Uses least-privilege DB account `elder_worker` with read-only access to config
-- Writes discovery results and history directly to PostgreSQL
-- No PVC — state persisted entirely to database
-- Credentials sourced from K8s Secrets at `/var/run/secrets/elder/` (e.g., `AWS_ROLE_ARN`, `GCP_SERVICE_ACCOUNT`)
+**`hub-webui`** (`web/`, React 18 + TypeScript SPA served by Express)
+- Modular WIRED frontend with reorganized sidebar (`Workstreams`, `Work Management`, `Relationships`, `Infrastructure`, `Software`, `Security`, `Documents`) and `Administration → Workers` (`/admin/workers`)
+- Diagram and Playbook editors with pure-browser PNG/JPG/SVG export and versioned JSON backup/import
+- Centralized Executions audit log (`/streams/executions`: All / Playbooks / CodeRuns / Webhooks)
 
-**Scanner Service** (Python background service, ephemeral storage)
-- HTTP polling of `GET /api/v1/discovery/jobs/pending` every 5 minutes
-- Executes local network scans:
-  - `network` — network discovery (NMAP, ARP)
-  - `banner` — service banner grabbing (TCP port enumeration)
-  - `http_screenshot` — HTTP endpoint screenshots (Playwright, Firefox)
-- Uploads screenshots to API or persists to ephemeral emptyDir/tmpfs
-- Uses least-privilege DB account `elder_scanner`
-- No PVC — screenshots stored in ephemeral memory or temporary storage
+**`hub-mcp`** (`apps/mcp/`, Hosted MCP Server)
+- Caller-scoped Model Context Protocol server backed by `openapi/v4.yaml` / `apps/mcp/api_catalog.json`
+- Forwards the caller's own bearer token to `hub-api` (zero direct DB/Valkey/S3 credentials)
+
+**`svc-worker`** (`apps/worker/`, Python background Deployment, no public ports)
+- Direct PostgreSQL + Valkey + S3 access (least-privilege DB account `elder_worker`)
+- **CSV Bulk Imports**: consumes `elder:csv_import:queue` via `BRPOP` for immediate atomic claim/import/S3 cleanup, with a 60s periodic DB fallback sweep (`CSV_IMPORT_POLL_INTERVAL_SECONDS`, default `60`) — replaces any standalone `svc-csv-importer` CronJob
+- Executes cloud discovery jobs (AWS, GCP, Azure, Kubernetes), connector syncs, Playbook executions, credential refresh, and SLA breach checks
+- No PVC — state persisted entirely to PostgreSQL
+
+**`svc-scanner`** (`services/svc-scanner/`, Rust remote-capable long-running Deployment)
+- Runs as a long-running Deployment (`run --loop`) polling `hub-api` over HTTP with **zero DB, Valkey, or S3 credentials** (legacy CronJob template gated strictly on `mode=cronjob`)
+- Default 5-minute (`300s`) poll interval (`SCANNER_POLL_INTERVAL_SECONDS`) and 30s default progress push (`SCANNER_PROGRESS_INTERVAL_SECONDS`)
+- Authenticates remotely via provisioned `ELDER_INTERNAL_TOKEN` (`ewk_`) or in-cluster via `JWT_SECRET_KEY`, and sends periodic fleet heartbeats to `POST /api/v1/admin/workers/heartbeat`
+- Executes local network, banner, SBOM, and HTTP screenshot scans with optional `SCANNER_CLUSTER` routing
+
+**`svc-runworker`** (`apps/runworker/`, Python remote-capable CodeRuns Deployment)
+- Remote-capable Deployment polling `hub-api` over HTTP with **zero DB, Valkey, or S3 credentials**
+- Authenticates only via a provisioned `ELDER_INTERNAL_TOKEN` (`ewk_`) from a Secret — it never holds the platform signing key and refuses to start if one is present; tenant code runs in per-execution Kata Job pods by default (isolation model: `docs/deployment/runworker-isolation.md`) — and sends periodic fleet heartbeats to `POST /api/v1/admin/workers/heartbeat`
+- Enforces a 5-minute (`300s`) max CodeRun timeout and routes executions by `worker_cluster` into the operator-managed `execution_namespace` (`elder-runs`)
+- Provides a warm sandbox pool (`RUNS_RUNNER_BACKEND`), loopback Tool/Network Restriction Gateway (`127.0.0.1:0`, enforcing `granted_scopes` and `allowed_egress_domains` with ephemeral CodeRun JWTs), built-in zero-dependency `elder` helper SDKs (`elder.py`, `elder.mjs`, `elder.rb`), and live stdout log flushing every 30s default (`RUNS_LOG_FLUSH_INTERVAL_SECONDS`)
 
 ### Database Account Separation
 
-Elder enforces least-privilege database access via separate PostgreSQL accounts:
+Only `hub-api` and `svc-worker` connect directly to PostgreSQL; `hub-webui`, `hub-mcp`, `svc-scanner`, and `svc-runworker` communicate exclusively over HTTP with `hub-api` and hold **zero** database credentials:
 
 | Account | Service | Permissions | Purpose |
 |---------|---------|-------------|---------|
-| `elder` | API | Full read/write | REST API operations, all tables |
-| `elder_worker` | Worker | `discovery_jobs`, `discovery_history` read/write | Cloud discovery job polling & result storage |
-| `elder_scanner` | Scanner | `discovery_jobs` read, `discovery_history` write | Local scan job polling & history recording |
+| `elder` | `hub-api` | Full read/write | REST/gRPC API operations, all tables |
+| `elder_worker` | `svc-worker` | Scoped read/write | Cloud discovery, CSV bulk imports, Playbooks, connector sync |
 
 Each account password is provisioned via K8s Secrets and passed through environment variables during container startup.
 
@@ -121,9 +128,12 @@ All Elder containers follow a **stateless, shared-nothing architecture** with st
 
 | Container | Mount | Purpose | Persistence |
 |-----------|-------|---------|-------------|
-| API | N/A | REST endpoints only | DB-backed |
-| Worker | K8s Secrets `/var/run/secrets/elder/` | Cloud credentials (mounted read-only) | None (ephemeral) |
-| Scanner | emptyDir `/tmp/screenshots` | HTTP screenshot storage (ephemeral) | None (discarded on pod restart) |
+| `hub-api` | N/A | REST/gRPC endpoints only | DB + S3 backed |
+| `hub-webui` | N/A | Static React SPA + Express | None (stateless) |
+| `hub-mcp` | N/A | Caller-scoped MCP server | None (stateless) |
+| `svc-worker` | K8s Secrets `/var/run/secrets/elder/` | Cloud credentials (mounted read-only) | None (ephemeral) |
+| `svc-scanner` | emptyDir `/tmp` | Heartbeat file (`/tmp/scanner.healthy`) & ephemeral scan scratch | None (discarded on pod restart) |
+| `svc-runworker` | emptyDir `/tmp` | Ephemeral sandbox workspaces & loopback gateway | None (discarded on pod restart) |
 
 ### Credential Management
 

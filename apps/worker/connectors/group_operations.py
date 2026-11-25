@@ -8,7 +8,6 @@ Enterprise feature - requires Enterprise license.
 
 # flake8: noqa: E501
 
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -31,7 +30,7 @@ class GroupMembershipResult:
     group_id: str
     user_id: str
     operation: str  # "add" or "remove"
-    error: Optional[str] = None
+    error: str | None = None
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
     def to_dict(self) -> dict:
@@ -53,8 +52,8 @@ class GroupSyncResult:
     total_operations: int = 0
     successful: int = 0
     failed: int = 0
-    results: List[GroupMembershipResult] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
+    results: list[GroupMembershipResult] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     @property
     def has_errors(self) -> bool:
@@ -133,7 +132,7 @@ class GroupOperationsMixin(ABC):
     async def get_group_members(
         self,
         group_id: str,
-    ) -> List[str]:
+    ) -> list[str]:
         """
         Get current members of a group from the provider.
 
@@ -150,7 +149,7 @@ class GroupOperationsMixin(ABC):
     async def sync_group_members(
         self,
         group_id: str,
-        desired_members: List[str],
+        desired_members: list[str],
         mode: str = "replace",
     ) -> GroupSyncResult:
         """

@@ -1,0 +1,327 @@
+# Temporary DigitalOcean-as-beta profile while dal2 is offline; DESTROY+FRESH
+# (beta semantics), not upgrade-in-place. Reverts to values-beta.yaml (dal2)
+# when dal2 returns.
+
+namespace: elder
+
+# Credentials come from an operator-managed Secret (issue #385); no literal
+# credentials in this file. Create it before install — see
+# k8s/helm/elder/SECRETS.md for the required keys.
+environment: beta
+secrets:
+  existingSecret: elder-secrets
+  create: false
+
+# Global settings for DO beta
+global:
+  imageRegistry: ""
+  imagePullSecrets:
+    - name: ghcr-pull-secret
+
+# OpenTelemetry - SigNoz lives in the `signoz` namespace on the DO cluster,
+# elder runs in `elder` ns, so the collector must be addressed with the
+# cross-namespace <svc>.<ns> form (bare "signoz-otel-collector" as used in
+# values-beta.yaml only resolves within the same namespace on dal2).
+otel:
+  enabled: true
+  endpoint: "http://signoz-otel-collector.signoz:4318"
+  protocol: "http/protobuf"
+
+# PostgreSQL - 1 replica (RWO PVC cannot be multi-attached), same SHA-pinned
+# image as values-beta.yaml
+postgres:
+  enabled: true
+  replicaCount: 1
+  image:
+    # pgvector required: Elder supports ONLY Postgres+pgvector (no MySQL/MariaDB/SQLite)
+    repository: pgvector/pgvector
+    tag: pg17-bookworm@sha256:dd467f03ca5c5581222490e5217e48a262864ccb659be559f8491bbafdc97da0
+    pullPolicy: IfNotPresent
+  env:
+    POSTGRES_DB: elder
+    POSTGRES_USER: elder
+    POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    PGDATA: /var/lib/postgresql/data/pgdata
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: "do-block-storage"
+
+# Redis - 1 replica (RWO PVC cannot be multi-attached), same SHA-pinned
+# image as values-beta.yaml
+redis:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: redis
+    tag: 7-bookworm@sha256:24ea35ee039d7345bef2377611e3b1a615231746de4cfea74c1414575ee56167
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: "do-block-storage"
+
+# Elder Web UI - 1 replica on DO beta (no HA requirement for this temporary profile)
+# Image tag is the CI-built -beta tag for the remediated code at branch time;
+# override with `--set web.image.tag=...` if a newer -beta build exists.
+hub-webui:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/penguintechinc/elder/hub-webui
+    tag: 4.0.0.1783820850-beta
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  buildArgs:
+    VITE_API_URL: ""
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: false
+
+# Elder Flask API - 1 replica on DO beta
+hub-api:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/penguintechinc/elder/hub-api
+    tag: 4.0.0.1783820850-beta
+    pullPolicy: Always
+  env:
+    FLASK_ENV: production
+    SITE_URL: "https://elderrms.app"
+    LOG_LEVEL: INFO
+    RELEASE_MODE: "false"
+    GRPC_REQUIRE_LICENSE: "true"
+    LICENSE_SERVER_URL: "https://license.penguintech.io"
+    DB_HOST: elder-postgres
+    REDIS_HOST: elder-redis
+    MCP_SERVER_URL: "http://hub-mcp:8080"
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+  autoscaling:
+    enabled: false
+
+# Elder Hosted MCP Service (lightweight Python/Quart API translator)
+hub-mcp:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/penguintechinc/elder/hub-mcp
+    tag: 4.0.0.1783820850-beta
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  env:
+    ELDER_API_URL: "http://hub-api:5000"
+    MCP_HOST: "0.0.0.0"
+    MCP_PORT: "8080"
+    MCP_TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    MCP_MAX_CONCURRENT_PER_IP: "64"
+    LOG_LEVEL: "INFO"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: false
+
+# Scanning Service (Rust CronJob on DO beta)
+svc-scanner:
+  enabled: true
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  image:
+    repository: ghcr.io/penguintechinc/elder/svc-scanner
+    tag: 4.0.0.1783820850-beta
+    pullPolicy: Always
+  env:
+    ELDER_API_URL: "http://hub-api:5000"
+    SCREENSHOT_DIR: "/tmp/screenshots"
+    LOG_FORMAT: "json"
+    RUST_LOG: "info"
+    SCANNER_JOB_TIMEOUT_SECONDS: "300"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  screenshotStorage:
+    sizeLimit: "2Gi"
+
+# Integrations Service (Rust CronJob on DO beta)
+svc-integrations:
+  enabled: true
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  image:
+    repository: ghcr.io/penguintechinc/elder/svc-integrations
+    tag: 4.0.0.1783820850-beta
+    pullPolicy: Always
+  env:
+    ELDER_API_URL: "http://hub-api:5000"
+    LOG_FORMAT: "json"
+    RUST_LOG: "info"
+    INTEGRATIONS_MAX_CONCURRENCY: "8"
+    INTEGRATIONS_JOB_TIMEOUT_SECONDS: "120"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  tmpStorage:
+    sizeLimit: "256Mi"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+# Worker Service - 1 replica on DO beta
+svc-worker:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/penguintechinc/elder/svc-worker
+    tag: 4.0.0.1783820850-beta
+    pullPolicy: Always
+  env:
+    ELDER_API_URL: "http://hub-api:5000"
+    LOG_LEVEL: INFO
+    LOG_FORMAT: json
+    SYNC_ON_STARTUP: "true"
+  database:
+    poolSize: 10
+    maxOverflow: 0
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  credentialsSecret:
+    name: ""
+
+# Flows Invoker Service - 1 replica on DO beta (dedicated isolated consumer,
+# no HA fan-out needed at this stage)
+svc-flows-invoker:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/penguintechinc/elder/svc-flows-invoker
+    tag: 4.0.0.1783820850-beta
+    pullPolicy: Always
+  env:
+    LOG_LEVEL: INFO
+    FLOWS_WORKSPACE_ROOT: "/workspace"
+  database:
+    poolSize: 5
+    maxOverflow: 0
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+
+# Ingress - Disabled (migrated to Cilium Gateway API)
+ingress:
+  enabled: false
+
+# Cilium Gateway API - DO cluster's Gateway lives in the `cilium-gateway`
+# namespace under the `penguintech-beta` Gateway resource (not dal2's
+# `shared`/`gateway`) — see templates/httproute.yaml parentRef parameterization.
+gateway:
+  enabled: true
+  host: elderrms.app
+  parentRef:
+    name: penguintech-beta
+    namespace: cilium-gateway
+  tls:
+    secretName: penguintech-cloud-wildcard-tls
+  timeouts:
+    request: "300s"
+
+# Service Account
+serviceAccount:
+  create: false
+  name: ""
+
+# Pod Security Context
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Security Context - Strict, matches values-beta.yaml
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Cluster security baseline — Cilium CNI is live on the DO cluster, so all
+# three are ON, same as values-beta.yaml.
+networkPolicy:
+  enabled: true
+  # Gateway lives in `cilium-gateway` on this cluster, not `gateway` — must
+  # match gateway.parentRef.namespace above or the Cilium Gateway's ingress
+  # to web/api is blocked by the default-deny baseline.
+  gatewayNamespace: "cilium-gateway"
+
+tetragon:
+  enabled: true
+
+# NOTE (k8s-ops): this is a fresh DO cluster/namespace for this temporary
+# profile (destroy+fresh, beta semantics) — unlike dal2's out-of-band
+# pre-existing "elder" namespace, Helm should own it outright here.
+namespaceManagement:
+  create: true
+  podSecurity:
+    enforce: restricted
+    audit: restricted
+    warn: restricted

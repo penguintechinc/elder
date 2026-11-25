@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import enum
 from typing import List, Optional
 
@@ -36,13 +35,13 @@ class Role(Base, IDMixin, TimestampMixin):
     description = Column(String(512), nullable=True)
 
     # Relationships
-    permissions: Mapped[List["RolePermission"]] = relationship(
+    permissions: Mapped[list["RolePermission"]] = relationship(
         "RolePermission",
         back_populates="role",
         cascade="all, delete-orphan",
     )
 
-    user_roles: Mapped[List["UserRole"]] = relationship(
+    user_roles: Mapped[list["UserRole"]] = relationship(
         "UserRole",
         back_populates="role",
         cascade="all, delete-orphan",
@@ -64,7 +63,7 @@ class Role(Base, IDMixin, TimestampMixin):
         """
         return any(rp.permission.name == permission_name for rp in self.permissions)
 
-    def get_permission_names(self) -> List[str]:
+    def get_permission_names(self) -> list[str]:
         """
         Get all permission names for this role.
 
@@ -117,7 +116,7 @@ class Permission(Base, IDMixin, TimestampMixin):
     )
 
     # Relationships
-    roles: Mapped[List["RolePermission"]] = relationship(
+    roles: Mapped[list["RolePermission"]] = relationship(
         "RolePermission",
         back_populates="permission",
         cascade="all, delete-orphan",

@@ -1,0 +1,264 @@
+import { useEffect, useRef, type ChangeEvent } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Plus, Trash2, Upload } from 'lucide-react'
+import toast from 'react-hot-toast'
+import api from '@/lib/api'
+import VillageIdBadge from '@/components/VillageIdBadge'
+import DiagramPreview, { type DiagramPreviewData } from '@/components/diagram/DiagramPreview'
+import { parseDiagramBackup, type DiagramBackup } from '@/lib/flowExport'
+
+interface Diagram {
+  id: number
+  title: string
+  description?: string
+  status: string
+  is_public: boolean
+  is_template: boolean
+  tags: string[]
+  thumbnail_url?: string
+  preview?: DiagramPreviewData | null
+  owner_identity_id: number
+  village_id?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export default function DiagramsList() {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const highlightId = searchParams.get('highlight')
+  const importInputRef = useRef<HTMLInputElement>(null)
+
+  const { data: response, isLoading, error } = useQuery({
+    queryKey: ['diagrams'],
+    queryFn: () => api.getDiagrams({ page: 1, per_page: 50 }),
+  })
+
+  const diagrams: Diagram[] = response?.items || []
+
+  useEffect(() => {
+    if (!highlightId || diagrams.length === 0) return
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`diagram-${highlightId}`)
+        ?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+    })
+  }, [highlightId, diagrams.length])
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      api.createDiagram({
+        title: 'Untitled Diagram',
+        description: '',
+        status: 'draft',
+      }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['diagrams'] })
+      navigate(`/diagrams/${data.id}`)
+    },
+  })
+
+  const importMutation = useMutation({
+    mutationFn: (backup: DiagramBackup) =>
+      api.createDiagram({
+        title: backup.name,
+        description: backup.description || '',
+        tags: backup.tags,
+        status: 'draft',
+        content: { nodes: backup.nodes, edges: backup.edges },
+      }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['diagrams'] })
+      toast.success(`Imported diagram "${data.title || 'Diagram'}"`)
+      navigate(`/diagrams/${data.id}`)
+    },
+    onError: () => {
+      toast.error('Failed to import diagram')
+    },
+  })
+
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const text = await file.text()
+      const parsed = parseDiagramBackup(text)
+      importMutation.mutate(parsed)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to parse diagram JSON backup',
+      )
+    }
+  }
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.deleteDiagram(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['diagrams'] })
+    },
+  })
+
+  return (
+    <div className="min-h-screen bg-slate-900 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-amber-400">Diagrams</h1>
+            <p className="text-slate-400 mt-2">Create and manage infrastructure diagrams</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => importInputRef.current?.click()}
+              disabled={importMutation.isPending}
+              aria-label="Import diagram JSON"
+              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-slate-100 border border-slate-600 px-4 py-2 rounded-lg font-semibold transition-colors"
+            >
+              <Upload className="w-4 h-4 text-sky-400" />
+              {importMutation.isPending ? 'Importing...' : 'Import JSON'}
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              aria-label="Select diagram JSON backup file"
+              onChange={(event) => {
+                void handleImportFile(event)
+              }}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => createMutation.mutate()}
+              disabled={createMutation.isPending}
+              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-900 px-4 py-2 rounded-lg font-semibold transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              New Diagram
+            </button>
+          </div>
+        </div>
+
+        {/* Error state */}
+        {error && (
+          <div className="bg-red-900 border border-red-700 text-red-100 px-4 py-3 rounded-lg mb-6">
+            Failed to load diagrams. Please try again.
+          </div>
+        )}
+
+        {/* Loading state */}
+        {isLoading && (
+          <div className="flex justify-center items-center py-12">
+            <div className="text-amber-400">Loading diagrams...</div>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!isLoading && diagrams.length === 0 && (
+          <div className="text-center py-16 bg-slate-800 rounded-lg border border-slate-700">
+            <h3 className="text-xl font-semibold text-amber-400 mb-2">No diagrams yet</h3>
+            <p className="text-slate-400 mb-6">Create your first diagram to get started</p>
+            <button
+              onClick={() => createMutation.mutate()}
+              disabled={createMutation.isPending}
+              className="bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-900 px-6 py-2 rounded-lg font-semibold transition-colors"
+            >
+              Create Diagram
+            </button>
+          </div>
+        )}
+
+        {/* Diagrams grid */}
+        {!isLoading && diagrams.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {diagrams.map((diagram) => {
+              const isHighlighted = highlightId === String(diagram.id)
+              return (
+              <div
+                key={diagram.id}
+                id={`diagram-${diagram.id}`}
+                data-highlighted={isHighlighted ? 'true' : undefined}
+                className={`bg-slate-800 border rounded-lg overflow-hidden hover:border-amber-500 transition-colors ${
+                  isHighlighted
+                    ? 'ring-2 ring-amber-400 border-amber-400'
+                    : 'border-slate-700'
+                }`}
+              >
+                {/* Thumbnail */}
+                <div className="aspect-video bg-slate-900 border-b border-slate-700 flex items-center justify-center overflow-hidden">
+                  <DiagramPreview
+                    title={diagram.title}
+                    thumbnailUrl={diagram.thumbnail_url}
+                    preview={diagram.preview}
+                  />
+                </div>
+
+                {/* Content */}
+                <div className="p-4">
+                  <h3 className="text-amber-400 font-semibold truncate mb-1">{diagram.title}</h3>
+                  {diagram.description && (
+                    <p className="text-slate-400 text-sm line-clamp-2 mb-3">{diagram.description}</p>
+                  )}
+
+                  {/* Tags */}
+                  {diagram.tags && diagram.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      {diagram.tags.slice(0, 2).map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-block bg-slate-700 text-slate-300 text-xs px-2 py-1 rounded"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                      {diagram.tags.length > 2 && (
+                        <span className="inline-block text-slate-400 text-xs px-2 py-1">
+                          +{diagram.tags.length - 2}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Metadata */}
+                  <div className="flex items-center justify-between text-xs text-slate-500 mb-3 border-t border-slate-700 pt-3">
+                    <span className="capitalize">{diagram.status}</span>
+                    {diagram.is_public && <span className="text-blue-400">Public</span>}
+                  </div>
+
+                  {diagram.village_id && (
+                    <div className="mb-3">
+                      <VillageIdBadge villageId={diagram.village_id} compact />
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => navigate(`/diagrams/${diagram.id}`)}
+                      className="flex-1 bg-slate-700 hover:bg-slate-600 text-amber-400 px-3 py-2 rounded font-semibold text-sm transition-colors"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => deleteMutation.mutate(diagram.id)}
+                      disabled={deleteMutation.isPending}
+                      className="bg-red-900 hover:bg-red-800 disabled:bg-red-700 text-red-200 px-3 py-2 rounded transition-colors"
+                      aria-label={`Delete ${diagram.title}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

@@ -6,6 +6,7 @@ Welcome to the Elder infrastructure management platform documentation.
 
 ### Getting Started
 - [Contributing](CONTRIBUTING.md) - How to contribute to Elder
+- [Modules & the WIRED Model](MODULES.md) - The 15 modules, their groups, and the `ELDER_*` toggles
 - [Usage](USAGE.md) - Basic usage instructions
 - [Database](DATABASE.md) - Database schema and design
 - [Release Notes](RELEASE_NOTES.md) - Version history and changes
@@ -26,7 +27,7 @@ Welcome to the Elder infrastructure management platform documentation.
 
 #### Licensing
 - [Licensing](licensing/) - License integration and management
-- [License Information](LICENSE.md) - Full license text
+- [License Information](../LICENSE.md) - Full license text
 
 ### Services & Features
 
@@ -38,9 +39,8 @@ The Elder Backup system provides comprehensive backup, restore, and data export 
 #### Connector Service
 The Elder Connector Service synchronizes data from external sources into Elder.
 
-- **[Quick Start Guide](connector/QUICKSTART.md)** - Get started in 5 minutes
-- **[Complete Reference](connector/README.md)** - Full documentation and usage
-- **[Implementation Details](connector/IMPLEMENTATION.md)** - Architecture and design
+- **[Connector Reference](CONNECTORS.md)** - Configuration, sync behaviour, and supported platforms
+- **[Sync Documentation](SYNC.md)** - Project management sync setup
 
 **Supported Integrations:**
 - AWS (EC2, VPC, S3)
@@ -59,31 +59,29 @@ The Elder Connector Service synchronizes data from external sources into Elder.
 ```
 docs/
 ├── README.md                    # This file
+├── MODULES.md                   # Modules & the WIRED model
 ├── CONTRIBUTING.md              # Contribution guidelines
 ├── USAGE.md                     # Basic usage
 ├── DATABASE.md                  # Database documentation
-├── LICENSE.md                   # License information
-├── RELEASE_NOTES.md            # Version history
-├── S3_BACKUP_CONFIGURATION.md  # S3 backup configuration guide
-├── SYNC.md                     # External sync documentation
-├── api/                        # API documentation
-├── architecture/               # Architecture docs
-├── connector/                  # Connector service docs
-│   ├── README.md              # Complete reference
-│   ├── QUICKSTART.md          # 5-minute setup guide
-│   └── IMPLEMENTATION.md      # Technical details
-├── deployment/                 # Deployment guides
-├── development/                # Development setup
-├── grpc/                       # gRPC documentation
-├── licensing/                  # License integration
-└── logging/                    # Logging documentation
+├── CONNECTORS.md                # Connector configuration
+├── RELEASE_NOTES.md             # Version history
+├── ROADMAP.md                   # Planned work
+├── S3_BACKUP_CONFIGURATION.md   # S3 backup configuration guide
+├── SYNC.md                      # External sync documentation
+├── api/                         # API documentation
+├── architecture/                # Architecture docs
+├── deployment/                  # Deployment guides
+├── development/                 # Development setup
+├── grpc/                        # gRPC documentation
+├── licensing/                   # License integration
+└── logging/                     # Logging documentation
 ```
 
 ## Quick Links
 
 ### For Users
 - [Getting Started](USAGE.md)
-- [Connector Quick Start](connector/QUICKSTART.md)
+- [Connector Reference](CONNECTORS.md)
 - [API Documentation](api/)
 
 ### For Developers
@@ -105,7 +103,7 @@ docs/
 ## License
 
 Elder is licensed under a Limited AGPL3 license with preamble for fair use.
-See [LICENSE.md](LICENSE.md) for complete details.
+See [LICENSE.md](../LICENSE.md) for complete details.
 
 ---
 

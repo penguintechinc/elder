@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import json
 import logging
 from datetime import datetime
@@ -28,7 +27,7 @@ logger = logging.getLogger(__name__)
 class InfisicalClient(SecretProviderClient):
     """Infisical implementation of SecretProviderClient."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize Infisical client.
 
@@ -58,24 +57,21 @@ class InfisicalClient(SecretProviderClient):
 
     def _init_client(self) -> None:
         """Initialize the Infisical client."""
+        from apps.api.common.providers.infisical import create_infisical_session
+
         try:
-            self.host = self.config["host"].rstrip("/")
-            self.service_token = self.config["service_token"]
             self.environment = self.config["environment"]
             self.secret_path = self.config.get("secret_path", "/")
             self.workspace_id = self.config.get("workspace_id")
 
-            # Set up headers for all requests
-            self.headers = {
-                "Authorization": f"Bearer {self.service_token}",
-                "Content-Type": "application/json",
-            }
+            session, api_base = create_infisical_session(self.config)
+            self.session = session
+            self.api_base = api_base
+            self.headers = dict(session.headers)
 
-            # API base URL
-            self.api_base = f"{self.host}/api/v3"
-
+            host = self.config["host"].rstrip("/")
             logger.info(
-                f"Initialized Infisical client for {self.host} (environment: {self.environment})"
+                f"Initialized Infisical client for {host} (environment: {self.environment})"
             )
 
         except Exception as e:
@@ -116,7 +112,7 @@ class InfisicalClient(SecretProviderClient):
             logger.error(f"Infisical connection test failed: {str(e)}")
             return False
 
-    def get_secret(self, path: str, version: Optional[str] = None) -> SecretValue:
+    def get_secret(self, path: str, version: str | None = None) -> SecretValue:
         """Retrieve a secret from Infisical."""
         try:
             # Infisical uses secret names within a path
@@ -198,7 +194,7 @@ class InfisicalClient(SecretProviderClient):
                 f"Unexpected error retrieving secret '{path}': {str(e)}"
             )
 
-    def list_secrets(self, prefix: Optional[str] = None) -> List[SecretMetadata]:
+    def list_secrets(self, prefix: str | None = None) -> list[SecretMetadata]:
         """List secrets in Infisical."""
         try:
             url = f"{self.api_base}/secrets/raw"
@@ -277,7 +273,7 @@ class InfisicalClient(SecretProviderClient):
             raise SecretProviderException(f"Unexpected error listing secrets: {str(e)}")
 
     def create_secret(
-        self, path: str, value: str, metadata: Optional[Dict[str, Any]] = None
+        self, path: str, value: str, metadata: dict[str, Any] | None = None
     ) -> SecretMetadata:
         """Create a new secret in Infisical."""
         try:
@@ -461,7 +457,7 @@ class InfisicalClient(SecretProviderClient):
                 f"Unexpected error deleting secret '{path}': {str(e)}"
             )
 
-    def get_secret_versions(self, path: str) -> List[str]:
+    def get_secret_versions(self, path: str) -> list[str]:
         """
         Get all versions of a secret.
 
@@ -479,7 +475,7 @@ class InfisicalClient(SecretProviderClient):
             )
 
     @staticmethod
-    def _parse_timestamp(timestamp_str: Optional[str]) -> Optional[datetime]:
+    def _parse_timestamp(timestamp_str: str | None) -> datetime | None:
         """Parse ISO 8601 timestamp string to datetime."""
         if not timestamp_str:
             return None

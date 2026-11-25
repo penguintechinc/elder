@@ -7,7 +7,6 @@ validation, immutability for DTOs, and security hardening for requests.
 
 # flake8: noqa: E501
 
-
 from .entity import CreateEntityRequest, EntityDTO, UpdateEntityRequest
 from .group import (
     AccessRequestDTO,

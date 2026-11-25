@@ -3,6 +3,7 @@
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -10,9 +11,10 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    false,
 )
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
 class Tenant(Base, IDMixin, TimestampMixin):
@@ -32,17 +34,62 @@ class Tenant(Base, IDMixin, TimestampMixin):
     is_active = Column(Boolean, nullable=False)
     village_id = Column(String(32), unique=True, nullable=True)
 
+    # DSAR right-to-erasure guard (GDPR Art. 17 exception; see
+    # docs/compliance/data-retention-policy.md Legal Holds & Data
+    # Preservation). While True, PrivacyService.erase_identity /
+    # bulk_erase refuse to anonymize any identity owned by this tenant.
+    #
+    # server_default (not just default=) is required: runtime inserts go
+    # through penguin-dal, not the SQLAlchemy ORM session, so the
+    # Python-side Column default is never applied -- only a real
+    # database-level default covers the dozens of existing `db.tenants.
+    # insert(...)` call sites (app bootstrap, scripts, test fixtures) that
+    # predate this column and don't pass it explicitly. Matches the
+    # server_default already used by alembic/versions/041_dsar_privacy_
+    # fields.py, which this model must stay in sync with.
+    legal_hold = Column(Boolean, nullable=False, server_default=false())
 
-class PortalUser(Base, IDMixin, TimestampMixin):
-    """Enterprise portal user management."""
+
+class PortalUser(Base, IDMixin, VillageIDMixin, TimestampMixin):
+    """Enterprise portal user management.
+
+    OPEN GRC QUESTION (PII tokenization finding, see fix/pii-tokenization,
+    deferred for a human decision -- NOT resolved by that change): this
+    table is itself a second, parallel human-identity/auth table
+    (email + password_hash + mfa_secret + mfa_backup_codes +
+    failed_login_attempts, exactly like `apps.api.models.identity.Identity`)
+    with no shared key to `identities` -- see
+    `apps.api.common.licensing.counters` module docstring, which already
+    documents that a person holding both an `identities` row and a
+    `portal_users` row is counted once per table today. The PII
+    Tokenization rule calls for one identity table per product; whether
+    `portal_users` should be merged into `identities` (touches
+    apps/api/services/portal_auth, licensing counters, and login flows --
+    auth-owned surfaces) or is an intentionally separate authentication
+    realm for the enterprise portal is an architecture call outside this
+    fix's model/migration-only scope.
+    """
 
     __tablename__ = "portal_users"
 
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
     email = Column(String(255), nullable=False)
     password_hash = Column(String(255), nullable=True)
+    # Encrypted envelope (v1:<kid>:<nonce>:<ciphertext>), never the raw TOTP
+    # secret -- read/written only via apps.api.services.portal_auth accessors.
     mfa_secret = Column(String(255), nullable=True)
+    # List of salted password-hashes of the single-use backup codes.
     mfa_backup_codes = Column(JSON, nullable=True)
+    # Last accepted RFC 6238 time step (TOTP replay protection).
+    mfa_last_totp_counter = Column(BigInteger, nullable=True)
+    # Second-factor attempt budget and timed lockout (separate from password).
+    mfa_failed_attempts = Column(Integer, nullable=True, server_default="0")
+    mfa_locked_until = Column(DateTime(timezone=True), nullable=True)
+    # Enrolment in progress: the new sealed secret / hashed codes wait here
+    # and only replace the active ones on a successful /mfa/confirm.
+    mfa_pending_secret = Column(String(255), nullable=True)
+    mfa_pending_backup_codes = Column(JSON, nullable=True)
+    mfa_pending_expires_at = Column(DateTime(timezone=True), nullable=True)
     global_role = Column(String(50), nullable=True)
     tenant_role = Column(String(50), nullable=True)
     full_name = Column(String(255), nullable=True)
@@ -52,6 +99,28 @@ class PortalUser(Base, IDMixin, TimestampMixin):
     failed_login_attempts = Column(Integer, nullable=True)
     locked_until = Column(DateTime(timezone=True), nullable=True)
     password_changed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PortalMfaChallenge(Base, IDMixin):
+    """Server-side MFA login challenge issued after a correct password.
+
+    The opaque challenge id handed to the client is never stored -- only its
+    SHA-256 -- and a row is short-lived, single-use and attempt-capped, so
+    the second-factor step is always bound to a completed password step.
+    """
+
+    __tablename__ = "portal_mfa_challenges"
+
+    challenge_hash = Column(String(64), nullable=False, unique=True, index=True)
+    portal_user_id = Column(
+        Integer, ForeignKey("portal_users.id", ondelete="CASCADE"), nullable=False
+    )
+    tenant_id = Column(Integer, nullable=False)
+    fingerprint_hash = Column(String(64), nullable=True)
+    attempts = Column(Integer, nullable=False, server_default="0")
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    consumed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class PortalUserOrgAssignment(Base, IDMixin):

@@ -6,7 +6,6 @@ at both global and tenant levels using Authlib.
 
 # flake8: noqa: E501
 
-
 import datetime
 import secrets
 from typing import Any, Dict, Optional
@@ -14,15 +13,24 @@ from urllib.parse import urlencode
 
 import jwt
 import requests
+import structlog
 from authlib.integrations.requests_client import OAuth2Session
 from quart import current_app
+
+from apps.api.services.sso.idp_access import normalize_attribute_mappings
+from apps.api.services.webhooks.user_events import (
+    UserCreatedEvent,
+    schedule_user_created_webhooks,
+)
+
+logger = structlog.get_logger(__name__)
 
 
 class OIDCService:
     """OpenID Connect authentication service."""
 
     @staticmethod
-    def get_idp_config(idp_id: int) -> Optional[Dict[str, Any]]:
+    def get_idp_config(idp_id: int) -> dict[str, Any] | None:
         """Get OIDC IdP configuration by ID.
 
         Args:
@@ -49,8 +57,8 @@ class OIDCService:
 
     @staticmethod
     def get_idp_config_by_tenant(
-        tenant_id: Optional[int] = None,
-    ) -> Optional[Dict[str, Any]]:
+        tenant_id: int | None = None,
+    ) -> dict[str, Any] | None:
         """Get OIDC IdP configuration for a tenant or global.
 
         Args:
@@ -60,15 +68,16 @@ class OIDCService:
             IdP configuration dict or None
         """
         db = current_app.db
+        table = db.idp_configurations
         if tenant_id:
             # Try tenant-specific IdP first
             config = (
                 db(
-                    (db.idp_configurations.tenant_id == tenant_id)
-                    & (db.idp_configurations.idp_type == "oidc")
-                    & (db.idp_configurations.is_active == True)  # noqa: E712
+                    (table.tenant_id == tenant_id)
+                    & (table.idp_type == "oidc")
+                    & (table.is_active == True)  # noqa: E712
                 )
-                .select()
+                .select(orderby=table.id)
                 .first()
             )
 
@@ -78,11 +87,11 @@ class OIDCService:
         # Fall back to global IdP
         config = (
             db(
-                (db.idp_configurations.tenant_id == None)  # noqa: E711
-                & (db.idp_configurations.idp_type == "oidc")
-                & (db.idp_configurations.is_active == True)  # noqa: E712
+                (table.tenant_id == None)  # noqa: E711
+                & (table.idp_type == "oidc")
+                & (table.is_active == True)  # noqa: E712
             )
-            .select()
+            .select(orderby=table.id)
             .first()
         )
 
@@ -92,7 +101,7 @@ class OIDCService:
         return None
 
     @staticmethod
-    def _config_to_dict(config) -> Dict[str, Any]:
+    def _config_to_dict(config) -> dict[str, Any]:
         """Convert IdP config record to dict."""
         return {
             "id": config.id,
@@ -106,13 +115,15 @@ class OIDCService:
             "oidc_response_type": config.oidc_response_type or "code",
             "oidc_token_endpoint_auth_method": config.oidc_token_endpoint_auth_method
             or "client_secret_basic",
-            "attribute_mappings": config.attribute_mappings or {},
+            "attribute_mappings": normalize_attribute_mappings(
+                config.attribute_mappings
+            ),
             "jit_provisioning_enabled": config.jit_provisioning_enabled,
             "default_role": config.default_role,
         }
 
     @staticmethod
-    def discover_configuration(issuer_url: str) -> Dict[str, Any]:
+    def discover_configuration(issuer_url: str) -> dict[str, Any]:
         """Perform OIDC Discovery to get provider configuration.
 
         Args:
@@ -138,8 +149,8 @@ class OIDCService:
 
     @staticmethod
     def get_authorization_url(
-        idp_id: int, redirect_uri: str, state: Optional[str] = None
-    ) -> Dict[str, Any]:
+        idp_id: int, redirect_uri: str, state: str | None = None
+    ) -> dict[str, Any]:
         """Generate OIDC authorization URL.
 
         Args:
@@ -194,7 +205,7 @@ class OIDCService:
     @staticmethod
     def exchange_code_for_tokens(
         idp_id: int, code: str, redirect_uri: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Exchange authorization code for tokens.
 
         Args:
@@ -249,7 +260,7 @@ class OIDCService:
             return {"error": str(e)}
 
     @staticmethod
-    def validate_id_token(idp_id: int, id_token: str) -> Dict[str, Any]:
+    def validate_id_token(idp_id: int, id_token: str) -> dict[str, Any]:
         """Validate and decode OIDC ID token.
 
         Args:
@@ -313,7 +324,7 @@ class OIDCService:
             return {"error": str(e)}
 
     @staticmethod
-    def get_userinfo(idp_id: int, access_token: str) -> Dict[str, Any]:
+    def get_userinfo(idp_id: int, access_token: str) -> dict[str, Any]:
         """Get user information from userinfo endpoint.
 
         Args:
@@ -349,7 +360,7 @@ class OIDCService:
             return {"error": str(e)}
 
     @staticmethod
-    def refresh_tokens(idp_id: int, refresh_token: str) -> Dict[str, Any]:
+    def refresh_tokens(idp_id: int, refresh_token: str) -> dict[str, Any]:
         """Refresh access token using refresh token.
 
         Args:
@@ -403,10 +414,10 @@ class OIDCService:
     @staticmethod
     def jit_provision_user(
         tenant_id: int,
-        idp_config: Dict[str, Any],
-        id_token_claims: Dict[str, Any],
-        userinfo: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        idp_config: dict[str, Any],
+        id_token_claims: dict[str, Any],
+        userinfo: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Just-in-time provision a user from OIDC claims.
 
         Args:
@@ -449,7 +460,7 @@ class OIDCService:
         if existing:
             # Update last login
             db(db.portal_users.id == existing.id).update(
-                last_login_at=datetime.datetime.now(datetime.timezone.utc)
+                last_login_at=datetime.datetime.now(datetime.UTC)
             )
             return {
                 "id": existing.id,
@@ -460,23 +471,44 @@ class OIDCService:
             }
 
         # Create new user (no password for SSO users)
+        default_role = idp_config.get("default_role", "reader")
         user_id = db.portal_users.insert(
             tenant_id=tenant_id,
             email=email.lower(),
             password_hash=None,  # SSO users don't have passwords
             full_name=full_name,
-            tenant_role=idp_config.get("default_role", "reader"),
+            tenant_role=default_role,
             is_active=True,
             email_verified=True,  # OIDC validates email
-            last_login_at=datetime.datetime.now(datetime.timezone.utc),
+            last_login_at=datetime.datetime.now(datetime.UTC),
         )
         db.commit()
+
+        try:
+            schedule_user_created_webhooks(
+                db,
+                UserCreatedEvent(
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    user_source="portal_user",
+                    identity_type="portal_user",
+                    auth_provider="oidc",
+                    tenant_role=default_role,
+                    is_active=True,
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "user_created_webhook_schedule_failed",
+                user_id=user_id,
+                error=str(exc)[:200],
+            )
 
         return {
             "id": user_id,
             "email": email.lower(),
             "tenant_id": tenant_id,
-            "tenant_role": idp_config.get("default_role", "reader"),
+            "tenant_role": default_role,
             "global_role": None,
             "jit_provisioned": True,
         }
@@ -484,9 +516,9 @@ class OIDCService:
     @staticmethod
     def logout(
         idp_id: int,
-        id_token_hint: Optional[str] = None,
-        post_logout_redirect_uri: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        id_token_hint: str | None = None,
+        post_logout_redirect_uri: str | None = None,
+    ) -> dict[str, Any]:
         """Initiate OIDC logout (RP-Initiated Logout).
 
         Args:

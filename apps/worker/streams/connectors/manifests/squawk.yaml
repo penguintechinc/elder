@@ -1,0 +1,191 @@
+# Squawk Connector Manifest for IceCharts
+# DNS and communication service
+connector:
+  id: squawk
+  name: Squawk
+  description: DNS and communication service with anomaly detection and performance monitoring
+  icon: "squawk-logo"
+  color: "#14B8A6"
+  version: "1.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: api_key
+        header: X-API-Key
+        env_var: SQUAWK_API_KEY
+
+  connection:
+    base_url_env: SQUAWK_URL
+    default_url: http://localhost:8053
+    health_endpoint: /health
+
+  # ============================================================================
+  # TRIGGERS
+  # ============================================================================
+  triggers:
+    - id: dns_anomaly
+      name: DNS Anomaly Detected
+      description: Triggered when a DNS anomaly is detected
+      icon: "🚨"
+      webhook_path: /webhooks/squawk/anomaly
+      outputs:
+        - name: out
+          type: object
+          description: DNS anomaly details including type, severity, and affected domain
+      config_schema:
+        - field: anomaly_types
+          type: multiselect
+          label: Anomaly Types
+          description: Types of DNS anomalies to monitor
+          options: [high_nxdomain, tunneling, dga_detected, unusual_ttl, cache_poisoning]
+        - field: severity
+          type: multiselect
+          label: Severity Levels
+          description: Minimum severity level to trigger
+          options: [critical, high, medium, low]
+
+  # ============================================================================
+  # ACTIONS
+  # ============================================================================
+  actions:
+    - id: dns_query
+      name: DNS Query
+      description: Perform a DNS lookup
+      icon: "🔍"
+      endpoint: /api/v1/dns/query
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+          description: DNS query parameters
+      outputs:
+        - name: out
+          type: object
+          description: DNS query results
+      config_schema:
+        - field: domain
+          type: string
+          label: Domain Name
+          description: Domain name to query
+          placeholder: "example.com"
+          supports_variables: true
+          required: true
+        - field: record_type
+          type: select
+          label: Record Type
+          description: DNS record type to query
+          options: [A, AAAA, CNAME, MX, TXT, NS, SOA, SRV, PTR]
+          default: A
+          required: true
+        - field: use_cache
+          type: checkbox
+          label: Use Cache
+          description: Use cached DNS results if available
+          default: true
+
+    - id: flush_cache
+      name: Flush DNS Cache
+      description: Flush DNS cache for a specific domain or all domains
+      icon: "🗑️"
+      endpoint: /api/v1/dns/cache/flush
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+          description: Cache flush parameters
+      outputs:
+        - name: out
+          type: object
+          description: Cache flush operation result
+      config_schema:
+        - field: domain
+          type: string
+          label: Domain Name
+          description: Specific domain to flush, leave empty for all
+          placeholder: "example.com"
+          supports_variables: true
+        - field: record_type
+          type: select
+          label: Record Type
+          description: Type of records to flush
+          options: [all, A, AAAA, CNAME, MX, TXT]
+          default: all
+
+  # ============================================================================
+  # TRANSFORMS
+  # ============================================================================
+  transforms:
+    - id: get_dns_stats
+      name: Get DNS Statistics
+      description: Get DNS query statistics and metrics
+      icon: "📊"
+      endpoint: /api/v1/stats/dns
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: DNS statistics including query counts, cache hits, and response times
+      config_schema:
+        - field: time_range
+          type: select
+          label: Time Range
+          description: Time range for statistics
+          options: [1h, 24h, 7d, 30d]
+          default: 24h
+
+    - id: get_dns_performance
+      name: Get DNS Performance
+      description: Get DNS performance metrics including latency and throughput
+      icon: "⚡"
+      endpoint: /api/v1/stats/performance
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: DNS performance metrics
+      config_schema:
+        - field: time_range
+          type: select
+          label: Time Range
+          description: Time range for performance metrics
+          options: [1h, 24h, 7d]
+          default: 24h
+
+    - id: resolve_domain
+      name: Resolve Domain
+      description: Resolve domain with full resolution chain
+      icon: "🔗"
+      endpoint: /api/v1/dns/resolve
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Full domain resolution chain
+      config_schema:
+        - field: domain
+          type: string
+          label: Domain Name
+          description: Domain name to resolve
+          placeholder: "example.com"
+          supports_variables: true
+          required: true
+        - field: include_chain
+          type: checkbox
+          label: Include Resolution Chain
+          description: Include full resolution chain in results
+          default: true

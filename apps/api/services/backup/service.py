@@ -2,20 +2,22 @@
 
 # flake8: noqa: E501
 
-
-import csv
 import gzip
 import json
 import logging
 import os
 import tempfile
+
+# nosemgrep: python.lang.security.use-defused-xml.use-defused-xml -- stdlib ElementTree only builds and writes XML here; no untrusted XML is parsed
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import boto3
 from botocore.exceptions import ClientError
 from penguin_dal import DAL
+
+from shared.csv_safety import safe_dict_writer
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,7 @@ class BackupService:
             db: penguin-dal database instance
         """
         self.db = db
-        self.backup_dir = os.getenv("BACKUP_DIR", "/tmp/elder/backups")
+        self.backup_dir = os.getenv("BACKUP_DIR", "/tmp/elder/backups")  # nosec B108
 
         # Ensure backup directory exists
         os.makedirs(self.backup_dir, exist_ok=True)
@@ -100,7 +102,7 @@ class BackupService:
             self.s3_enabled = False
             self.s3_client = None
 
-    def _upload_to_s3(self, filepath: str, filename: str) -> Dict[str, Any]:
+    def _upload_to_s3(self, filepath: str, filename: str) -> dict[str, Any]:
         """
         Upload backup file to S3-compatible storage.
 
@@ -129,7 +131,7 @@ class BackupService:
                     ExtraArgs={
                         "Metadata": {
                             "elder-version": "1.2.0",
-                            "upload-timestamp": datetime.now(timezone.utc).isoformat(),
+                            "upload-timestamp": datetime.now(UTC).isoformat(),
                         }
                     },
                 )
@@ -207,13 +209,13 @@ class BackupService:
 
         except ClientError as e:
             logger.error(f"S3 deletion failed: {e}")
-            raise Exception(f"Failed to delete from S3: {e}")
+            raise Exception(f"Failed to delete from S3: {e}")  # nosec B608
 
     # ===========================
     # Backup Job Management
     # ===========================
 
-    def list_backup_jobs(self, enabled: Optional[bool] = None) -> List[Dict[str, Any]]:
+    def list_backup_jobs(self, enabled: bool | None = None) -> list[dict[str, Any]]:
         """
         List all backup jobs.
 
@@ -232,7 +234,7 @@ class BackupService:
 
         return [j.as_dict() for j in jobs]
 
-    def get_backup_job(self, job_id: int) -> Dict[str, Any]:
+    def get_backup_job(self, job_id: int) -> dict[str, Any]:
         """
         Get backup job details.
 
@@ -255,20 +257,20 @@ class BackupService:
     def create_backup_job(
         self,
         name: str,
-        schedule: Optional[str] = None,
+        schedule: str | None = None,
         retention_days: int = 30,
         enabled: bool = True,
-        description: Optional[str] = None,
-        include_tables: Optional[List[str]] = None,
-        exclude_tables: Optional[List[str]] = None,
+        description: str | None = None,
+        include_tables: list[str] | None = None,
+        exclude_tables: list[str] | None = None,
         s3_enabled: bool = False,
-        s3_endpoint: Optional[str] = None,
-        s3_bucket: Optional[str] = None,
-        s3_region: Optional[str] = None,
-        s3_access_key: Optional[str] = None,
-        s3_secret_key: Optional[str] = None,
-        s3_prefix: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        s3_endpoint: str | None = None,
+        s3_bucket: str | None = None,
+        s3_region: str | None = None,
+        s3_access_key: str | None = None,
+        s3_secret_key: str | None = None,
+        s3_prefix: str | None = None,
+    ) -> dict[str, Any]:
         """
         Create a new backup job.
 
@@ -297,7 +299,9 @@ class BackupService:
         if exclude_tables:
             config["exclude_tables"] = exclude_tables
 
-        now = datetime.now(timezone.utc)
+        from apps.api.utils.village_id import mint_village_id
+
+        now = datetime.now(UTC)
         job_id = self.db.backup_jobs.insert(
             name=name,
             schedule=schedule,
@@ -312,6 +316,7 @@ class BackupService:
             s3_access_key=s3_access_key,
             s3_secret_key=s3_secret_key,
             s3_prefix=s3_prefix,
+            village_id=mint_village_id(1),
             created_at=now,
             updated_at=now,
         )
@@ -324,12 +329,12 @@ class BackupService:
     def update_backup_job(
         self,
         job_id: int,
-        name: Optional[str] = None,
-        schedule: Optional[str] = None,
-        retention_days: Optional[int] = None,
-        enabled: Optional[bool] = None,
-        description: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        name: str | None = None,
+        schedule: str | None = None,
+        retention_days: int | None = None,
+        enabled: bool | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
         """
         Update backup job configuration.
 
@@ -352,7 +357,7 @@ class BackupService:
         if not job:
             raise Exception(f"Backup job {job_id} not found")
 
-        update_data = {"updated_at": datetime.now(timezone.utc)}
+        update_data = {"updated_at": datetime.now(UTC)}
 
         if name is not None:
             update_data["name"] = name
@@ -375,7 +380,7 @@ class BackupService:
         job = self.db.backup_jobs[job_id]
         return job.as_dict()
 
-    def delete_backup_job(self, job_id: int) -> Dict[str, str]:
+    def delete_backup_job(self, job_id: int) -> dict[str, str]:
         """
         Delete backup job.
 
@@ -402,7 +407,7 @@ class BackupService:
 
         return {"message": "Backup job deleted successfully"}
 
-    def run_backup_job(self, job_id: int) -> Dict[str, Any]:
+    def run_backup_job(self, job_id: int) -> dict[str, Any]:
         """
         Manually trigger a backup job.
 
@@ -421,9 +426,7 @@ class BackupService:
             raise Exception(f"Backup job {job_id} not found")
 
         # Update last run time
-        self.db(self.db.backup_jobs.id == job_id).update(
-            last_run_at=datetime.now(timezone.utc)
-        )
+        self.db(self.db.backup_jobs.id == job_id).update(last_run_at=datetime.now(UTC))
         self.db.commit()
 
         # Execute backup
@@ -433,7 +436,7 @@ class BackupService:
     # Backup Execution Methods
     # ===========================
 
-    def _execute_backup(self, job: Any) -> Dict[str, Any]:
+    def _execute_backup(self, job: Any) -> dict[str, Any]:
         """
         Execute a backup job.
 
@@ -444,7 +447,7 @@ class BackupService:
             Backup execution result
         """
         try:
-            start_time = datetime.now(timezone.utc)
+            start_time = datetime.now(UTC)
 
             # Get config
             config = {}
@@ -499,7 +502,7 @@ class BackupService:
             # Get file size
             file_size = os.path.getsize(filepath)
 
-            end_time = datetime.now(timezone.utc)
+            end_time = datetime.now(UTC)
             duration_seconds = (end_time - start_time).total_seconds()
 
             # Upload to S3 if enabled (check per-job config first, then global)
@@ -550,7 +553,10 @@ class BackupService:
                 except Exception as e:
                     logger.error(f"S3 upload failed, continuing with local backup: {e}")
 
+            from apps.api.utils.village_id import mint_village_id
+
             # Create backup record
+            backup_village_id = mint_village_id(1)
             backup_id = self.db.backups.insert(
                 job_id=job.id,
                 filename=filename,
@@ -563,6 +569,7 @@ class BackupService:
                 duration_seconds=duration_seconds,
                 s3_url=s3_url,
                 s3_key=s3_key,
+                village_id=backup_village_id,
                 created_at=start_time,
                 updated_at=end_time,
             )
@@ -575,6 +582,7 @@ class BackupService:
             result = {
                 "success": True,
                 "backup_id": backup_id,
+                "village_id": backup_village_id,
                 "filename": filename,
                 "file_size": file_size,
                 "record_count": total_records,
@@ -589,13 +597,16 @@ class BackupService:
             return result
 
         except Exception as e:
+            from apps.api.utils.village_id import mint_village_id
+
             # Record failed backup
-            failed_time = datetime.now(timezone.utc)
+            failed_time = datetime.now(UTC)
             backup_id = self.db.backups.insert(
                 job_id=job.id,
                 status="failed",
                 error_message=str(e),
                 started_at=failed_time,
+                village_id=mint_village_id(1),
                 created_at=failed_time,
                 updated_at=failed_time,
             )
@@ -611,7 +622,7 @@ class BackupService:
             job_id: Backup job ID
             retention_days: Retention period in days
         """
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        cutoff_date = datetime.now(UTC) - timedelta(days=retention_days)
 
         old_backups = self.db(
             (self.db.backups.job_id == job_id)
@@ -644,8 +655,8 @@ class BackupService:
     # ===========================
 
     def list_backups(
-        self, job_id: Optional[int] = None, limit: int = 50
-    ) -> List[Dict[str, Any]]:
+        self, job_id: int | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
         """
         List all backups.
 
@@ -667,7 +678,7 @@ class BackupService:
 
         return [b.as_dict() for b in backups]
 
-    def get_backup(self, backup_id: int) -> Dict[str, Any]:
+    def get_backup(self, backup_id: int) -> dict[str, Any]:
         """
         Get backup details.
 
@@ -687,7 +698,7 @@ class BackupService:
 
         return backup.as_dict()
 
-    def delete_backup(self, backup_id: int) -> Dict[str, str]:
+    def delete_backup(self, backup_id: int) -> dict[str, str]:
         """
         Delete backup file.
 
@@ -770,8 +781,8 @@ class BackupService:
         self,
         backup_id: int,
         dry_run: bool = False,
-        restore_options: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        restore_options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Restore from backup.
 
@@ -864,9 +875,9 @@ class BackupService:
     def export_data(
         self,
         format: str,
-        resource_types: List[str],
-        filters: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        resource_types: list[str],
+        filters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Export data to various formats.
 
@@ -901,7 +912,7 @@ class BackupService:
                 export_data["issues"] = [i.as_dict() for i in issues]
 
         # Generate filename
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         filename = f"export_{timestamp}.{format}"
         filepath = os.path.join(tempfile.gettempdir(), filename)
 
@@ -920,7 +931,7 @@ class BackupService:
                 csv_filepath = os.path.join(tempfile.gettempdir(), csv_filename)
 
                 with open(csv_filepath, "w", newline="") as f:
-                    writer = csv.DictWriter(f, fieldnames=records[0].keys())
+                    writer = safe_dict_writer(f, fieldnames=records[0].keys())
                     writer.writeheader()
                     writer.writerows(records)
 
@@ -956,7 +967,7 @@ class BackupService:
     # Import Operations
     # ===========================
 
-    def import_data(self, filepath: str, dry_run: bool = False) -> Dict[str, Any]:
+    def import_data(self, filepath: str, dry_run: bool = False) -> dict[str, Any]:
         """
         Import data from file.
 
@@ -975,7 +986,7 @@ class BackupService:
 
         # Detect format from extension
         if filepath.endswith(".json"):
-            with open(filepath, "r") as f:
+            with open(filepath) as f:
                 import_data = json.load(f)
 
         elif filepath.endswith(".json.gz"):
@@ -1026,7 +1037,7 @@ class BackupService:
     # Storage Statistics
     # ===========================
 
-    def get_backup_stats(self) -> Dict[str, Any]:
+    def get_backup_stats(self) -> dict[str, Any]:
         """
         Get backup and storage statistics.
 

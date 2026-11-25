@@ -3,10 +3,22 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Calendar, GanttChart, List, FolderKanban } from 'lucide-react'
 import api from '@/lib/api'
+import { Issue } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
+import VillageIdBadge from '@/components/VillageIdBadge'
 
 type ViewMode = 'list' | 'calendar' | 'gantt'
+
+interface ProjectData {
+  id: number
+  name: string
+  description?: string
+  status: string
+  start_date?: string
+  end_date?: string
+  village_id?: string | null
+}
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
@@ -110,6 +122,9 @@ export default function ProjectDetail() {
             )}
           </div>
           <div className="flex gap-2 items-center">
+            {project.village_id && (
+              <VillageIdBadge villageId={project.village_id} />
+            )}
             <span className={`text-xs px-3 py-1.5 rounded ${getStatusColor(project.status)}`}>
               {project.status.replace('_', ' ')}
             </span>
@@ -183,7 +198,7 @@ export default function ProjectDetail() {
 }
 
 // Issues List View
-function IssuesList({ issues, getPriorityColor, issueStatusColor }: any) {
+function IssuesList({ issues, getPriorityColor, issueStatusColor }: { issues: Issue[]; getPriorityColor: (priority: string) => string; issueStatusColor: (status: string) => string }) {
   if (issues.length === 0) {
     return (
       <Card>
@@ -196,7 +211,7 @@ function IssuesList({ issues, getPriorityColor, issueStatusColor }: any) {
 
   return (
     <div className="space-y-4">
-      {issues.map((issue: any) => (
+      {issues.map((issue: Issue) => (
         <Card key={issue.id}>
           <CardContent>
             <div className="flex items-start justify-between">
@@ -217,6 +232,9 @@ function IssuesList({ issues, getPriorityColor, issueStatusColor }: any) {
                       {issue.issue_type}
                     </span>
                   )}
+                  {issue.village_id && (
+                    <VillageIdBadge villageId={issue.village_id} compact />
+                  )}
                 </div>
               </div>
             </div>
@@ -228,7 +246,14 @@ function IssuesList({ issues, getPriorityColor, issueStatusColor }: any) {
 }
 
 // Calendar View
-function CalendarView({ issues, getPriorityColor }: any) {
+function toDateKey(value: string): string {
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10)
+  }
+  return new Date(value).toISOString().split('T')[0]
+}
+
+function CalendarView({ issues, getPriorityColor }: { issues: Issue[]; getPriorityColor: (priority: string) => string }) {
   const [currentDate, setCurrentDate] = useState(new Date())
 
   // Get first day of month and number of days
@@ -241,15 +266,31 @@ function CalendarView({ issues, getPriorityColor }: any) {
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1)
   const blanks = Array.from({ length: firstDay }, (_, i) => i)
 
-  // Group issues by due date
-  const issuesByDate: Record<string, any[]> = {}
-  issues.forEach((issue: any) => {
-    if (issue.due_date) {
-      const date = new Date(issue.due_date).toISOString().split('T')[0]
-      if (!issuesByDate[date]) {
-        issuesByDate[date] = []
+  // Group issues across their start_date..end_date span (falling back to due_date / created_at)
+  const monthStartKey = `${year}-${String(month + 1).padStart(2, '0')}-01`
+  const monthEndKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+  const issuesByDate: Record<string, Issue[]> = {}
+  issues.forEach((issue: Issue) => {
+    const rawStart = issue.start_date || issue.end_date || issue.due_date || issue.created_at
+    const rawEnd = issue.end_date || issue.due_date || issue.start_date || issue.created_at
+    if (!rawStart || !rawEnd) return
+
+    const startKey = toDateKey(rawStart)
+    const endKey = toDateKey(rawEnd) < startKey ? startKey : toDateKey(rawEnd)
+
+    if (endKey < monthStartKey || startKey > monthEndKey) return
+
+    const clampedStart = startKey < monthStartKey ? monthStartKey : startKey
+    const clampedEnd = endKey > monthEndKey ? monthEndKey : endKey
+    const cursor = new Date(`${clampedStart}T00:00:00Z`)
+    const last = new Date(`${clampedEnd}T00:00:00Z`)
+    while (cursor <= last) {
+      const key = cursor.toISOString().split('T')[0]
+      if (!issuesByDate[key]) {
+        issuesByDate[key] = []
       }
-      issuesByDate[date].push(issue)
+      issuesByDate[key].push(issue)
+      cursor.setUTCDate(cursor.getUTCDate() + 1)
     }
   })
 
@@ -309,7 +350,7 @@ function CalendarView({ issues, getPriorityColor }: any) {
                 }`}
               >
                 <div className="text-sm text-slate-400 mb-1">{day}</div>
-                {dayIssues.slice(0, 3).map((issue: any) => (
+                {dayIssues.slice(0, 3).map((issue: Issue) => (
                   <div
                     key={issue.id}
                     className={`text-xs px-1 py-0.5 rounded mb-1 truncate ${getPriorityColor(issue.priority)}`}
@@ -331,16 +372,26 @@ function CalendarView({ issues, getPriorityColor }: any) {
 }
 
 // Gantt View
-function GanttView({ issues, project, getPriorityColor }: any) {
+function getIssueRange(issue: Issue): { start: Date; end: Date } | null {
+  const rawStart = issue.start_date || issue.created_at
+  const rawEnd = issue.end_date || issue.due_date || issue.start_date || issue.created_at
+  if (!rawStart || !rawEnd) return null
+  const start = new Date(rawStart)
+  const parsedEnd = new Date(rawEnd)
+  const end = parsedEnd < start ? start : parsedEnd
+  return { start, end }
+}
+
+function GanttView({ issues, project, getPriorityColor }: { issues: Issue[]; project: ProjectData; getPriorityColor: (priority: string) => string }) {
   // Determine timeline bounds
-  const issuesWithDates = issues.filter((i: any) => i.due_date)
+  const issuesWithDates = issues.filter((i: Issue) => getIssueRange(i) !== null)
 
   if (issuesWithDates.length === 0 && !project.start_date && !project.end_date) {
     return (
       <Card>
         <CardContent className="text-center py-12">
           <p className="text-slate-400">No timeline data available for Gantt chart</p>
-          <p className="text-sm text-slate-500 mt-2">Issues need due dates to display in Gantt view</p>
+          <p className="text-sm text-slate-500 mt-2">Issues need start/end dates to display in Gantt view</p>
         </CardContent>
       </Card>
     )
@@ -350,10 +401,10 @@ function GanttView({ issues, project, getPriorityColor }: any) {
   let minDate = project.start_date ? new Date(project.start_date) : new Date()
   let maxDate = project.end_date ? new Date(project.end_date) : new Date()
 
-  issuesWithDates.forEach((issue: any) => {
-    const dueDate = new Date(issue.due_date)
-    if (dueDate < minDate) minDate = dueDate
-    if (dueDate > maxDate) maxDate = dueDate
+  issuesWithDates.forEach((issue: Issue) => {
+    const range = getIssueRange(issue)!
+    if (range.start < minDate) minDate = range.start
+    if (range.end > maxDate) maxDate = range.end
   })
 
   // Add padding
@@ -362,7 +413,7 @@ function GanttView({ issues, project, getPriorityColor }: any) {
   const timelineEnd = new Date(maxDate)
   timelineEnd.setDate(timelineEnd.getDate() + 7)
 
-  const totalDays = Math.ceil((timelineEnd.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24))
+  const totalDays = Math.max(1, Math.ceil((timelineEnd.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24)))
 
   // Generate month markers
   const months: Date[] = []
@@ -374,9 +425,9 @@ function GanttView({ issues, project, getPriorityColor }: any) {
   }
 
   const getBarPosition = (startDate: Date, endDate: Date) => {
-    const start = Math.max(0, Math.ceil((startDate.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24)))
+    const start = Math.max(0, Math.floor((startDate.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24)))
     const end = Math.min(totalDays, Math.ceil((endDate.getTime() - timelineStart.getTime()) / (1000 * 60 * 60 * 24)))
-    const width = end - start
+    const width = Math.max(1, end - start)
     return {
       left: `${(start / totalDays) * 100}%`,
       width: `${(width / totalDays) * 100}%`,
@@ -422,10 +473,10 @@ function GanttView({ issues, project, getPriorityColor }: any) {
 
         {/* Issue bars */}
         <div className="space-y-3">
-          {issuesWithDates.map((issue: any) => {
-            // Use created_at as start if no explicit start date
-            const startDate = new Date(issue.created_at)
-            const endDate = new Date(issue.due_date)
+          {issuesWithDates.map((issue: Issue) => {
+            const range = getIssueRange(issue)!
+            const startDate = range.start
+            const endDate = range.end
 
             return (
               <div key={issue.id}>

@@ -1,0 +1,154 @@
+{{/*
+Tetragon runtime-execution allowlist (enforced Sigkill, not observe-only) —
+release audit finding #3. Scoped per pod/service, not one global policy
+(devops-kubernetes.md Cluster Security Baseline) — hub-api/svc-worker run
+python3, hub-webui runs Express on Node 24 (/usr/local/bin/node),
+svc-scanner runs the compiled Rust binary plus git
+and Chromium headless binaries without any shell wrapper, and
+svc-integrations runs strictly the compiled Rust binary without any shell wrapper.
+
+svc-flows-invoker is intentionally NOT covered: executing arbitrary
+user-defined CI commands inside a process sandbox (apps/flows_invoker/
+sandbox.py) is its actual product feature, not a compromise indicator —
+this policy would break normal operation. Isolation there comes from the
+sandbox plus networkpolicy-flows-invoker.yaml.
+
+Gated behind tetragon.enabled so alpha (local MicroK8s, no Tetragon
+DaemonSet/CRDs installed today) can opt out — see alpha.yml.
+*/}}
+{{- if .Values.tetragon.enabled }}
+---
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-exec-allowlist-python
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: ["hub-api", "hub-mcp", "svc-worker"]
+  kprobes:
+    - call: "sys_execve"
+      syscall: true
+      args:
+        - index: 0
+          type: "string"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "NotEquals"
+              values:
+                - "/usr/local/bin/python3"
+                - "/usr/local/bin/python"
+          matchActions:
+            - action: Sigkill
+---
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-exec-allowlist-svc-scanner
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: svc-scanner
+  kprobes:
+    - call: "sys_execve"
+      syscall: true
+      args:
+        - index: 0
+          type: "string"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "NotEquals"
+              values:
+                - "/app/svc-scanner"
+                - "/usr/bin/masscan"
+                - "/usr/bin/git"
+                - "/usr/lib/git-core/git"
+                - "/usr/lib/git-core/git-remote-http"
+                - "/usr/lib/git-core/git-remote-https"
+                - "/usr/lib/chromium/chromium"
+                - "/usr/lib/chromium/chrome_crashpad_handler"
+          matchActions:
+            - action: Sigkill
+---
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-exec-allowlist-svc-integrations
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: svc-integrations
+  kprobes:
+    - call: "sys_execve"
+      syscall: true
+      args:
+        - index: 0
+          type: "string"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "NotEquals"
+              values:
+                - "/app/svc-integrations"
+          matchActions:
+            - action: Sigkill
+---
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-exec-allowlist-hub-webui
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: hub-webui
+  kprobes:
+    - call: "sys_execve"
+      syscall: true
+      args:
+        - index: 0
+          type: "string"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "NotEquals"
+              values:
+                - "/usr/local/bin/node"
+          matchActions:
+            - action: Sigkill
+{{- $rw := index .Values "svc-runworker" }}
+{{- if and $rw $rw.enabled (eq (include "elder.runworker.backend" .) "k8s_job") (not $rw.podRuntimeClassName) }}
+---
+# svc-runworker as a pure Job controller runs only its Python entrypoint and
+# healthcheck — tenant code runs in separate (Kata) execution pods, which are
+# outside host eBPF visibility and therefore carry no TracingPolicy. When
+# in-pod execution is enabled the worker pod is Kata-isolated instead and
+# this policy is not rendered.
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-exec-allowlist-svc-runworker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: svc-runworker
+  kprobes:
+    - call: "sys_execve"
+      syscall: true
+      args:
+        - index: 0
+          type: "string"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "NotEquals"
+              values:
+                - "/usr/local/bin/python3"
+                - "/usr/local/bin/python"
+          matchActions:
+            - action: Sigkill
+{{- end }}
+{{- end }}

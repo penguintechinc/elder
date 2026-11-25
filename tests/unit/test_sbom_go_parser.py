@@ -66,7 +66,9 @@ class TestGoParserParseGoMod:
     def test_parse_simple_require_single_line(self) -> None:
         """Test parsing a simple single-line require."""
         parser = GoParser()
-        content = "module github.com/example/app\n\nrequire github.com/gin-gonic/gin v1.9.1"
+        content = (
+            "module github.com/example/app\n\nrequire github.com/gin-gonic/gin v1.9.1"
+        )
 
         deps = parser.parse(content, "go.mod")
 
@@ -145,7 +147,9 @@ require (
     def test_parse_purl_generation(self) -> None:
         """Test Package URL (PURL) generation."""
         parser = GoParser()
-        content = "module github.com/example/app\n\nrequire github.com/gin-gonic/gin v1.9.1"
+        content = (
+            "module github.com/example/app\n\nrequire github.com/gin-gonic/gin v1.9.1"
+        )
 
         deps = parser.parse(content, "go.mod")
 
@@ -169,7 +173,9 @@ require (
     def test_parse_source_file_recorded(self) -> None:
         """Test that source filename is recorded."""
         parser = GoParser()
-        content = "module github.com/example/app\n\nrequire github.com/gin-gonic/gin v1.9.1"
+        content = (
+            "module github.com/example/app\n\nrequire github.com/gin-gonic/gin v1.9.1"
+        )
 
         deps = parser.parse(content, "go.mod")
 
@@ -340,7 +346,9 @@ github.com/stretchr/testify v1.8.4 h1:Eo8i7xY5u+3A0qRgEWYkKXrBaKFxwvVFjSxPeC/pSo
     def test_parse_go_sum_pseudo_version(self) -> None:
         """Test parsing pseudo-versions in go.sum."""
         parser = GoParser()
-        content = "github.com/some/package v0.0.0-20240101120000-abcdef123456 h1:hash=\n"
+        content = (
+            "github.com/some/package v0.0.0-20240101120000-abcdef123456 h1:hash=\n"
+        )
 
         deps = parser.parse(content, "go.sum")
 
@@ -397,11 +405,21 @@ github.com/lib/pq v1.10.9/go.mod h1:W7NEvErKLjQR=
     def test_parse_dependency_dict_structure(self) -> None:
         """Test that parsed dependencies have all required fields."""
         parser = GoParser()
-        content = "module github.com/example/app\n\nrequire github.com/gin-gonic/gin v1.9.1"
+        content = (
+            "module github.com/example/app\n\nrequire github.com/gin-gonic/gin v1.9.1"
+        )
 
         deps = parser.parse(content, "go.mod")
 
-        required_fields = ["name", "version", "purl", "package_type", "scope", "direct", "source_file"]
+        required_fields = [
+            "name",
+            "version",
+            "purl",
+            "package_type",
+            "scope",
+            "direct",
+            "source_file",
+        ]
         for dep in deps:
             for field in required_fields:
                 assert field in dep, f"Missing field: {field}"

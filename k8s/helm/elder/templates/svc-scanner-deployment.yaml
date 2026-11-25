@@ -1,0 +1,130 @@
+{{- $svc := index .Values "svc-scanner" }}
+{{- $mode := ($svc | default dict).mode | default "deployment" }}
+{{- if and $svc $svc.enabled (eq $mode "deployment") }}
+{{- $svcEnv := $svc.env | default dict }}
+{{- $hc := $svc.healthcheck | default dict }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "elder.componentResourceName" (list "svc-scanner" .) }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-scanner" .) | nindent 4 }}
+spec:
+  replicas: {{ $svc.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "elder.componentSelectorLabels" (list "svc-scanner" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "elder.componentSelectorLabels" (list "svc-scanner" .) | nindent 8 }}
+        {{- with $svc.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "elder.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "elder.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: svc-scanner
+          image: {{ include "elder.image" (list "svc-scanner" .) }}
+          imagePullPolicy: {{ include "elder.imagePullPolicy" (list "svc-scanner" .) }}
+          args: ["run", "--loop"]
+          {{- if .Values.otel.enabled }}
+          envFrom:
+            - configMapRef:
+                name: elder-otel
+          {{- end }}
+          env:
+            {{- range $key, $value := $svcEnv }}
+            {{- if not (has $key (list "SCANNER_POLL_INTERVAL_SECONDS" "SCANNER_PROGRESS_INTERVAL_SECONDS" "SCANNER_HEALTH_FILE" "SCANNER_CLUSTER" "ELDER_INTERNAL_TOKEN" "JWT_SECRET_KEY" "OTEL_SERVICE_NAME")) }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if not (hasKey $svcEnv "ELDER_API_URL") }}
+            - name: ELDER_API_URL
+              value: "http://hub-api:5000"
+            {{- end }}
+            - name: SCANNER_POLL_INTERVAL_SECONDS
+              value: {{ $svcEnv.SCANNER_POLL_INTERVAL_SECONDS | default "300" | quote }}
+            - name: SCANNER_PROGRESS_INTERVAL_SECONDS
+              value: {{ $svcEnv.SCANNER_PROGRESS_INTERVAL_SECONDS | default "30" | quote }}
+            - name: SCANNER_HEALTH_FILE
+              value: {{ $svcEnv.SCANNER_HEALTH_FILE | default "/tmp/scanner.healthy" | quote }}
+            {{- if $svcEnv.SCANNER_CLUSTER }}
+            - name: SCANNER_CLUSTER
+              value: {{ $svcEnv.SCANNER_CLUSTER | quote }}
+            {{- end }}
+            - name: ELDER_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ ($svc.internalTokenSecret).name | default "svc-scanner-token" }}
+                  key: {{ ($svc.internalTokenSecret).key | default "token" }}
+                  optional: {{ if hasKey ($svc.internalTokenSecret | default dict) "optional" }}{{ $svc.internalTokenSecret.optional }}{{ else }}true{{ end }}
+            {{- include "elder.secretEnv" (list $svc .) | nindent 12 }}
+            {{- if .Values.otel.enabled }}
+            - name: OTEL_SERVICE_NAME
+              value: "svc-scanner"
+            {{- end }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          {{- if or (not (hasKey $hc "enabled")) $hc.enabled }}
+          livenessProbe:
+            exec:
+              command:
+                - /app/svc-scanner
+                - healthcheck
+                - --check-heartbeat
+            initialDelaySeconds: {{ $hc.initialDelaySeconds | default 15 }}
+            periodSeconds: {{ $hc.periodSeconds | default 30 }}
+            timeoutSeconds: {{ $hc.timeoutSeconds | default 10 }}
+            failureThreshold: {{ $hc.failureThreshold | default 3 }}
+          readinessProbe:
+            exec:
+              command:
+                - /app/svc-scanner
+                - healthcheck
+                - --check-heartbeat
+            initialDelaySeconds: {{ $hc.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ $hc.periodSeconds | default 30 }}
+            timeoutSeconds: {{ $hc.timeoutSeconds | default 10 }}
+            failureThreshold: {{ $hc.failureThreshold | default 3 }}
+          {{- end }}
+          resources:
+            {{- toYaml $svc.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: screenshots
+              mountPath: /tmp/screenshots
+          securityContext:
+            {{- include "elder.containerSecurityContext" (list $svc.securityContext .) | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ ($svc.tmpStorage).sizeLimit | default "512Mi" }}
+        - name: screenshots
+          emptyDir:
+            sizeLimit: {{ ($svc.screenshotStorage).sizeLimit | default "1Gi" }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

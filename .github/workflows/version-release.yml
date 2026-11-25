@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write  # dispatch docker-build.yml on the new tag
 
     steps:
       - name: Checkout repository
@@ -25,13 +26,15 @@ jobs:
         run: |
           if [ ! -f .version ]; then
             echo "0.0.0" > .version
-            echo "version=0.0.0" >> $GITHUB_OUTPUT
-            echo "full_version=0.0.0" >> $GITHUB_OUTPUT
-            echo "epoch64=" >> $GITHUB_OUTPUT
-            echo "should_release=false" >> $GITHUB_OUTPUT
+            {
+              echo "version=0.0.0"
+              echo "full_version=0.0.0"
+              echo "epoch64="
+              echo "should_release=false"
+            } >> "$GITHUB_OUTPUT"
           else
             # Read .version file and remove whitespace
-            VERSION=$(cat .version | tr -d '[:space:]')
+            VERSION=$(tr -d '[:space:]' < .version)
 
             # Validate format: vMajor.Minor.Patch.epoch64
             # Example: 3.0.0.1764083000
@@ -50,16 +53,18 @@ jobs:
               EPOCH64=$(date +%s)
             fi
 
-            echo "version=$SEMVER" >> $GITHUB_OUTPUT
-            echo "full_version=$VERSION" >> $GITHUB_OUTPUT
-            echo "epoch64=$EPOCH64" >> $GITHUB_OUTPUT
+            {
+              echo "version=$SEMVER"
+              echo "full_version=$VERSION"
+              echo "epoch64=$EPOCH64"
+            } >> "$GITHUB_OUTPUT"
 
             # Check if version is default (0.0.0)
             if [ "$SEMVER" = "0.0.0" ]; then
-              echo "should_release=false" >> $GITHUB_OUTPUT
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
               echo "Version is default (0.0.0), skipping release"
             else
-              echo "should_release=true" >> $GITHUB_OUTPUT
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
               echo "Version is $SEMVER with epoch64=$EPOCH64, proceeding with release"
             fi
           fi
@@ -69,21 +74,22 @@ jobs:
         if: steps.check_version.outputs.should_release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.check_version.outputs.version }}
         run: |
-          VERSION="${{ steps.check_version.outputs.version }}"
           if gh release view "v$VERSION" > /dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Release v$VERSION already exists"
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "Release v$VERSION does not exist, will create"
           fi
 
       - name: Extract release notes from RELEASE_NOTES.md
         id: extract_notes
         if: steps.check_version.outputs.should_release == 'true' && steps.check_release.outputs.exists != 'true'
+        env:
+          VERSION: ${{ steps.check_version.outputs.version }}
         run: |
-          VERSION="${{ steps.check_version.outputs.version }}"
           RELEASE_NOTES_FILE="docs/RELEASE_NOTES.md"
 
           if [ -f "$RELEASE_NOTES_FILE" ]; then
@@ -106,30 +112,35 @@ jobs:
             ' "$RELEASE_NOTES_FILE")
 
             if [ -n "$NOTES" ]; then
-              echo "found_notes=true" >> $GITHUB_OUTPUT
+              echo "found_notes=true" >> "$GITHUB_OUTPUT"
               # Save notes to a file for later use (handles multi-line)
               echo "$NOTES" > extracted_notes.md
               echo "Extracted release notes for v$VERSION"
             else
-              echo "found_notes=false" >> $GITHUB_OUTPUT
+              echo "found_notes=false" >> "$GITHUB_OUTPUT"
               echo "No release notes found for v$VERSION in $RELEASE_NOTES_FILE"
             fi
           else
-            echo "found_notes=false" >> $GITHUB_OUTPUT
+            echo "found_notes=false" >> "$GITHUB_OUTPUT"
             echo "$RELEASE_NOTES_FILE not found"
           fi
 
       - name: Generate release notes
         id: release_notes
         if: steps.check_version.outputs.should_release == 'true' && steps.check_release.outputs.exists != 'true'
+        env:
+          VERSION: ${{ steps.check_version.outputs.version }}
+          FULL_VERSION: ${{ steps.check_version.outputs.full_version }}
+          EPOCH64: ${{ steps.check_version.outputs.epoch64 }}
+          FOUND_NOTES: ${{ steps.extract_notes.outputs.found_notes }}
+          SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          OWNER: ${{ github.repository_owner }}
         run: |
-          VERSION="${{ steps.check_version.outputs.version }}"
-          FULL_VERSION="${{ steps.check_version.outputs.full_version }}"
-          EPOCH64="${{ steps.check_version.outputs.epoch64 }}"
 
           # Convert epoch64 to human-readable date
           if command -v date &> /dev/null; then
-            BUILD_DATE=$(date -d @${EPOCH64} -u +"%Y-%m-%d %H:%M:%S UTC" 2>/dev/null || date -u -r ${EPOCH64} +"%Y-%m-%d %H:%M:%S UTC" 2>/dev/null || echo "Build timestamp: ${EPOCH64}")
+            BUILD_DATE=$(date -d "@${EPOCH64}" -u +"%Y-%m-%d %H:%M:%S UTC" 2>/dev/null || date -u -r "${EPOCH64}" +"%Y-%m-%d %H:%M:%S UTC" 2>/dev/null || echo "Build timestamp: ${EPOCH64}")
           else
             BUILD_DATE="Build timestamp: ${EPOCH64}"
           fi
@@ -144,12 +155,14 @@ jobs:
           sed -i "s/\$VERSION/$VERSION/g" release_notes.md
 
           # Add extracted notes from RELEASE_NOTES.md if found
-          if [ "${{ steps.extract_notes.outputs.found_notes }}" = "true" ] && [ -f extracted_notes.md ]; then
-            echo "" >> release_notes.md
-            cat extracted_notes.md >> release_notes.md
-            echo "" >> release_notes.md
-            echo "---" >> release_notes.md
-            echo "" >> release_notes.md
+          if [ "$FOUND_NOTES" = "true" ] && [ -f extracted_notes.md ]; then
+            {
+              echo ""
+              cat extracted_notes.md
+              echo ""
+              echo "---"
+              echo ""
+            } >> release_notes.md
           fi
 
           # Add version metadata
@@ -162,15 +175,15 @@ jobs:
           | Full Version | \`$FULL_VERSION\` |
           | Epoch64 Timestamp | \`$EPOCH64\` |
           | Build Date | $BUILD_DATE |
-          | Commit | \`${{ github.sha }}\` |
-          | Branch | \`${{ github.ref_name }}\` |
+          | Commit | \`$SHA\` |
+          | Branch | \`$REF_NAME\` |
 
           ### Installation
 
-          Pull the latest Docker image:
+          Images are tagged with the release version (no \`latest\` tag):
           \`\`\`bash
-          docker pull ghcr.io/${{ github.repository_owner }}/elder:v$VERSION
-          docker pull ghcr.io/${{ github.repository_owner }}/elder:$FULL_VERSION
+          docker pull ghcr.io/$OWNER/elder/hub-api:v$VERSION
+          docker pull ghcr.io/$OWNER/elder/hub-webui:$FULL_VERSION
           \`\`\`
 
           ---
@@ -184,21 +197,34 @@ jobs:
         if: steps.check_version.outputs.should_release == 'true' && steps.check_release.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.check_version.outputs.version }}
+          SHA: ${{ github.sha }}
         run: |
-          VERSION="${{ steps.check_version.outputs.version }}"
           gh release create "v$VERSION" \
             --title "v$VERSION" \
             --notes-file release_notes.md \
             --prerelease \
-            --target ${{ github.sha }}
+            --target "$SHA"
+
+      - name: Build release images for the new tag
+        # Tags created with GITHUB_TOKEN do not trigger `push: tags` workflows,
+        # so docker-build.yml would never build v* images without this.
+        if: steps.check_version.outputs.should_release == 'true' && steps.check_release.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.check_version.outputs.version }}
+        run: gh workflow run docker-build.yml --ref "v$VERSION"
 
           echo "✅ Created pre-release v$VERSION"
 
       - name: Skip release (version is default or release exists)
         if: steps.check_version.outputs.should_release != 'true' || steps.check_release.outputs.exists == 'true'
+        env:
+          SHOULD_RELEASE: ${{ steps.check_version.outputs.should_release }}
+          VERSION: ${{ steps.check_version.outputs.version }}
         run: |
-          if [ "${{ steps.check_version.outputs.should_release }}" != "true" ]; then
+          if [ "$SHOULD_RELEASE" != "true" ]; then
             echo "⏭️ Skipping release - version is 0.0.0 (default)"
           else
-            echo "⏭️ Skipping release - v${{ steps.check_version.outputs.version }} already exists"
+            echo "⏭️ Skipping release - v$VERSION already exists"
           fi

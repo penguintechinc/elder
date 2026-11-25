@@ -18,7 +18,7 @@ except ImportError:
 class GCPBillingProvider(BaseCostProvider):
     """GCP BigQuery billing export integration."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         if not bigquery:
             raise ImportError(
@@ -34,7 +34,7 @@ class GCPBillingProvider(BaseCostProvider):
         """Test GCP BigQuery billing connectivity."""
         try:
             query = (
-                f"SELECT 1 FROM `{self.project_id}.{self.dataset}.{self.table}` LIMIT 1"
+                f"SELECT 1 FROM `{self.project_id}.{self.dataset}.{self.table}` LIMIT 1"  # nosec B608
             )
             list(self.bq_client.query(query).result())
             return True
@@ -44,23 +44,20 @@ class GCPBillingProvider(BaseCostProvider):
 
     def fetch_costs(
         self, resource_type: str, resource_id: str, start_date: str, end_date: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Fetch costs from GCP BigQuery billing export."""
         try:
-            query = f"""
-                SELECT
-                    DATE(usage_start_time) as date,
-                    SUM(cost) as amount,
-                    currency,
-                    SUM(usage.amount) as usage_quantity,
-                    usage.unit as usage_unit
-                FROM `{self.project_id}.{self.dataset}.{self.table}`
-                WHERE resource.name = @resource_id
-                    AND DATE(usage_start_time) >= @start_date
-                    AND DATE(usage_start_time) < @end_date
-                GROUP BY date, currency, usage.unit
-                ORDER BY date
-            """
+            # Table name is from config (trusted), not user input; user values are parameterized
+            table_ref = "{}.{}.{}".format(self.project_id, self.dataset, self.table)  # nosec B608
+            query = (
+                "SELECT DATE(usage_start_time) as date, SUM(cost) as amount, "  # nosec B608
+                "currency, SUM(usage.amount) as usage_quantity, usage.unit as usage_unit "
+                f"FROM {table_ref} "
+                "WHERE resource.name = @resource_id "
+                "AND DATE(usage_start_time) >= @start_date "
+                "AND DATE(usage_start_time) < @end_date "
+                "GROUP BY date, currency, usage.unit ORDER BY date"
+            )
 
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
@@ -91,6 +88,6 @@ class GCPBillingProvider(BaseCostProvider):
 
     def get_recommendations(
         self, resource_type: str, resource_id: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """GCP recommendations require Recommender API (not yet implemented)."""
         return []

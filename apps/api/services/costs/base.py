@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 class BaseCostProvider(ABC):
     """Abstract base class for cloud cost providers."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         self.config = config
 
     @abstractmethod
@@ -20,7 +20,7 @@ class BaseCostProvider(ABC):
     @abstractmethod
     def fetch_costs(
         self, resource_type: str, resource_id: str, start_date: str, end_date: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Fetch cost data for a specific resource.
 
         Returns list of daily cost entries:
@@ -31,7 +31,7 @@ class BaseCostProvider(ABC):
     @abstractmethod
     def get_recommendations(
         self, resource_type: str, resource_id: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get cost optimization recommendations.
 
         Returns list of recommendations:

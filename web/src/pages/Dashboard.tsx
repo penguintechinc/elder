@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Building2, Box, GitBranch, Users, AlertCircle } from 'lucide-react'
+import type { Organization, Entity, Issue } from '@/types'
 import api from '@/lib/api'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 
@@ -66,7 +67,7 @@ export default function Dashboard() {
     },
     {
       name: 'Open Issues',
-      value: issues?.items?.filter((i: any) => i.status === 'open').length || 0,
+      value: issues?.items?.filter((i: Issue) => i.status === 'open').length || 0,
       icon: AlertCircle,
       color: 'text-red-500',
       bgColor: 'bg-red-500/10',
@@ -119,7 +120,7 @@ export default function Dashboard() {
               <p className="text-slate-400 text-sm">No organizations yet</p>
             ) : (
               <ul className="space-y-3">
-                {orgs?.items?.map((org: any) => (
+                {orgs?.items?.map((org: Organization) => (
                   <li
                     key={org.id}
                     className="flex items-center justify-between p-3 rounded-lg bg-slate-800/30 hover:bg-slate-800/50 cursor-pointer transition-colors"
@@ -148,7 +149,7 @@ export default function Dashboard() {
               <p className="text-slate-400 text-sm">No entities yet</p>
             ) : (
               <ul className="space-y-3">
-                {entities?.items?.map((entity: any) => (
+                {entities?.items?.map((entity: Entity) => (
                   <li
                     key={entity.id}
                     className="flex items-center justify-between p-3 rounded-lg bg-slate-800/30 hover:bg-slate-800/50 cursor-pointer transition-colors"

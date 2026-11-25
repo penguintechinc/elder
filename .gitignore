@@ -1,3 +1,7 @@
+# Superpowers / SDD scratch and git worktrees (local-only)
+.superpowers/
+.worktrees/
+
 # Operating System
 .DS_Store
 .DS_Store?
@@ -467,3 +471,7 @@ modal-*.png
 web/playwright-report/
 web/test-results/
 .npmrc
+
+# Rust
+target/
+**/*.rs.bk

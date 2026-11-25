@@ -2,14 +2,21 @@
 
 # flake8: noqa: E501
 
-
 from typing import Any, Dict, List, Optional
 
 from penguin_dal import DAL
 
+from apps.api.utils.tenant_scoping import get_tenant_org_ids
+
 
 class SearchService:
-    """Service for advanced search across Elder resources."""
+    """Service for advanced search across Elder resources.
+
+    Every search, suggestion and analytics method takes the caller's
+    ``tenant_id`` (resolved from the verified token by the route) and only
+    ever reads rows owned by that tenant. A falsy ``tenant_id`` yields empty
+    results -- it is never treated as "no filter".
+    """
 
     def __init__(self, db: DAL):
         """
@@ -27,16 +34,18 @@ class SearchService:
     def search_all(
         self,
         query: str,
-        resource_types: Optional[List[str]] = None,
-        filters: Optional[Dict[str, Any]] = None,
+        tenant_id: int | None,
+        resource_types: list[str] | None = None,
+        filters: dict[str, Any] | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Search across all resource types.
 
         Args:
             query: Search query string
+            tenant_id: Caller's tenant (from the verified token)
             resource_types: List of resource types to search (entity, organization, issue)
             filters: Additional filters
             limit: Maximum results per type
@@ -53,7 +62,11 @@ class SearchService:
 
         if "entity" in resource_types:
             entity_results = self.search_entities(
-                query=query, filters=filters, limit=limit, offset=offset
+                query=query,
+                tenant_id=tenant_id,
+                filters=filters,
+                limit=limit,
+                offset=offset,
             )
             results["entities"] = entity_results["entities"]
             results["entities_count"] = entity_results["total_count"]
@@ -61,7 +74,7 @@ class SearchService:
 
         if "organization" in resource_types:
             org_results = self.search_organizations(
-                query=query, limit=limit, offset=offset
+                query=query, tenant_id=tenant_id, limit=limit, offset=offset
             )
             results["organizations"] = org_results["organizations"]
             results["organizations_count"] = org_results["total_count"]
@@ -69,7 +82,11 @@ class SearchService:
 
         if "issue" in resource_types:
             issue_results = self.search_issues(
-                query=query, filters=filters, limit=limit, offset=offset
+                query=query,
+                tenant_id=tenant_id,
+                filters=filters,
+                limit=limit,
+                offset=offset,
             )
             results["issues"] = issue_results["issues"]
             results["issues_count"] = issue_results["total_count"]
@@ -87,20 +104,22 @@ class SearchService:
 
     def search_entities(
         self,
-        query: Optional[str] = None,
-        entity_type: Optional[str] = None,
-        sub_type: Optional[str] = None,
-        organization_id: Optional[int] = None,
-        tags: Optional[List[str]] = None,
-        filters: Optional[Dict[str, Any]] = None,
+        query: str | None = None,
+        tenant_id: int | None = None,
+        entity_type: str | None = None,
+        sub_type: str | None = None,
+        organization_id: int | None = None,
+        tags: list[str] | None = None,
+        filters: dict[str, Any] | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Search entities with advanced filters.
 
         Args:
             query: Search query for name/description
+            tenant_id: Caller's tenant; entities are scoped via their organization
             entity_type: Filter by entity type
             sub_type: Filter by sub-type
             organization_id: Filter by organization
@@ -112,7 +131,10 @@ class SearchService:
         Returns:
             Entity search results
         """
-        db_query = self.db.entities.id > 0
+        org_ids = get_tenant_org_ids(self.db, tenant_id)
+        if not org_ids:
+            return {"entities": [], "total_count": 0, "limit": limit, "offset": offset}
+        db_query = self.db.entities.organization_id.belongs(org_ids)
 
         # Text search on name (case-insensitive)
         if query:
@@ -157,17 +179,19 @@ class SearchService:
 
     def search_organizations(
         self,
-        query: Optional[str] = None,
-        organization_type: Optional[str] = None,
-        parent_id: Optional[int] = None,
+        query: str | None = None,
+        tenant_id: int | None = None,
+        organization_type: str | None = None,
+        parent_id: int | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Search organizations.
 
         Args:
             query: Search query for name/description
+            tenant_id: Caller's tenant
             organization_type: Filter by type
             parent_id: Filter by parent organization
             limit: Maximum results
@@ -176,7 +200,14 @@ class SearchService:
         Returns:
             Organization search results
         """
-        db_query = self.db.organizations.id > 0
+        if not tenant_id:
+            return {
+                "organizations": [],
+                "total_count": 0,
+                "limit": limit,
+                "offset": offset,
+            }
+        db_query = self.db.organizations.tenant_id == tenant_id
 
         # Text search (case-insensitive)
         if query:
@@ -214,21 +245,23 @@ class SearchService:
 
     def search_issues(
         self,
-        query: Optional[str] = None,
-        status: Optional[str] = None,
-        priority: Optional[str] = None,
-        assignee_id: Optional[int] = None,
-        organization_id: Optional[int] = None,
-        labels: Optional[List[str]] = None,
-        filters: Optional[Dict[str, Any]] = None,
+        query: str | None = None,
+        tenant_id: int | None = None,
+        status: str | None = None,
+        priority: str | None = None,
+        assignee_id: int | None = None,
+        organization_id: int | None = None,
+        labels: list[str] | None = None,
+        filters: dict[str, Any] | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Search issues with advanced filters.
 
         Args:
             query: Search query for title/description
+            tenant_id: Caller's tenant
             status: Filter by status
             priority: Filter by priority
             assignee_id: Filter by assignee
@@ -241,7 +274,9 @@ class SearchService:
         Returns:
             Issue search results
         """
-        db_query = self.db.issues.id > 0
+        if not tenant_id:
+            return {"issues": [], "total_count": 0, "limit": limit, "offset": offset}
+        db_query = self.db.issues.tenant_id == tenant_id
 
         # Text search (case-insensitive)
         if query:
@@ -289,9 +324,10 @@ class SearchService:
         self,
         start_entity_id: int,
         max_depth: int = 3,
-        dependency_types: Optional[List[str]] = None,
-        entity_filters: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        dependency_types: list[str] | None = None,
+        entity_filters: dict[str, Any] | None = None,
+        tenant_id: int | None = None,
+    ) -> dict[str, Any]:
         """
         Graph-based search for entities and dependencies.
 
@@ -300,12 +336,22 @@ class SearchService:
             max_depth: Maximum traversal depth
             dependency_types: Filter by dependency types
             entity_filters: Filters for entities in graph
+            tenant_id: Caller's tenant; traversal never leaves its entities
+                and dependencies, and a foreign start entity is "not found"
 
         Returns:
             Graph search results with nodes and edges
         """
-        # Verify starting entity exists
-        start_entity = self.db.entities[start_entity_id]
+        org_ids = set(get_tenant_org_ids(self.db, tenant_id))
+
+        def _own_entity(eid: Any) -> Any:
+            row = self.db.entities[eid]
+            if row and row.organization_id in org_ids:
+                return row
+            return None
+
+        # Verify starting entity exists within the caller's tenant
+        start_entity = _own_entity(start_entity_id)
         if not start_entity:
             raise Exception(f"Entity {start_entity_id} not found")
 
@@ -326,13 +372,13 @@ class SearchService:
             visited_entities.add(entity_id)
 
             # Add entity as node
-            entity = self.db.entities[entity_id]
+            entity = _own_entity(entity_id)
             if entity:
                 nodes.append(
                     {
                         "id": entity.id,
                         "name": entity.name,
-                        "entity_type": entity.entity_type,
+                        "entity_type": entity.type,
                         "sub_type": entity.sub_type,
                         "depth": depth,
                     }
@@ -343,10 +389,13 @@ class SearchService:
                 deps_out = self.db(
                     (self.db.dependencies.source_type == "entity")
                     & (self.db.dependencies.source_id == entity_id)
+                    & (self.db.dependencies.tenant_id == tenant_id)
                 ).select()
 
                 for dep in deps_out:
                     if dependency_types and dep.dependency_type not in dependency_types:
+                        continue
+                    if dep.target_type == "entity" and not _own_entity(dep.target_id):
                         continue
 
                     if dep.id not in visited_dependencies:
@@ -371,10 +420,13 @@ class SearchService:
                 deps_in = self.db(
                     (self.db.dependencies.target_type == "entity")
                     & (self.db.dependencies.target_id == entity_id)
+                    & (self.db.dependencies.tenant_id == tenant_id)
                 ).select()
 
                 for dep in deps_in:
                     if dependency_types and dep.dependency_type not in dependency_types:
+                        continue
+                    if dep.source_type == "entity" and not _own_entity(dep.source_id):
                         continue
 
                     if dep.id not in visited_dependencies:
@@ -410,7 +462,7 @@ class SearchService:
 
     def list_saved_searches(
         self, user_id: int, limit: int = 50
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         List user's saved searches.
 
@@ -427,7 +479,7 @@ class SearchService:
 
         return [s.as_dict() for s in searches]
 
-    def get_saved_search(self, search_id: int, user_id: int) -> Dict[str, Any]:
+    def get_saved_search(self, search_id: int, user_id: int) -> dict[str, Any]:
         """
         Get saved search details.
 
@@ -457,9 +509,9 @@ class SearchService:
         name: str,
         query: str,
         resource_type: str,
-        filters: Optional[Dict[str, Any]] = None,
-        description: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        filters: dict[str, Any] | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
         """
         Save a search query.
 
@@ -490,11 +542,11 @@ class SearchService:
         self,
         search_id: int,
         user_id: int,
-        name: Optional[str] = None,
-        query: Optional[str] = None,
-        filters: Optional[Dict[str, Any]] = None,
-        description: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        name: str | None = None,
+        query: str | None = None,
+        filters: dict[str, Any] | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
         """
         Update saved search.
 
@@ -537,7 +589,7 @@ class SearchService:
         search = self.db.saved_searches[search_id]
         return search.as_dict()
 
-    def delete_saved_search(self, search_id: int, user_id: int) -> Dict[str, str]:
+    def delete_saved_search(self, search_id: int, user_id: int) -> dict[str, str]:
         """
         Delete saved search.
 
@@ -565,14 +617,22 @@ class SearchService:
         return {"message": "Saved search deleted successfully"}
 
     def execute_saved_search(
-        self, search_id: int, user_id: int, limit: int = 50, offset: int = 0
-    ) -> Dict[str, Any]:
+        self,
+        search_id: int,
+        user_id: int,
+        tenant_id: int | None,
+        resource_types: list[str] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
         """
         Execute a saved search.
 
         Args:
             search_id: Saved search ID
             user_id: User ID (for ownership check)
+            tenant_id: Caller's tenant; results are scoped to it
+            resource_types: Resource families the caller may read
             limit: Maximum results
             offset: Pagination offset
 
@@ -595,55 +655,85 @@ class SearchService:
 
         # Execute search across all resource types
         return self.search_all(
-            query=search.query, filters=filters, limit=limit, offset=offset
+            query=search.query,
+            tenant_id=tenant_id,
+            resource_types=resource_types,
+            filters=filters,
+            limit=limit,
+            offset=offset,
         )
 
     # ===========================
     # Search Analytics Methods
     # ===========================
 
-    def get_popular_searches(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_popular_searches(
+        self, tenant_id: int | None, limit: int = 10
+    ) -> list[dict[str, Any]]:
         """
-        Get most popular/frequent searches.
+        Get most popular/frequent searches within the caller's tenant.
+
+        Saved searches carry no tenant column, so they are scoped through
+        the owning identity's tenant; other tenants' terms are never read.
 
         Args:
+            tenant_id: Caller's tenant (from the verified token)
             limit: Maximum results
 
         Returns:
             List of popular searches
         """
-        searches = self.db(self.db.saved_searches.id > 0).select(
-            orderby=~self.db.saved_searches.created_at, limitby=(0, limit)
-        )
+        if not tenant_id:
+            return []
+        identity_ids = [
+            r.id
+            for r in self.db(self.db.identities.tenant_id == tenant_id).select(
+                self.db.identities.id
+            )
+        ]
+        if not identity_ids:
+            return []
+        searches = self.db(
+            self.db.saved_searches.identity_id.belongs(identity_ids)
+        ).select(orderby=~self.db.saved_searches.created_at, limitby=(0, limit))
 
         return [
             {
                 "id": s.id,
                 "name": s.name,
                 "query": s.query,
-                "resource_type": s.resource_type,
-                "use_count": s.use_count,
-                "last_used_at": s.last_used_at,
+                "resource_type": getattr(s, "resource_type", None),
+                "use_count": getattr(s, "use_count", None),
+                "last_used_at": getattr(s, "last_used_at", None),
             }
             for s in searches
         ]
 
     def get_search_suggestions(
-        self, partial_query: str, resource_type: Optional[str] = None, limit: int = 10
-    ) -> List[Dict[str, Any]]:
+        self,
+        partial_query: str,
+        tenant_id: int | None,
+        resource_type: str | None = None,
+        limit: int = 10,
+        include_issues: bool = True,
+    ) -> list[dict[str, Any]]:
         """
-        Get search suggestions/autocomplete.
+        Get search suggestions/autocomplete from the caller's tenant only.
 
         Args:
             partial_query: Partial query string
+            tenant_id: Caller's tenant (from the verified token)
+            include_issues: False when the caller lacks issue read access
             resource_type: Resource type for suggestions
             limit: Maximum suggestions
 
         Returns:
             List of search suggestions
         """
-        suggestions = []
+        suggestions: list[dict[str, Any]] = []
         seen: set = set()
+        if not tenant_id:
+            return suggestions
 
         def _add(text: str, stype: str, category: str) -> None:
             key = (text, stype)
@@ -652,23 +742,31 @@ class SearchService:
                 suggestions.append({"text": text, "type": stype, "category": category})
 
         if not resource_type or resource_type == "entity":
-            entities = self.db(self.db.entities.name.contains(partial_query)).select(
-                self.db.entities.name, limitby=(0, limit * 3)
+            org_ids = get_tenant_org_ids(self.db, tenant_id)
+            entities = (
+                self.db(
+                    self.db.entities.name.contains(partial_query)
+                    & self.db.entities.organization_id.belongs(org_ids)
+                ).select(self.db.entities.name, limitby=(0, limit * 3))
+                if org_ids
+                else []
             )
             for e in entities:
                 _add(e.name, "entity", "name")
 
         if not resource_type or resource_type == "organization":
-            orgs = self.db(self.db.organizations.name.contains(partial_query)).select(
-                self.db.organizations.name, limitby=(0, limit * 3)
-            )
+            orgs = self.db(
+                self.db.organizations.name.contains(partial_query)
+                & (self.db.organizations.tenant_id == tenant_id)
+            ).select(self.db.organizations.name, limitby=(0, limit * 3))
             for o in orgs:
                 _add(o.name, "organization", "name")
 
-        if not resource_type or resource_type == "issue":
-            issues = self.db(self.db.issues.title.contains(partial_query)).select(
-                self.db.issues.title, limitby=(0, limit * 3)
-            )
+        if include_issues and (not resource_type or resource_type == "issue"):
+            issues = self.db(
+                self.db.issues.title.contains(partial_query)
+                & (self.db.issues.tenant_id == tenant_id)
+            ).select(self.db.issues.title, limitby=(0, limit * 3))
             for i in issues:
                 _add(i.title, "issue", "title")
 

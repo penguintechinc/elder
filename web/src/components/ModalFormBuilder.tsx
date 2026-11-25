@@ -1,16 +1,17 @@
-import Card, { CardHeader, CardContent } from '@/components/Card'
-import FormBuilder from '@/components/FormBuilder'
-import { FormConfig } from '@/types/form'
+import Card, { CardHeader, CardContent } from "@/components/Card";
+import FormBuilder from "@/components/FormBuilder";
+import { FormConfig, FormField } from "@/types/form";
 
 export interface ModalFormBuilderProps {
-  isOpen?: boolean
-  onClose: () => void
-  title: string
-  config: FormConfig
-  initialValues?: Record<string, any>
-  onSubmit: (data: Record<string, any>) => void
-  isLoading?: boolean
-  submitLabel?: string
+  isOpen?: boolean;
+  onClose: () => void;
+  title: string;
+  config?: FormConfig;
+  fields?: FormField[];
+  initialValues?: Record<string, unknown>;
+  onSubmit: (data: Record<string, unknown>) => void;
+  isLoading?: boolean;
+  submitLabel?: string;
 }
 
 export default function ModalFormBuilder({
@@ -18,15 +19,17 @@ export default function ModalFormBuilder({
   onClose,
   title,
   config,
+  fields,
   initialValues,
   onSubmit,
   isLoading = false,
   submitLabel,
 }: ModalFormBuilderProps) {
-  if (!isOpen) return null
+  if (!isOpen) return null;
 
+  const baseConfig: FormConfig = config ?? { fields: fields || [] };
   // Merge submitLabel into config if provided as prop
-  const finalConfig = submitLabel ? { ...config, submitLabel } : config
+  const finalConfig = submitLabel ? { ...baseConfig, submitLabel } : baseConfig;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -45,5 +48,5 @@ export default function ModalFormBuilder({
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

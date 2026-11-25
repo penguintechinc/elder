@@ -2,71 +2,92 @@
 
 # flake8: noqa: E501
 
-
 import asyncio
+import os
 import signal
+import socket
 import sys
+import time
 from typing import List
 
 import aiocron
+import redis.asyncio
 from quart import Quart, jsonify
-from prometheus_client import Counter, Gauge, Histogram, generate_latest
 
+from apps.api.services.csv_import.storage import (
+    CSV_IMPORT_QUEUE_KEY,
+    get_csv_import_storage,
+)
 from apps.worker.config.settings import settings
-from apps.worker.connectors.authentik_connector import AuthentikConnector
-from apps.worker.connectors.aws_connector import AWSConnector
-from apps.worker.connectors.base import BaseConnector, SyncResult
-from apps.worker.connectors.gcp_connector import GCPConnector
-from apps.worker.connectors.google_workspace_connector import GoogleWorkspaceConnector
-from apps.worker.connectors.ldap_connector import LDAPConnector
-from apps.worker.connectors.lxd_connector import LXDConnector
-from apps.worker.connectors.okta_connector import OktaConnector
+from apps.worker.csv_import_batch import process_job_by_id, run_batch_once
+from apps.worker.jobs.groups import resolve_worker_groups
+from apps.worker.jobs.registry import get_handler
 from apps.worker.utils.logger import configure_logging, get_logger
+from shared.jobbus import JobBus
+from shared.redaction import redact_url
 
 # Configure logging
 configure_logging()
 logger = get_logger(__name__)
 
-# Prometheus metrics
-discovery_jobs_executed = Counter(
-    "worker_discovery_jobs_executed_total",
-    "Total number of discovery jobs executed",
-    ["provider", "status"],
-)
-discovery_poll_duration = Histogram(
-    "worker_discovery_poll_duration_seconds",
-    "Discovery poll cycle duration",
-)
-sync_total = Counter(
-    "worker_sync_total",
-    "Total number of sync operations",
-    ["connector", "status"],
-)
-sync_duration = Histogram(
-    "worker_sync_duration_seconds",
-    "Sync operation duration",
-    ["connector"],
-)
-sync_errors = Counter(
-    "worker_sync_errors_total",
-    "Total number of sync errors",
-    ["connector"],
-)
-entities_synced = Gauge(
-    "worker_entities_synced",
-    "Number of entities synced",
-    ["connector", "operation"],
-)
-organizations_synced = Gauge(
-    "worker_organizations_synced",
-    "Number of organizations synced",
-    ["connector", "operation"],
-)
-last_sync_timestamp = Gauge(
-    "worker_last_sync_timestamp",
-    "Timestamp of last successful sync",
-    ["connector"],
-)
+
+# OpenTelemetry metrics (Phase 0.5 observability)
+def _init_otel_metrics():
+    """Initialize OTel metrics for worker sync/discovery operations."""
+    from shared.observability import get_meter
+
+    meter = get_meter("svc-worker")
+
+    # Counters for job/sync execution and errors
+    job_counter = meter.create_counter(
+        "worker.discovery.jobs.executed",
+        unit="1",
+        description="Total number of discovery jobs executed",
+    )
+    sync_counter = meter.create_counter(
+        "worker.sync.operations",
+        unit="1",
+        description="Total number of sync operations",
+    )
+    error_counter = meter.create_counter(
+        "worker.sync.errors",
+        unit="1",
+        description="Total number of sync errors",
+    )
+
+    # Histograms for duration measurements
+    poll_duration_histogram = meter.create_histogram(
+        "worker.discovery.poll.duration",
+        unit="s",
+        description="Discovery poll cycle duration",
+    )
+    sync_duration_histogram = meter.create_histogram(
+        "worker.sync.duration",
+        unit="s",
+        description="Sync operation duration",
+    )
+    job_duration_histogram = meter.create_histogram(
+        "worker.jobbus.job.duration",
+        unit="s",
+        description="Job-bus job processing duration (dequeue to ack/dead-letter)",
+    )
+
+    return {
+        "job_counter": job_counter,
+        "sync_counter": sync_counter,
+        "error_counter": error_counter,
+        "poll_duration_histogram": poll_duration_histogram,
+        "sync_duration_histogram": sync_duration_histogram,
+        "job_duration_histogram": job_duration_histogram,
+    }
+
+
+# Initialize OTel metrics at module load
+try:
+    _otel_metrics = _init_otel_metrics()
+except Exception as e:
+    logger.warning(f"Failed to initialize OTel metrics: {e}")
+    _otel_metrics = None
 
 
 class WorkerService:
@@ -74,15 +95,20 @@ class WorkerService:
 
     def __init__(self):
         """Initialize worker service."""
-        self.connectors: List[BaseConnector] = []
         self.running = False
-        self.sync_tasks: List[asyncio.Task] = []
         self.db_manager = None
-        self.discovery_executor = None
+        # Job-bus consumer components
+        self.redis = None
+        self.jobbus = None
+        self.worker_groups: set[str] = set()
+        self.consumer_task: asyncio.Task | None = None
+        self.csv_import_queue_task: asyncio.Task | None = None
+        self.csv_import_task: asyncio.Task | None = None
+        self.sync_tasks: list[asyncio.Task] = []
+        self.consumer_name: str = os.environ.get("POD_NAME") or socket.gethostname()
         self.health_app = Quart(__name__)
         self._setup_health_endpoints()
         self._init_database()
-        self._init_discovery_executor()
 
     def _init_database(self):
         """Initialize database connection if DATABASE_URL is configured."""
@@ -103,47 +129,21 @@ class WorkerService:
             logger.error(f"Failed to initialize database: {e}", exc_info=True)
             logger.warning("Worker will continue without direct DB access")
 
-    def _init_discovery_executor(self):
-        """Initialize the discovery executor if DB is available."""
-        if not self.db_manager:
-            logger.info("Discovery executor disabled (no DB connection)")
-            return
-
-        try:
-            from apps.worker.discovery.executor import DiscoveryExecutor
-
-            self.discovery_executor = DiscoveryExecutor(
-                db_write=self.db_manager.write,
-                db_read=self.db_manager.read,
-            )
-            logger.info("Discovery executor initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize discovery executor: {e}", exc_info=True)
-            logger.warning("Worker will continue without discovery execution")
-
     def _setup_health_endpoints(self):
         """Setup Quart health check and metrics endpoints."""
 
         @self.health_app.route("/healthz")
         def health_check():
             """Health check endpoint."""
-            health_status = {
-                "status": "healthy" if self.running else "stopped",
-                "connectors": {},
-            }
-
-            for connector in self.connectors:
-                health_status["connectors"][connector.name] = {
-                    "enabled": True,
-                    "healthy": True,  # Will be updated by actual health checks
-                }
-
-            return jsonify(health_status), 200
-
-        @self.health_app.route("/metrics")
-        def metrics():
-            """Prometheus metrics endpoint."""
-            return generate_latest(), 200
+            return (
+                jsonify(
+                    {
+                        "status": "healthy" if self.running else "stopped",
+                        "integrations_owner": "svc-integrations",
+                    }
+                ),
+                200,
+            )
 
         @self.health_app.route("/status")
         def status():
@@ -151,252 +151,584 @@ class WorkerService:
             return (
                 jsonify(
                     {
-                        "service": "elder-worker",
+                        "service": "svc-worker",
                         "running": self.running,
-                        "connectors": [
-                            {
-                                "name": c.name,
-                                "type": c.__class__.__name__,
-                            }
-                            for c in self.connectors
-                        ],
-                        "discovery_executor": self.discovery_executor is not None,
+                        "integrations_owner": "svc-integrations",
+                        "jobbus_connected": self.jobbus is not None,
+                        "worker_groups": sorted(self.worker_groups),
                         "database_connected": self.db_manager is not None,
-                        "settings": {
-                            "sync_on_startup": settings.sync_on_startup,
-                            "aws_enabled": settings.aws_enabled,
-                            "gcp_enabled": settings.gcp_enabled,
-                            "google_workspace_enabled": settings.google_workspace_enabled,
-                            "ldap_enabled": settings.ldap_enabled,
-                            "okta_enabled": settings.okta_enabled,
-                            "authentik_enabled": settings.authentik_enabled,
-                            "lxd_enabled": settings.lxd_enabled,
-                        },
                     }
                 ),
                 200,
             )
 
-    def _initialize_connectors(self):
-        """Initialize enabled connectors."""
-        logger.info("Initializing connectors")
+    async def _init_jobbus(self) -> None:
+        """Initialize Redis and JobBus consumer.
 
-        if settings.aws_enabled:
-            logger.info("AWS connector enabled")
-            self.connectors.append(AWSConnector())
-
-        if settings.gcp_enabled:
-            logger.info("GCP connector enabled")
-            self.connectors.append(GCPConnector())
-
-        if settings.google_workspace_enabled:
-            logger.info("Google Workspace connector enabled")
-            self.connectors.append(GoogleWorkspaceConnector())
-
-        if settings.ldap_enabled:
-            logger.info("LDAP connector enabled")
-            self.connectors.append(LDAPConnector())
-
-        if settings.okta_enabled:
-            logger.info("Okta connector enabled (Enterprise)")
-            self.connectors.append(OktaConnector())
-
-        if settings.authentik_enabled:
-            logger.info("Authentik connector enabled (Enterprise)")
-            self.connectors.append(AuthentikConnector())
-
-        if settings.lxd_enabled:
-            logger.info("LXD connector enabled")
-            self.connectors.append(LXDConnector())
-
-        if not self.connectors:
-            logger.warning("No connectors enabled! Check your configuration.")
-
-        logger.info(f"Initialized {len(self.connectors)} connector(s)")
-
-    async def _sync_connector(self, connector: BaseConnector) -> SyncResult:
+        Connects to Redis, creates JobBus instance, resolves worker groups,
+        and ensures consumer groups exist in Redis Streams.
         """
-        Sync a single connector with metrics.
+        try:
+            # Connect to Redis
+            self.redis = redis.asyncio.from_url(settings.redis_url)
+            logger.info("redis_connected", url=redact_url(settings.redis_url))
 
-        Args:
-            connector: Connector to sync
+            # Create JobBus instance
+            self.jobbus = JobBus(self.redis, max_deliveries=5, group="workers")
+            logger.info("jobbus_initialized")
 
-        Returns:
-            SyncResult
+            # Resolve worker groups from enabled modules
+            self.worker_groups = resolve_worker_groups(os.environ)
+
+            if not self.worker_groups:
+                logger.warning("no_worker_groups_enabled")
+                return
+
+            # Ensure consumer groups exist for each worker group
+            for group in self.worker_groups:
+                try:
+                    await self.jobbus.ensure_group(group)
+                    logger.info("consumer_group_ensured", group=group)
+                except Exception as e:
+                    logger.error(
+                        "consumer_group_ensure_failed",
+                        group=group,
+                        error=str(e),
+                    )
+
+        except Exception as e:
+            logger.error(
+                "jobbus_init_failed",
+                error=str(e),
+                exc_info=True,
+            )
+            # Continue without job-bus; worker can still run sync connectors
+
+    async def _consumer_loop(self) -> None:
+        """Main job-bus consumer loop.
+
+        Reads messages from all registered worker groups, dispatches to handlers,
+        and acknowledges on success. On handler exception, leaves the message un-acked
+        (will be reclaimed by XAUTOCLAIM for retry).
         """
-        logger.info(f"Starting sync for {connector.name}")
+        if not self.jobbus:
+            logger.warning("consumer_loop: JobBus not initialized; exiting")
+            return
 
-        with sync_duration.labels(connector=connector.name).time():
+        logger.info(
+            "consumer_loop_starting",
+            consumer_name=self.consumer_name,
+            groups=sorted(self.worker_groups),
+        )
+
+        while self.running:
             try:
-                # Connect to connector
-                await connector.connect()
+                for group in self.worker_groups:
+                    try:
+                        # Read from job-bus with 5s block timeout
+                        messages = await self.jobbus.read(
+                            group,
+                            self.consumer_name,
+                            count=10,
+                            block_ms=5000,
+                        )
 
-                # Perform sync
-                result = await connector.sync()
+                        if not messages:
+                            continue
 
-                # Update metrics
-                if result.has_errors:
-                    sync_total.labels(connector=connector.name, status="partial").inc()
-                    sync_errors.labels(connector=connector.name).inc(len(result.errors))
-                else:
-                    sync_total.labels(connector=connector.name, status="success").inc()
+                        logger.debug(
+                            "messages_read",
+                            group=group,
+                            count=len(messages),
+                        )
 
-                entities_synced.labels(
-                    connector=connector.name,
-                    operation="created",
-                ).set(result.entities_created)
-                entities_synced.labels(
-                    connector=connector.name,
-                    operation="updated",
-                ).set(result.entities_updated)
-                organizations_synced.labels(
-                    connector=connector.name,
-                    operation="created",
-                ).set(result.organizations_created)
-                organizations_synced.labels(
-                    connector=connector.name,
-                    operation="updated",
-                ).set(result.organizations_updated)
+                        for msg_id, envelope in messages:
+                            await self._process_job(group, msg_id, envelope)
 
-                import time
-
-                last_sync_timestamp.labels(connector=connector.name).set(time.time())
-
-                logger.info(
-                    f"Sync completed for {connector.name}",
-                    **result.to_dict(),
-                )
-
-                return result
+                    except Exception as e:
+                        logger.error(
+                            "consumer_read_failed",
+                            group=group,
+                            error=str(e),
+                            exc_info=True,
+                        )
+                        # Continue to next group on error
 
             except Exception as e:
                 logger.error(
-                    f"Sync failed for {connector.name}",
+                    "consumer_loop_error",
                     error=str(e),
                     exc_info=True,
                 )
-                sync_total.labels(connector=connector.name, status="failed").inc()
-                sync_errors.labels(connector=connector.name).inc()
+                # Sleep briefly before retry to avoid spin-loop
+                await asyncio.sleep(1)
 
-                return SyncResult(
-                    connector_name=connector.name,
-                    errors=[str(e)],
+        logger.info("consumer_loop_stopped")
+
+    async def _process_job(self, group: str, msg_id: str, envelope) -> None:
+        """Process a single job message.
+
+        Args:
+            group: Worker task group name
+            msg_id: Message ID from Redis Streams
+            envelope: JobEnvelope object
+
+        On success:
+        - mark_processed (idempotency)
+        - publish_result (success)
+        - ack (remove from pending)
+
+        On error:
+        - Log exception
+        - Do NOT ack (message stays pending for XAUTOCLAIM reclaim)
+
+        Wrapped in a span extracted from envelope.trace_context so this job
+        continues the distributed trace started by whatever enqueued it
+        (API request, another job, etc.) rather than showing up parentless.
+        """
+        from shared.observability import get_tracer
+
+        job_id = envelope.job_id
+        start_time = time.monotonic()
+        status = "error"
+
+        tracer = get_tracer("svc-worker")
+        parent_context = envelope.extract_trace_context()
+        with tracer.start_as_current_span(
+            "worker.process_job",
+            context=parent_context,
+            attributes={
+                "job.id": job_id,
+                "job.type": envelope.job_type,
+                "job.group": group,
+            },
+        ):
+            try:
+                status = await self._process_job_body(group, msg_id, envelope)
+            finally:
+                if _otel_metrics is not None:
+                    _otel_metrics["job_duration_histogram"].record(
+                        time.monotonic() - start_time,
+                        attributes={
+                            "job.type": envelope.job_type,
+                            "job.group": group,
+                            "status": status,
+                        },
+                    )
+
+    async def _process_job_body(self, group: str, msg_id: str, envelope) -> str:
+        """Execute the actual job handler dispatch (see _process_job for the span/metric wrapper).
+
+        Returns:
+            "success", "duplicate", "no_handler", or "error" -- used as the
+            job_duration_histogram's status attribute.
+        """
+        job_id = envelope.job_id
+
+        try:
+            # Check idempotency
+            if await self.jobbus.is_duplicate(job_id):
+                logger.debug(
+                    "job_duplicate_skipped",
+                    job_id=job_id,
+                    group=group,
+                    msg_id=msg_id,
+                )
+                await self.jobbus.ack(group, msg_id)
+                return "duplicate"
+
+            # Get handler for this group
+            handler = get_handler(group)
+            if not handler:
+                logger.error(
+                    "no_handler_found",
+                    group=group,
+                    job_id=job_id,
+                )
+                # ACK anyway to avoid replay loop
+                await self.jobbus.ack(group, msg_id)
+                return "no_handler"
+
+            # Execute handler
+            logger.info(
+                "job_executing",
+                job_id=job_id,
+                group=group,
+                job_type=envelope.job_type,
+            )
+
+            result = await handler(envelope)
+
+            # Mark processed (idempotency)
+            await self.jobbus.mark_processed(job_id)
+
+            # Publish result
+            await self.jobbus.publish_result(
+                group,
+                job_id,
+                "success",
+                result or {},
+            )
+
+            # Acknowledge
+            await self.jobbus.ack(group, msg_id)
+
+            logger.info(
+                "job_completed",
+                job_id=job_id,
+                group=group,
+            )
+            return "success"
+
+        except Exception as e:
+            logger.error(
+                "job_failed",
+                job_id=job_id,
+                group=group,
+                msg_id=msg_id,
+                error=str(e),
+                exc_info=True,
+            )
+            # Do NOT ack; message stays pending for XAUTOCLAIM
+            return "error"
+
+    async def _sweeper_task(self) -> None:
+        """XAUTOCLAIM sweeper: reclaim stale messages every minute.
+
+        Runs every minute via aiocron. For each group, calls reclaim_stale()
+        to identify messages stuck on this consumer for >= 60 seconds.
+        Messages at max_deliveries are auto-routed to DLQ.
+        Others are re-dispatched through _process_job.
+        """
+        if not self.jobbus:
+            logger.warning("sweeper_task: JobBus not initialized; exiting")
+            return
+
+        for group in self.worker_groups:
+            try:
+                logger.debug("sweeper_running", group=group)
+
+                reclaimed = await self.jobbus.reclaim_stale(
+                    group,
+                    self.consumer_name,
+                    min_idle_ms=60000,
+                    count=10,
                 )
 
-            finally:
-                # Disconnect connector
-                await connector.disconnect()
+                if not reclaimed:
+                    continue
 
-    async def _run_sync_cycle(self):
-        """Run a complete sync cycle for all connectors."""
-        logger.info("Starting sync cycle for all connectors")
+                logger.info(
+                    "messages_reclaimed",
+                    group=group,
+                    count=len(reclaimed),
+                )
 
-        results = await asyncio.gather(
-            *[self._sync_connector(connector) for connector in self.connectors],
-            return_exceptions=True,
-        )
+                # Re-dispatch reclaimed messages through handler
+                for reclaimed_msg in reclaimed:
+                    await self._process_job(
+                        group,
+                        reclaimed_msg.msg_id,
+                        reclaimed_msg.envelope,
+                    )
 
-        total_ops = sum(
-            r.total_operations for r in results if isinstance(r, SyncResult)
-        )
-        total_errors = sum(len(r.errors) for r in results if isinstance(r, SyncResult))
+            except Exception as e:
+                logger.error(
+                    "sweeper_failed",
+                    group=group,
+                    error=str(e),
+                    exc_info=True,
+                )
+                # Continue to next group; fail-soft
 
-        logger.info(
-            "Sync cycle completed",
-            total_operations=total_ops,
-            total_errors=total_errors,
-        )
+    async def _service_node_heartbeat(self) -> None:
+        """Best-effort service_nodes heartbeat (node-count license enforcement).
 
-    async def _run_discovery_poll(self):
-        """Poll for and execute pending cloud discovery jobs."""
-        if not self.discovery_executor:
+        Runs every minute via aiocron (see _setup_scheduled_syncs), plus once
+        immediately on startup. Registers this pod on first heartbeat if no
+        row exists yet (handles worker start racing DB migrations/table
+        creation), then refreshes heartbeat_ts on every subsequent call.
+        Never raises -- a missed heartbeat just lets this pod's row go stale,
+        which self-corrects the node count rather than crashing the worker.
+        """
+        if not self.db_manager:
             return
 
         try:
-            with discovery_poll_duration.time():
-                executed = self.discovery_executor.run_pending()
-                if executed > 0:
-                    discovery_jobs_executed.labels(
-                        provider="cloud", status="success"
-                    ).inc(executed)
-                    logger.info(f"Discovery poll completed: {executed} job(s) executed")
+            from apps.api.common.licensing.enforce import check_limit
+            from apps.api.models.service_node import heartbeat_node, register_node
+
+            service_type = os.environ.get("ELDER_SERVICE_TYPE", "worker")
+            pod_id = os.environ.get("HOSTNAME") or self.consumer_name
+            db = self.db_manager.write
+
+            already_registered = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: heartbeat_node(db, pod_id)
+            )
+            if already_registered:
+                return
+
+            # Node limits are a soft scale gate: check_limit's WARN log
+            # (`license_limit_would_block`) is the entire point of this call
+            # -- its 402 return is intentionally discarded so this worker
+            # pod is never refused registration, even when the
+            # elder.license-enforcement flag is ON (see Phase 2 plan Task 5).
+            # self.health_app has no request/DB extensions of its own (it
+            # only serves /healthz + /status) -- populate the minimum
+            # check_limit needs (db, and a license_client defaulting to None
+            # -> community-tier fallback, same graceful degradation as the
+            # API app) for the duration of this app_context.
+            self.health_app.db = db
+            self.health_app.extensions.setdefault("license_client", None)
+            async with self.health_app.app_context():
+                await check_limit("node", None)
+
+            await asyncio.get_event_loop().run_in_executor(
+                None, lambda: register_node(db, service_type, pod_id)
+            )
         except Exception as e:
-            discovery_jobs_executed.labels(provider="cloud", status="failed").inc()
-            logger.error(f"Discovery poll failed: {e}", exc_info=True)
+            logger.warning(f"service_node_heartbeat_failed: {e}")
+
+    @staticmethod
+    def _get_csv_import_poll_interval() -> int:
+        """Resolve CSV batch importer poll interval from env or settings."""
+        raw = os.environ.get("CSV_IMPORT_POLL_INTERVAL_SECONDS")
+        if raw is not None and raw.strip() != "":
+            try:
+                return max(1, int(raw))
+            except ValueError:
+                logger.warning(
+                    "invalid_csv_import_poll_interval",
+                    value=raw,
+                    default=settings.csv_import_poll_interval_seconds,
+                )
+        return max(1, int(settings.csv_import_poll_interval_seconds))
+
+    async def _run_csv_import_batch_once(self) -> int:
+        """Execute a single async S3 CSV import batch pass off the event loop."""
+        db = self.db_manager.write if self.db_manager is not None else None
+        try:
+            return await asyncio.to_thread(
+                run_batch_once,
+                db=db,
+                worker_id=self.consumer_name,
+            )
+        except Exception as e:
+            logger.error(
+                "csv_import_batch_poll_failed",
+                error=str(e),
+                exc_info=True,
+            )
+            return 1
+
+    async def _process_csv_import_job_id(self, job_id: str) -> str | None:
+        """Claim and process one queued CSV import job_id off the event loop."""
+        db = self.db_manager.write if self.db_manager is not None else None
+        try:
+            return await asyncio.to_thread(
+                process_job_by_id,
+                job_id,
+                db=db,
+                worker_id=self.consumer_name,
+            )
+        except Exception as e:
+            logger.error(
+                "csv_import_queue_job_failed",
+                job_id=job_id,
+                error=str(e),
+                exc_info=True,
+            )
+            return None
+
+    async def _csv_import_queue_loop(self) -> None:
+        """Valkey/Redis BRPOP consumer for immediate CSV import job dispatch."""
+        if not self.redis:
+            return
+        if not get_csv_import_storage().is_configured:
+            return
+
+        logger.info(
+            "csv_import_queue_consumer_started",
+            queue=CSV_IMPORT_QUEUE_KEY,
+        )
+        try:
+            while self.running:
+                try:
+                    item = await self.redis.brpop(CSV_IMPORT_QUEUE_KEY, timeout=5)
+                    if not item:
+                        continue
+                    _, raw_job_id = item
+                    job_id = (
+                        raw_job_id.decode("utf-8")
+                        if isinstance(raw_job_id, bytes)
+                        else str(raw_job_id)
+                    ).strip()
+                    if job_id:
+                        await self._process_csv_import_job_id(job_id)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error(
+                        "csv_import_queue_consumer_error",
+                        queue=CSV_IMPORT_QUEUE_KEY,
+                        error=str(e),
+                        exc_info=True,
+                    )
+                    await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            logger.info("csv_import_queue_consumer_stopped")
+
+    async def _csv_import_loop(self) -> None:
+        """Periodic fallback DB sweep for S3-backed CSV import jobs."""
+        interval = self._get_csv_import_poll_interval()
+        logger.info("csv_import_batch_loop_started", interval_seconds=interval)
+        try:
+            while self.running:
+                await self._run_csv_import_batch_once()
+                if not self.running:
+                    break
+                await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            logger.info("csv_import_batch_loop_stopped")
 
     def _setup_scheduled_syncs(self):
         """Setup scheduled sync tasks using aiocron."""
         logger.info("Setting up scheduled syncs")
 
-        # Schedule discovery job polling (every 5 minutes)
-        if self.discovery_executor:
+        # Schedule service_nodes heartbeat (every minute) for node-count
+        # license enforcement (Phase 2, Task 2)
+        @aiocron.crontab("* * * * *")
+        async def service_node_heartbeat():
+            await self._service_node_heartbeat()
+
+        logger.info("Scheduled service_nodes heartbeat (every minute)")
+
+        # Schedule XAUTOCLAIM sweeper (every minute) for job-bus consumer
+        if self.jobbus and self.worker_groups:
+
+            @aiocron.crontab("* * * * *")
+            async def xautoclaim_sweeper():
+                await self._sweeper_task()
+
+            logger.info("Scheduled XAUTOCLAIM sweeper (every minute)")
+
+        # Schedule helpdesk SLA breach checker (every 5 minutes) if helpdesk_sla_breach group enabled
+        if self.jobbus and "helpdesk_sla_breach" in self.worker_groups:
+            import uuid
 
             @aiocron.crontab("*/5 * * * *")
-            async def discovery_poll():
-                await self._run_discovery_poll()
+            async def helpdesk_sla_breach_scheduler():
+                """Enqueue helpdesk SLA breach check jobs for all tenants."""
+                try:
+                    from shared.database.manager import DatabaseManager
 
-            logger.info("Scheduled discovery job polling (every 5 minutes)")
+                    def _enqueue_sla_checks():
+                        """Fetch tenants and enqueue SLA breach checks (sync)."""
+                        import asyncio
 
-        for connector in self.connectors:
-            # Determine sync interval based on connector type
-            if isinstance(connector, AWSConnector):
-                interval = settings.aws_sync_interval
-            elif isinstance(connector, GCPConnector):
-                interval = settings.gcp_sync_interval
-            elif isinstance(connector, GoogleWorkspaceConnector):
-                interval = settings.google_workspace_sync_interval
-            elif isinstance(connector, LDAPConnector):
-                interval = settings.ldap_sync_interval
-            elif isinstance(connector, OktaConnector):
-                interval = settings.okta_sync_interval
-            elif isinstance(connector, AuthentikConnector):
-                interval = settings.authentik_sync_interval
-            elif isinstance(connector, LXDConnector):
-                interval = settings.lxd_sync_interval
-            else:
-                interval = 3600  # Default to 1 hour
+                        db_manager = DatabaseManager(
+                            primary_url=settings.database_url,
+                            replica_url=settings.database_read_url,
+                            pool_size=settings.db_pool_size,
+                        )
 
-            # Convert interval to cron expression (every X seconds)
-            # For simplicity, we'll use minutes if interval >= 60
-            if interval >= 3600:
-                hours = interval // 3600
-                cron_expr = f"0 */{hours} * * *"  # Every N hours
-            elif interval >= 60:
-                minutes = interval // 60
-                cron_expr = f"*/{minutes} * * * *"  # Every N minutes
-            else:
-                # For intervals < 60 seconds, just run every minute
-                # (aiocron doesn't support sub-minute intervals well)
-                cron_expr = "* * * * *"
+                        try:
+                            # Fetch all distinct tenants with helpdesk module enabled
+                            # For now, just query all active tenants (will be
+                            # filtered by tenant_modules in prod).
+                            # penguin-dal selects go through the DAL callable —
+                            # `db.<table>.select()` resolves `select` as a column
+                            # name and raises AttributeError.
+                            rows = db_manager.write(
+                                db_manager.write.tenants.is_active == True  # noqa: E712
+                            ).select()
 
-            logger.info(
-                f"Scheduling {connector.name}",
-                interval=interval,
-                cron=cron_expr,
-            )
+                            jobs_to_enqueue = []
+                            for tenant in rows:
+                                tenant_id = tenant.id
 
-            # Schedule the sync
-            @aiocron.crontab(cron_expr)
-            async def scheduled_sync(conn=connector):
-                await self._sync_connector(conn)
+                                job_id = str(uuid.uuid4())
+                                idempotency_key = f"hd_sla_breach_{tenant_id}"
+
+                                jobs_to_enqueue.append(
+                                    {
+                                        "stream_group": "helpdesk_sla_breach",
+                                        "job_type": "sla_breach_check",
+                                        "payload": {},
+                                        "job_id": job_id,
+                                        "tenant_id": tenant_id,
+                                        "idempotency_key": idempotency_key,
+                                    }
+                                )
+
+                            return jobs_to_enqueue
+
+                        finally:
+                            db_manager.close()
+
+                    jobs_to_enqueue = await asyncio.to_thread(_enqueue_sla_checks)
+
+                    for job_kwargs in jobs_to_enqueue:
+                        await self.jobbus.enqueue(**job_kwargs)
+                        logger.debug(
+                            "helpdesk_sla_breach_enqueued",
+                            job_id=job_kwargs["job_id"],
+                        )
+
+                except Exception as e:
+                    logger.error(
+                        "helpdesk_sla_breach_scheduler_failed",
+                        error=str(e),
+                        exc_info=True,
+                    )
+
+            logger.info("Scheduled helpdesk SLA breach check (every 5 minutes)")
 
     async def start(self):
         """Start the worker service."""
         logger.info("Starting Elder Worker Service")
         self.running = True
 
-        # Initialize connectors
-        self._initialize_connectors()
+        # Initialize job-bus consumer
+        await self._init_jobbus()
 
-        # Run initial sync if configured
-        if settings.sync_on_startup:
-            logger.info("Running initial sync on startup")
-            await self._run_sync_cycle()
-            # Also run initial discovery poll
-            await self._run_discovery_poll()
+        # Register/heartbeat this pod immediately (node-count license
+        # enforcement, Phase 2 Task 2) rather than waiting up to 60s for the
+        # first aiocron tick
+        await self._service_node_heartbeat()
 
-        # Setup scheduled syncs (includes discovery polling)
+        # Setup scheduled background tasks (heartbeat, XAUTOCLAIM sweeper, SLA breach)
         self._setup_scheduled_syncs()
+
+        # Launch consumer task (keeps running in background)
+        if self.jobbus and self.worker_groups:
+            self.consumer_task = asyncio.create_task(self._consumer_loop())
+            logger.info(
+                "job_bus_consumer_launched",
+                consumer_name=self.consumer_name,
+                groups=sorted(self.worker_groups),
+            )
+
+        # Launch Valkey/Redis CSV import queue consumer (when Redis + S3 configured)
+        if self.redis and get_csv_import_storage().is_configured:
+            self.csv_import_queue_task = asyncio.create_task(
+                self._csv_import_queue_loop()
+            )
+            logger.info(
+                "csv_import_queue_consumer_launched",
+                queue=CSV_IMPORT_QUEUE_KEY,
+            )
+
+        # Launch periodic S3 CSV batch importer fallback sweep (skips cleanly if S3 unconfigured)
+        self.csv_import_task = asyncio.create_task(self._csv_import_loop())
+        logger.info(
+            "csv_import_batch_task_launched",
+            interval_seconds=self._get_csv_import_poll_interval(),
+        )
 
         logger.info(
             "Elder Worker Service started",
@@ -408,12 +740,41 @@ class WorkerService:
         logger.info("Stopping Elder Worker Service")
         self.running = False
 
+        # Cancel consumer task if running
+        if self.consumer_task and not self.consumer_task.done():
+            self.consumer_task.cancel()
+            try:
+                await self.consumer_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel CSV import Valkey/Redis queue consumer task if running
+        if self.csv_import_queue_task and not self.csv_import_queue_task.done():
+            self.csv_import_queue_task.cancel()
+            try:
+                await self.csv_import_queue_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel CSV batch importer fallback sweep task if running
+        if self.csv_import_task and not self.csv_import_task.done():
+            self.csv_import_task.cancel()
+            try:
+                await self.csv_import_task
+            except asyncio.CancelledError:
+                pass
+
         # Cancel all sync tasks
         for task in self.sync_tasks:
             task.cancel()
 
         # Wait for tasks to complete
         await asyncio.gather(*self.sync_tasks, return_exceptions=True)
+
+        # Close Redis connection
+        if self.redis:
+            await self.redis.close()
+            logger.info("redis_connection_closed")
 
         # Close database connections
         if self.db_manager:
@@ -422,18 +783,25 @@ class WorkerService:
         logger.info("Elder Worker Service stopped")
 
     def run_health_server(self):
-        """Run Quart health check server in a separate thread."""
+        """Run health check server in a separate thread using hypercorn."""
+        import asyncio
         import threading
 
-        def run_quart():
-            self.health_app.run(
-                host="0.0.0.0",
-                port=settings.health_check_port,
-                debug=False,
-                use_reloader=False,
+        from hypercorn.asyncio import serve
+        from hypercorn.config import Config
+
+        def run_hypercorn():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            config = Config()
+            config.bind = [f"0.0.0.0:{settings.health_check_port}"]
+            config.loglevel = "WARNING"
+            # Disable signal handlers — running in non-main thread
+            loop.run_until_complete(
+                serve(self.health_app, config, shutdown_trigger=asyncio.Event().wait)
             )
 
-        health_thread = threading.Thread(target=run_quart, daemon=True)
+        health_thread = threading.Thread(target=run_hypercorn, daemon=True)
         health_thread.start()
         logger.info(
             "Health check server started",

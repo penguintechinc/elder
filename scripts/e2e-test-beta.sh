@@ -335,11 +335,9 @@ if [[ $FAILED -gt 0 ]]; then
     log_error "API suite: $FAILED/$TOTAL_API failed"
     for ep in "${FAILED_ENDPOINTS[@]}"; do echo "    $ep"; done
     PHASE_RESULTS+=("API Suite: FAIL ($FAILED/$TOTAL_API failed)")
-    API_SUITE_FAILED=true
 else
     log_success "API suite: $PASSED/$TOTAL_API passed"
     PHASE_RESULTS+=("API Suite: PASS ($PASSED/$TOTAL_API)")
-    API_SUITE_FAILED=false
 fi
 
 ###############################################################################
@@ -353,8 +351,8 @@ if [ ! -f "$WEB_DIR/playwright.config.ts" ]; then
     PHASE_RESULTS+=("Playwright: SKIPPED (no config)")
 else
     # Port-forward the web service so Playwright's browser can reach it without Host header
-    log_info "Starting kubectl port-forward svc/elder-web $PLAYWRIGHT_PORT:3000..."
-    kubectl --context "$CONTEXT" port-forward -n "$NAMESPACE" svc/elder-web "$PLAYWRIGHT_PORT:3000" &
+    log_info "Starting kubectl port-forward svc/hub-webui $PLAYWRIGHT_PORT:8080..."
+    kubectl --context "$CONTEXT" port-forward -n "$NAMESPACE" svc/hub-webui "$PLAYWRIGHT_PORT:8080" &
     PF_PID=$!
     sleep 3
 
@@ -365,8 +363,8 @@ else
         log_success "Web port-forward running (PID $PF_PID)"
 
         # Also port-forward the API so Playwright's page.evaluate() fetch() can reach it
-        log_info "Starting kubectl port-forward svc/elder-api $API_PORT:5000..."
-        kubectl --context "$CONTEXT" port-forward -n "$NAMESPACE" svc/elder-api "$API_PORT:5000" &
+        log_info "Starting kubectl port-forward svc/hub-api $API_PORT:5000..."
+        kubectl --context "$CONTEXT" port-forward -n "$NAMESPACE" svc/hub-api "$API_PORT:5000" &
         API_PF_PID=$!
         sleep 2
         if kill -0 "$API_PF_PID" 2>/dev/null; then

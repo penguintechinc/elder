@@ -87,6 +87,12 @@ Before committing, run these checks in this order (or use `./scripts/pre-commit/
   - Dependencies and relationships
   - Village IDs for all created items
 
+  For the unified Issues/support/CRM model (support issues, `customer_company`/
+  `customer_contact` CRM entities, intake forms, assignment webhooks), also run:
+  ```bash
+  make seed-demo-unified
+  ```
+
   Needed before capturing screenshots and UI testing.
   See: [TESTING.md - Mock Data Scripts](TESTING.md#mock-data-scripts)
 
@@ -340,6 +346,7 @@ Before capturing screenshots, ensure development environment is running with moc
 ```bash
 make dev                   # Start all services
 make seed-mock-data       # Populate with 3-4 test items per entity
+make seed-demo-unified    # Populate unified-model demo data (support issues, CRM, intake forms, webhooks)
 ```
 
 ### Capture Screenshots
