@@ -141,6 +141,7 @@ class TestPopulateClaims:
             app,
             {
                 "sub": "41",
+                "type": "access",
                 "tenant": "7",
                 "scope": ["a:read", " b:write ", 5, ""],
                 "roles": ["x"],

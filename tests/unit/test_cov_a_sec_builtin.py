@@ -28,6 +28,7 @@ def _tok(app, tenant_id, identity_id, scopes):
     """Mint a signed JWT for an existing identity with the given scopes."""
     payload = {
         "sub": str(identity_id),
+        "type": "access",
         "iat": datetime.now(UTC),
         "exp": datetime.now(UTC) + timedelta(hours=1),
         "scope": scopes,
@@ -299,15 +300,18 @@ class TestBuiltinRoutesCrud:
     @pytest.mark.parametrize(
         "method,url,kw",
         [
-            ("get", BASE + "?organization_id=1", {}),
-            ("get", BASE + "/x?organization_id=1", {}),
-            ("post", BASE, {"json": {"name": "n", "value": "v", "organization_id": 1}}),
-            ("put", BASE + "/x?organization_id=1", {"json": {"value": "v"}}),
-            ("delete", BASE + "/x?organization_id=1", {}),
+            ("get", BASE + "?organization_id={org}", {}),
+            ("get", BASE + "/x?organization_id={org}", {}),
+            ("post", BASE, {"json": {"name": "n", "value": "v"}}),
+            ("put", BASE + "/x?organization_id={org}", {"json": {"value": "v"}}),
+            ("delete", BASE + "/x?organization_id={org}", {}),
         ],
     )
     async def test_unexpected_client_error_is_500(self, app, world, method, url, kw):
-        """Unexpected provider failures surface as a generic 500."""
+        """Unexpected provider failures (own-tenant org) surface as a generic 500."""
+        url = url.format(org=world["org_a"])
+        if "json" in kw and method == "post":
+            kw = {"json": {**kw["json"], "organization_id": world["org_a"]}}
         with patch(
             "apps.api.modules.secrets.routes.builtin_secrets.BuiltinSecretsClient",
             side_effect=RuntimeError("kaboom"),
@@ -321,10 +325,6 @@ class TestBuiltinTenantIsolation:
     """Tenant isolation of the built-in secrets routes."""
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: builtin_secrets.py:34 uses caller-supplied organization_id without tenant check",
-    )
     async def test_cannot_read_other_tenants_secret(self, app, world):
         """Tenant A must not be able to list or read tenant B's org secrets."""
         name = f"tb-{world['sfx']}"
@@ -456,11 +456,6 @@ class TestBuiltinClient:
                 c.get_secret("x")
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason="bug: builtin_client.py create/update/delete call self.db.rollback(), "
-        "which penguin-dal lacks (TableNotFoundError escapes instead of SecretProviderException)",
-    )
     @pytest.mark.parametrize("op", ["create", "update", "delete"])
     async def test_write_errors_are_wrapped(self, app, world, op):
         """DB failures in write paths should surface as SecretProviderException."""

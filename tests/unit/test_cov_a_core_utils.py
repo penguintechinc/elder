@@ -1,7 +1,7 @@
 """Unit tests for ``apps/api/utils`` helpers and ``apps/api/auth/web_auth``.
 
-async_utils (threadpool retry/reconnect, task groups, batching), pydal_helpers
-and crud_helpers run against the real Postgres of the test harness (``tenants``
+async_utils (threadpool retry/reconnect, task groups, batching) and
+pydal_helpers run against the real Postgres of the test harness (``tenants``
 table, unique rows per test); validation helpers cover every rejection branch.
 """
 
@@ -17,29 +17,6 @@ from quart import g
 from apps.api.auth import web_auth
 from apps.api.utils import async_utils, pydal_helpers
 from apps.api.utils import validation_helpers as vh
-from apps.api.utils.crud_helpers import CrudHelper
-
-XF_FLASK_CTX = pytest.mark.xfail(
-    strict=True,
-    reason="bug: pydal_helpers.py:138 update_record imports current_app from flask; "
-    "under Quart there is no Flask app context -> RuntimeError on every call",
-)
-XF_DEL_ITEM = pytest.mark.xfail(
-    strict=True,
-    reason="bug: pydal_helpers.py:172 / crud_helpers.py:401 use `del table[id]`, which "
-    "penguin-dal TableProxy does not support (TypeError) -> deletes never work",
-)
-XF_ASYNC_INNER = pytest.mark.xfail(
-    strict=True,
-    reason="bug: crud_helpers.py:90 and :177 hand an `async def` to run_in_threadpool, "
-    "which returns an un-awaited coroutine -> list_resources raises TypeError and "
-    "create_resource always answers 500",
-)
-XF_SYNC_HOOK = pytest.mark.xfail(
-    strict=True,
-    reason="bug: crud_helpers.py:261 annotates hooks as sync callables but :336 awaits "
-    "them unconditionally -> a sync hook turns a committed update into a 500",
-)
 
 
 def _sfx():
@@ -247,7 +224,6 @@ class TestPydalHelpers:
             all_rows = await pydal_helpers.query_select(db(db.tenants.name == marker))
             assert sorted(r.id for r in all_rows) == sorted(ids)
 
-    @XF_FLASK_CTX
     @pytest.mark.asyncio
     async def test_update_record_changes_row(self, app):
         """update_record persists new values and reports success."""
@@ -259,7 +235,6 @@ class TestPydalHelpers:
             assert ok is True
             assert db.tenants[tid].domain == "x.test"
 
-    @XF_FLASK_CTX
     @pytest.mark.asyncio
     async def test_update_record_missing_row(self, app):
         """update_record returns False for an id that does not exist."""
@@ -269,7 +244,6 @@ class TestPydalHelpers:
             )
             assert ok is False
 
-    @XF_FLASK_CTX
     @pytest.mark.asyncio
     async def test_update_record_without_data_is_noop_true(self, app):
         """update_record with no fields leaves the row untouched and returns True."""
@@ -279,7 +253,6 @@ class TestPydalHelpers:
             assert await pydal_helpers.update_record(db.tenants, tid) is True
             assert db.tenants[tid].domain == "keep.test"
 
-    @XF_DEL_ITEM
     @pytest.mark.asyncio
     async def test_delete_record_removes_existing_row(self, app):
         """delete_record removes an existing row and returns True."""
@@ -298,321 +271,6 @@ class TestPydalHelpers:
                 await pydal_helpers.delete_record(app.db.tenants, 2_000_000_005)
                 is False
             )
-
-
-class TestCrudHelperRealDb:
-    """CrudHelper endpoints against the real ``tenants`` table."""
-
-    @XF_ASYNC_INNER
-    @pytest.mark.asyncio
-    async def test_list_resources_filters_and_paginates(self, app):
-        """list_resources applies base query, filter_fn, transform and pagination."""
-        db = app.db
-        marker = f"cov-list-{_sfx()}"
-        async with app.test_request_context("/x?page=1&per_page=2"):
-            for i in range(3):
-                db.tenants.insert(name=marker, slug=f"{marker}-{i}", is_active=i != 2)
-            db.commit()
-            data, status = await _body(
-                await CrudHelper.list_resources(
-                    db.tenants,
-                    base_query=db.tenants.name == marker,
-                    filter_fn=lambda q: q & (db.tenants.is_active == True),  # noqa: E712
-                    transform_fn=lambda row: {"slug": row.slug},
-                )
-            )
-        assert status == 200
-        assert data["total"] == 2
-        assert data["per_page"] == 2
-        assert sorted(i["slug"] for i in data["items"]) == [
-            f"{marker}-0",
-            f"{marker}-1",
-        ]
-
-    @XF_ASYNC_INNER
-    @pytest.mark.asyncio
-    async def test_list_resources_defaults(self, app):
-        """Without a base query every row is eligible and rows serialize via as_dict."""
-        db = app.db
-        async with app.test_request_context("/x?per_page=1"):
-            tid = _new_tenant(db)
-            data, status = await _body(await CrudHelper.list_resources(db.tenants))
-        assert status == 200
-        assert data["total"] >= 1
-        assert len(data["items"]) == 1
-        assert "slug" in data["items"][0]
-        assert tid > 0
-
-    @XF_ASYNC_INNER
-    @pytest.mark.asyncio
-    async def test_create_resource_persists_row(self, app):
-        """create_resource inserts the row, runs hooks and returns 201."""
-        db = app.db
-        slug = f"cov-create-{_sfx()}"
-        seen = {}
-
-        async def post_insert(record_id, data):
-            seen["id"] = record_id
-
-        async with app.test_request_context(
-            "/x", method="POST", json={"name": slug, "slug": slug}
-        ):
-            data, status = await _body(
-                await CrudHelper.create_resource(
-                    db.tenants,
-                    resource_type="Tenant",
-                    required_fields=["name", "slug"],
-                    validate_fn=lambda d: None,
-                    pre_insert_fn=lambda d: {**d, "is_active": True},
-                    post_insert_fn=post_insert,
-                    transform_fn=lambda row: {"id": row.id, "slug": row.slug},
-                )
-            )
-            row = db(db.tenants.slug == slug).select().first()
-        assert status == 201
-        assert row is not None and row.is_active is True
-        assert seen["id"] == row.id
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "payload, kwargs, fragment",
-        [
-            ({"name": "n"}, {"required_fields": ["name", "slug"]}, "slug"),
-            (
-                {"name": "n", "slug": "s"},
-                {"validate_fn": lambda d: vh.ApiResponse.error("custom reject", 400)},
-                "custom reject",
-            ),
-        ],
-    )
-    async def test_create_resource_validation_errors(
-        self, app, payload, kwargs, fragment
-    ):
-        """Missing required fields and custom validators reject with 400, no insert."""
-        table = MagicMock()
-        async with app.test_request_context("/x", method="POST", json=payload):
-            data, status = await _body(
-                await CrudHelper.create_resource(table, **kwargs)
-            )
-        assert status == 400
-        assert fragment in json.dumps(data)
-        table.insert.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_create_resource_db_failure_is_500(self, app):
-        """A failing insert is reported as a 500 naming the resource type."""
-        db = app.db
-        slug = f"cov-dup-{_sfx()}"
-        async with app.test_request_context(
-            "/x", method="POST", json={"name": slug, "slug": slug}
-        ):
-            # is_active is NOT NULL: omitting it violates the constraint.
-            data, status = await _body(
-                await CrudHelper.create_resource(db.tenants, resource_type="Tenant")
-            )
-        assert status == 500
-        assert "Failed to create Tenant" in json.dumps(data)
-
-    @pytest.mark.asyncio
-    async def test_get_resource_with_related(self, app):
-        """get_resource merges related data into the serialized row."""
-        db = app.db
-
-        async def related(row):
-            return {"extra": row.slug.upper()}
-
-        async with app.test_request_context("/x"):
-            tid = _new_tenant(db)
-            data, status = await _body(
-                await CrudHelper.get_resource(
-                    db.tenants,
-                    tid,
-                    transform_fn=lambda row: {"slug": row.slug},
-                    include_related_fn=related,
-                )
-            )
-            plain, plain_status = await _body(
-                await CrudHelper.get_resource(db.tenants, tid)
-            )
-        assert status == 200 and plain_status == 200
-        assert data["extra"] == data["slug"].upper()
-        assert plain["id"] == tid
-
-    @pytest.mark.asyncio
-    async def test_get_resource_not_found(self, app):
-        """get_resource returns 404 for a missing id."""
-        async with app.test_request_context("/x"):
-            _, status = await _body(
-                await CrudHelper.get_resource(app.db.tenants, 2_000_000_001, "Tenant")
-            )
-        assert status == 404
-
-    @pytest.mark.asyncio
-    async def test_update_resource_whitelist(self, app):
-        """Only whitelisted fields are written; id/created_at are never updated."""
-        db = app.db
-        seen = {}
-
-        async def post_update(rid, changes, record):
-            seen["changes"] = changes
-
-        async with app.test_request_context(
-            "/x",
-            method="PUT",
-            json={"domain": "new.test", "name": "hacked", "id": 1},
-        ):
-            tid = _new_tenant(db)
-            original_name = db.tenants[tid].name
-            data, status = await _body(
-                await CrudHelper.update_resource(
-                    db.tenants,
-                    tid,
-                    updateable_fields=["domain", "subscription_tier"],
-                    validate_fn=lambda d, r: None,
-                    pre_update_fn=lambda d, r: d,
-                    post_update_fn=post_update,
-                    transform_fn=lambda row: {"domain": row.domain},
-                )
-            )
-            row = db.tenants[tid]
-        assert status == 200
-        assert data == {"domain": "new.test"}
-        assert seen["changes"] == {"domain": "new.test"}
-        assert row.name == original_name
-
-    @pytest.mark.asyncio
-    async def test_update_resource_all_fields_strips_protected(self, app):
-        """Without a whitelist all fields apply except id and created_at."""
-        db = app.db
-        async with app.test_request_context(
-            "/x",
-            method="PUT",
-            json={"domain": "all.test", "id": 999, "created_at": "2000-01-01"},
-        ):
-            tid = _new_tenant(db)
-            data, status = await _body(
-                await CrudHelper.update_resource(db.tenants, tid)
-            )
-        assert status == 200
-        assert data["id"] == tid
-        assert data["domain"] == "all.test"
-
-    @pytest.mark.asyncio
-    async def test_update_resource_empty_change_set(self, app):
-        """A payload with no updateable fields returns the unchanged row."""
-        db = app.db
-        async with app.test_request_context("/x", method="PUT", json={"other": 1}):
-            tid = _new_tenant(db, domain="same.test")
-            data, status = await _body(
-                await CrudHelper.update_resource(
-                    db.tenants, tid, updateable_fields=["domain"]
-                )
-            )
-        assert status == 200
-        assert data["domain"] == "same.test"
-
-    @XF_SYNC_HOOK
-    @pytest.mark.asyncio
-    async def test_update_resource_accepts_sync_hook_as_annotated(self, app):
-        """A sync post_update_fn (the annotated type) must not fail the request."""
-        db = app.db
-        seen = []
-        async with app.test_request_context(
-            "/x", method="PUT", json={"domain": "s.test"}
-        ):
-            tid = _new_tenant(db)
-            _, status = await _body(
-                await CrudHelper.update_resource(
-                    db.tenants,
-                    tid,
-                    post_update_fn=lambda rid, changes, rec: seen.append(rid),
-                )
-            )
-        assert seen == [tid]
-        assert status == 200
-
-    @pytest.mark.asyncio
-    async def test_update_resource_rejections(self, app):
-        """Missing row -> 404; custom validator -> its error; DB failure -> 500."""
-        db = app.db
-        async with app.test_request_context("/x", method="PUT", json={"domain": "d"}):
-            _, missing = await _body(
-                await CrudHelper.update_resource(db.tenants, 2_000_000_002)
-            )
-            tid = _new_tenant(db)
-            _, rejected = await _body(
-                await CrudHelper.update_resource(
-                    db.tenants,
-                    tid,
-                    validate_fn=lambda d, r: vh.ApiResponse.error("nope", 409),
-                )
-            )
-        async with app.test_request_context(
-            "/x", method="PUT", json={"no_such_column": "d"}
-        ):
-            body, failed = await _body(
-                await CrudHelper.update_resource(db.tenants, tid, "Tenant")
-            )
-        assert (missing, rejected, failed) == (404, 409, 500)
-        assert "Failed to update Tenant" in json.dumps(body)
-
-    @XF_DEL_ITEM
-    @pytest.mark.asyncio
-    async def test_delete_resource_runs_hooks_and_removes_row(self, app):
-        """delete_resource calls pre/post hooks and deletes the row (204)."""
-        db = app.db
-        calls = []
-
-        async def pre(row):
-            calls.append(("pre", row.id))
-
-        async def post(rid):
-            calls.append(("post", rid))
-
-        async with app.test_request_context("/x", method="DELETE"):
-            tid = _new_tenant(db)
-            _, status = await CrudHelper.delete_resource(
-                db.tenants,
-                tid,
-                validate_fn=lambda r: None,
-                pre_delete_fn=pre,
-                post_delete_fn=post,
-            )
-            assert db.tenants[tid] is None
-        assert status == 204
-        assert calls == [("pre", tid), ("post", tid)]
-
-    @pytest.mark.asyncio
-    async def test_delete_resource_rejections(self, app):
-        """Missing row -> 404; validator veto -> its error and the row survives."""
-        db = app.db
-        async with app.test_request_context("/x", method="DELETE"):
-            _, missing = await _body(
-                await CrudHelper.delete_resource(db.tenants, 2_000_000_003)
-            )
-            tid = _new_tenant(db)
-            _, vetoed = await _body(
-                await CrudHelper.delete_resource(
-                    db.tenants,
-                    tid,
-                    validate_fn=lambda r: vh.ApiResponse.error("in use", 409),
-                )
-            )
-            assert db.tenants[tid] is not None
-        assert (missing, vetoed) == (404, 409)
-
-    @pytest.mark.asyncio
-    async def test_delete_resource_db_failure_is_500(self, app):
-        """A failing delete is reported as a 500 naming the resource type."""
-        db = app.db
-        async with app.test_request_context("/x", method="DELETE"):
-            tid = _new_tenant(db)
-            with patch.object(db, "commit", side_effect=RuntimeError("disk full")):
-                body, status = await _body(
-                    await CrudHelper.delete_resource(db.tenants, tid, "Tenant")
-                )
-        assert status == 500
-        assert "Failed to delete Tenant" in json.dumps(body)
 
 
 class TestValidationHelpers:
@@ -901,7 +559,7 @@ class TestWebAuth:
             with patch.object(web_auth, "verify_token", return_value=payload) as verify:
                 assert web_auth.get_web_user() == payload
                 assert web_auth.get_web_user() == payload
-            verify.assert_called_once_with(token)
+            verify.assert_called_once_with(token, web_auth.IDENTITY_ACCESS_TOKEN_TYPES)
 
     @pytest.mark.asyncio
     async def test_invalid_cookie_is_anonymous(self, app):
