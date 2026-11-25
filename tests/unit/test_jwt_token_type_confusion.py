@@ -156,6 +156,48 @@ class TestTokenTypeVerifierMatrix:
             assert result is None
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "minter", ["access", "refresh", "portal", "portal_refresh"]
+    )
+    @pytest.mark.parametrize(
+        "verifier", [v for v in VERIFIER_ACCEPTS if v != "web_session"]
+    )
+    async def test_real_minters_with_auth_time(self, app, minter, verifier):
+        """Tokens from the production minters (stamped with auth_time) land
+        only in their own verification context."""
+        from apps.api.api.v1.portal_auth import generate_tokens
+        from apps.api.auth.jwt_handler import generate_token, interactive_auth_time
+
+        identity = SimpleNamespace(
+            id=42, username="u", tenant_id=7, portal_role="observer", is_active=True
+        )
+        portal_user = {
+            "id": 42,
+            "email": "p@example.invalid",
+            "tenant_id": 7,
+            "tenant_role": "member",
+            "global_role": None,
+        }
+        async with app.app_context():
+            at = interactive_auth_time()
+            if minter in ("access", "refresh"):
+                token = generate_token(identity, minter, auth_time=at)
+                token_type = minter
+            else:
+                pair = generate_tokens(portal_user, auth_time=at)
+                token = pair[
+                    "refresh_token" if minter == "portal_refresh" else "access_token"
+                ]
+                token_type = (
+                    "portal_refresh" if minter == "portal_refresh" else "portal_user"
+                )
+        result = await _run_verifier(app, verifier, token)
+        if token_type in VERIFIER_ACCEPTS[verifier]:
+            assert result is not None and result["auth_time"] == at
+        else:
+            assert result is None
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("verifier", list(VERIFIER_ACCEPTS))
     async def test_expired_and_malformed_rejected(self, app, verifier):
         now = datetime.now(UTC)
