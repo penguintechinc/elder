@@ -1183,6 +1183,7 @@ def _ensure_inbound_tables(db: Any) -> None:
                 altered = True
             if "scopes" not in wh_cols:
                 conn.execute(
+                    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- DDL with constant column type chosen by dialect; no request input
                     text(
                         f"ALTER TABLE inbound_webhooks ADD COLUMN scopes {json_col_type}"
                     )
@@ -1218,6 +1219,7 @@ def _ensure_inbound_tables(db: Any) -> None:
                 altered = True
             if "action_result" not in ev_cols:
                 conn.execute(
+                    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- DDL with constant column type chosen by dialect; no request input
                     text(
                         f"ALTER TABLE inbound_webhook_events ADD COLUMN action_result {json_col_type}"
                     )

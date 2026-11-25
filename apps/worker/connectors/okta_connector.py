@@ -183,6 +183,7 @@ class OktaConnector(BaseConnector, GroupOperationsMixin):
                 # Create identity for group
                 identity = Identity(
                     username=group_name,
+                    # nosemgrep: generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account -- identity-type enum value / placeholder text, not a credential
                     identity_type="service_account",
                     auth_provider="okta",
                     email=None,

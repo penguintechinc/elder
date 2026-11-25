@@ -202,11 +202,13 @@ def backfill_village_ids(db: Any, redis_client: Any, default_tenant_id: int) -> 
             if "village_id" not in cols or "id" not in cols:
                 continue
             rows = conn.execute(
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- seed tooling; table names come from the ORM metadata, values are bound
                 text(f'SELECT id FROM "{name}" WHERE village_id IS NULL')  # noqa: S608
             ).fetchall()
             for (row_id,) in rows:
                 tid = default_tenant_id
                 conn.execute(
+                    # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- seed tooling; table names come from the ORM metadata, values are bound
                     text(f'UPDATE "{name}" SET village_id = :v WHERE id = :i'),  # noqa: S608
                     {"v": generate_village_id(tid, redis_client), "i": row_id},
                 )

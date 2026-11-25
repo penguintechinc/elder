@@ -282,6 +282,7 @@ def seed_support_bot(db: Any, tenant_id: int, redis_client: Any | None) -> int:
     bot_id = db.identities.insert(
         username=bot_username,
         email="support-bot@example.org",
+        # nosemgrep: generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account -- identity-type enum value / placeholder text, not a credential
         identity_type="service_account",
         auth_provider="local",
         is_active=True,

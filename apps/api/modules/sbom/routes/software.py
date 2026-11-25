@@ -77,6 +77,7 @@ def _ensure_software_columns(db) -> None:
         )
         try:
             with engine.begin() as conn:
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- DDL built from the hardcoded columns_to_add list; no request input
                 conn.execute(text(ddl))
         except Exception:
             pass

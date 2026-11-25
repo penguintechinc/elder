@@ -255,6 +255,7 @@ def _upgrade_stream_webhooks_pg(
         has_identities=has_identities,
     )
     conn.execute(
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
         sa.text(
             "UPDATE stream_webhooks AS t "  # nosec B608
             f"SET village_id = LPAD(TO_HEX({tenant_expr}), 8, '0') || '-' || "
@@ -281,6 +282,7 @@ def _init_global_sequence_pg(conn: sa.Connection) -> None:
         if "village_id" not in col_info:
             continue
         row = conn.execute(
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
             sa.text(
                 f"SELECT COALESCE("  # nosec B608 - hardcoded allowlist
                 "MAX(('x' || split_part(village_id, '-', 2))::bit(64)::bigint), 0"
@@ -349,6 +351,7 @@ def _create_and_backfill_village_ids_pg(
 
         # Re-mint any pre-existing cross-table duplicate before inserting into village_ids.
         conn.execute(
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
             sa.text(
                 f"UPDATE {table_name} AS t "  # nosec B608 - hardcoded allowlist
                 "SET village_id = ("
@@ -368,6 +371,7 @@ def _create_and_backfill_village_ids_pg(
 
         # Remove stale registry rows if rows were deleted/updated while triggers were absent.
         conn.execute(
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
             sa.text(
                 f"DELETE FROM village_ids v "  # nosec B608 - hardcoded allowlist
                 "WHERE v.table_name = :tbl "
@@ -382,6 +386,7 @@ def _create_and_backfill_village_ids_pg(
 
         # Backfill non-NULL village_ids idempotently.
         conn.execute(
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
             sa.text(
                 "INSERT INTO village_ids (village_id, tenant_id, table_name, record_id) "
                 "SELECT t.village_id, "
@@ -412,9 +417,11 @@ def _install_triggers_pg(conn: sa.Connection) -> None:
             continue
         trg_name = f"trg_{table_name}_sync_village_ids"
         conn.execute(
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
             sa.text(f"DROP TRIGGER IF EXISTS {trg_name} ON {table_name}")  # nosec B608
         )
         conn.execute(
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
             sa.text(
                 f"CREATE TRIGGER {trg_name} "  # nosec B608 - hardcoded allowlist
                 f"AFTER INSERT OR UPDATE OF village_id OR DELETE ON {table_name} "
@@ -509,6 +516,7 @@ def _upgrade_generic(conn: sa.Connection) -> None:
         if "id" not in cols or "village_id" not in cols:
             continue
         rows = conn.execute(
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
             sa.text(
                 f"SELECT id, village_id FROM {table_name} WHERE village_id IS NOT NULL"  # nosec B608
             )
@@ -542,6 +550,7 @@ def _upgrade_generic(conn: sa.Connection) -> None:
                     if collision is None:
                         vid = candidate
                         conn.execute(
+                            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
                             sa.text(
                                 f"UPDATE {table_name} SET village_id = :vid WHERE id = :id"  # nosec B608
                             ),
@@ -565,6 +574,7 @@ def _downgrade_postgres(conn: sa.Connection) -> None:
             continue
         trg_name = f"trg_{table_name}_sync_village_ids"
         conn.execute(
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
             sa.text(f"DROP TRIGGER IF EXISTS {trg_name} ON {table_name}")  # nosec B608
         )
 

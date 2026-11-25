@@ -399,7 +399,7 @@ describe("Integrations Hub", () => {
     fireEvent.change(screen.getByLabelText("Service Account JSON *"), {
       target: {
         value: JSON.stringify({
-          type: "service_account",
+          type: "service_account", // nosemgrep: generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account -- identity-type enum value / placeholder text, not a credential
           project_id: "emea-proj",
           private_key: "PEM",
           client_email: "sa@emea.iam.gserviceaccount.com",

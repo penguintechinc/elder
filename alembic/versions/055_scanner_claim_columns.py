@@ -90,7 +90,9 @@ def upgrade() -> None:
             )
 
     if _columns("discovery_jobs") and _columns("discovery_history"):
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
         op.execute(sa.text(_CARRY_OVER_LIVE_LEASES))
+        # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
         op.execute(sa.text(_CLEAR_STALE_LEASES))
 
 

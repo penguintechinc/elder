@@ -1261,6 +1261,7 @@ async def claim_pending_executions():
                 if worker_tenant_id is not None
                 else ""
             )
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- SQL fragments are constants; worker_cluster/tenant/limit values are bound params
             claim_sql = text(
                 f"""
                 WITH next_jobs AS (
