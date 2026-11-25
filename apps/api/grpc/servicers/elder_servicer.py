@@ -685,12 +685,25 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             self._handle_exception(context, e, "get_identity")
             return auth_pb2.GetIdentityResponse()
 
-    @_rpc(auth_pb2.UpdateIdentityResponse, USERS_WRITE)
-    def UpdateIdentity(self, request, context, caller):
+    def UpdateIdentity(self, request, context):
         """Update an identity of the caller's tenant.
 
-        Granting or revoking superuser is reserved for superuser callers.
+        ``is_superuser`` can never be changed over gRPC, whoever the caller
+        is: the request is refused before authentication or lookup, and the
+        change must be made through the REST API by a verified superuser.
         """
+        if request.HasField("is_superuser"):
+            logger.warning(
+                "grpc_update_identity_superuser_refused", identity_id=request.id
+            )
+            context.set_code(grpc.StatusCode.PERMISSION_DENIED)
+            context.set_details("is_superuser cannot be changed via gRPC")
+            return auth_pb2.UpdateIdentityResponse()
+        return self._update_identity(request, context)
+
+    @_rpc(auth_pb2.UpdateIdentityResponse, USERS_WRITE)
+    def _update_identity(self, request, context, caller):
+        """Apply a non-privileged identity update within the caller's tenant."""
         try:
             db = self.db
             identity = self._scoped_identity(db, request.id, caller.tenant_id)
@@ -698,11 +711,6 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             if not identity:
                 context.set_code(grpc.StatusCode.NOT_FOUND)
                 context.set_details(f"Identity with ID {request.id} not found")
-                return auth_pb2.UpdateIdentityResponse()
-
-            if request.HasField("is_superuser") and not caller.is_superuser:
-                context.set_code(grpc.StatusCode.PERMISSION_DENIED)
-                context.set_details("only a superuser may change is_superuser")
                 return auth_pb2.UpdateIdentityResponse()
 
             # Build update data dict (only include fields that are set)
@@ -713,18 +721,6 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 data["full_name"] = request.display_name
             if request.HasField("is_active"):
                 data["is_active"] = request.is_active
-            if request.HasField("is_superuser"):
-                # The gRPC surface has no caller authentication, so it can
-                # never grant or revoke superuser: that would let any caller
-                # make itself a global admin. Change it via the REST API as a
-                # verified superuser instead.
-                logger.warning(
-                    "grpc_update_identity_superuser_refused", identity_id=request.id
-                )
-                context.set_code(grpc.StatusCode.PERMISSION_DENIED)
-                context.set_details("is_superuser cannot be changed via gRPC")
-                return auth_pb2.UpdateIdentityResponse()
-
             # Update identity
             if data:
                 db(
