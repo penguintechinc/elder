@@ -37,7 +37,7 @@ from apps.api.utils.pagination import (
     parse_offset,
 )
 from apps.api.utils.rate_limiter import check_subject_rate_limit
-from apps.api.utils.tenant_scoping import get_current_tenant_id
+from apps.api.utils.tenant_scoping import caller_has_scope, get_current_tenant_id
 from apps.mcp.envutil import env_int
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,29 @@ def get_search_service():
     return SearchService(current_app.db_read)
 
 
+def _readable_types(requested: list[str]) -> list[str]:
+    """Drop resource families the caller has no read scope for.
+
+    Entities and organizations are gated by the route's
+    ``infrastructure:read`` scope; issues additionally need ``issues:read``.
+    """
+    if caller_has_scope("issues:read"):
+        return requested
+    return [t for t in requested if t != "issue"]
+
+
+def _tenant_or_403() -> tuple[int | None, Any]:
+    """Resolve the caller's tenant from the verified token claims only.
+
+    Returns ``(tenant_id, None)`` or ``(None, 403 response)`` when the token
+    carries no usable tenant -- a missing tenant never means "all tenants".
+    """
+    tenant_id = get_current_tenant_id()
+    if not tenant_id or tenant_id <= 0:
+        return None, ApiResponse.forbidden("Tenant context required")
+    return tenant_id, None
+
+
 # ===========================
 # Universal Search Endpoints
 # ===========================
@@ -63,6 +86,7 @@ def get_search_service():
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def search_all():
     """
     Advanced search across all resources.
@@ -77,7 +101,11 @@ def search_all():
     Returns:
         200: Search results
         400: Invalid query
+        403: Missing scope or tenant context
     """
+    tenant_id, denied = _tenant_or_403()
+    if denied:
+        return denied
     try:
         service = get_search_service()
 
@@ -88,7 +116,9 @@ def search_all():
         offset = parse_offset(request.args)
 
         # Parse types
-        resource_types = [t.strip() for t in types_str.split(",") if t.strip()]
+        resource_types = _readable_types(
+            [t.strip() for t in types_str.split(",") if t.strip()]
+        )
 
         # Parse filters
         filters = None
@@ -97,6 +127,7 @@ def search_all():
 
         results = service.search_all(
             query=query,
+            tenant_id=tenant_id,
             resource_types=resource_types,
             filters=filters,
             limit=limit,
@@ -118,6 +149,7 @@ def search_all():
 
 @bp.route("/entities", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def search_entities():
     """
     Search entities with advanced filters.
@@ -134,7 +166,11 @@ def search_entities():
 
     Returns:
         200: Entity search results
+        403: Missing scope or tenant context
     """
+    tenant_id, denied = _tenant_or_403()
+    if denied:
+        return denied
     try:
         service = get_search_service()
 
@@ -159,6 +195,7 @@ def search_entities():
 
         results = service.search_entities(
             query=query,
+            tenant_id=tenant_id,
             entity_type=entity_type,
             sub_type=sub_type,
             organization_id=organization_id,
@@ -183,6 +220,7 @@ def search_entities():
 
 @bp.route("/organizations", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def search_organizations():
     """
     Search organizations.
@@ -196,7 +234,11 @@ def search_organizations():
 
     Returns:
         200: Organization search results
+        403: Missing scope or tenant context
     """
+    tenant_id, denied = _tenant_or_403()
+    if denied:
+        return denied
     try:
         service = get_search_service()
 
@@ -208,6 +250,7 @@ def search_organizations():
 
         results = service.search_organizations(
             query=query,
+            tenant_id=tenant_id,
             organization_type=organization_type,
             parent_id=parent_id,
             limit=limit,
@@ -227,6 +270,7 @@ def search_organizations():
 
 @bp.route("/issues", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 def search_issues():
     """
     Search issues with advanced filters.
@@ -243,7 +287,11 @@ def search_issues():
 
     Returns:
         200: Issue search results
+        403: Missing scope or tenant context
     """
+    tenant_id, denied = _tenant_or_403()
+    if denied:
+        return denied
     try:
         service = get_search_service()
 
@@ -263,6 +311,7 @@ def search_issues():
 
         results = service.search_issues(
             query=query,
+            tenant_id=tenant_id,
             status=status,
             priority=priority,
             assignee_id=assignee_id,
@@ -466,16 +515,30 @@ def execute_saved_search(search_id):
 
     Returns:
         200: Search results
+        403: Missing tenant context
         404: Search not found
     """
+    tenant_id, denied = _tenant_or_403()
+    if denied:
+        return denied
     try:
         service = get_search_service()
 
         limit = parse_limit(request.args, 50)
         offset = parse_offset(request.args)
 
+        # Results are tenant-scoped and limited to families the caller can read.
+        readable = ["issue"] if caller_has_scope("issues:read") else []
+        if caller_has_scope("infrastructure:read"):
+            readable = ["entity", "organization", *readable]
+
         results = service.execute_saved_search(
-            search_id=search_id, user_id=g.current_user.id, limit=limit, offset=offset
+            search_id=search_id,
+            user_id=g.current_user.id,
+            tenant_id=tenant_id,
+            resource_types=readable,
+            limit=limit,
+            offset=offset,
         )
 
         return jsonify(results), 200
@@ -561,6 +624,7 @@ def delete_saved_search(search_id):
 
 @bp.route("/analytics/popular", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def get_popular_searches():
     """
     Get most popular/frequent searches.
@@ -569,14 +633,18 @@ def get_popular_searches():
         - limit: Maximum results (default: 10)
 
     Returns:
-        200: Popular search terms and patterns
+        200: Popular search terms and patterns (caller's tenant only)
+        403: Missing scope or tenant context
     """
+    tenant_id, denied = _tenant_or_403()
+    if denied:
+        return denied
     try:
         service = get_search_service()
 
         limit = parse_limit(request.args, 10)
 
-        popular = service.get_popular_searches(limit=limit)
+        popular = service.get_popular_searches(tenant_id=tenant_id, limit=limit)
 
         return jsonify({"popular_searches": popular, "count": len(popular)}), 200
 
@@ -586,6 +654,7 @@ def get_popular_searches():
 
 @bp.route("/suggest", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def search_suggestions():
     """
     Get search suggestions/autocomplete.
@@ -596,8 +665,12 @@ def search_suggestions():
         - limit: Maximum suggestions (default: 10)
 
     Returns:
-        200: Search suggestions
+        200: Search suggestions (caller's tenant only)
+        403: Missing scope or tenant context
     """
+    tenant_id, denied = _tenant_or_403()
+    if denied:
+        return denied
     db = current_app.db
     # Ensure clean transaction state
     try:
@@ -613,7 +686,11 @@ def search_suggestions():
         limit = parse_limit(request.args, 10)
 
         suggestions = service.get_search_suggestions(
-            partial_query=query, resource_type=resource_type, limit=limit
+            partial_query=query,
+            tenant_id=tenant_id,
+            resource_type=resource_type,
+            limit=limit,
+            include_issues=caller_has_scope("issues:read"),
         )
 
         return jsonify({"suggestions": suggestions, "count": len(suggestions)}), 200

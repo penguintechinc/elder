@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from quart import current_app
+from webhook_http import ENGINE_HTTP, WebhookPostRecorder
 
 
 def _insert_webhook(db, tenant_id=1):
@@ -109,7 +110,7 @@ async def _wait_for_delivery(db, webhook_id, timeout=5.0, event_type="issue.assi
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 @patch("apps.api.auth.decorators.get_current_user")
 async def test_patch_new_assignee_fires_webhook(
     mock_get_user, mock_post, async_client, generate_token, app
@@ -142,7 +143,7 @@ async def test_patch_new_assignee_fires_webhook(
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 @patch("apps.api.auth.decorators.get_current_user")
 async def test_patch_same_assignee_does_not_fire(
     mock_get_user, mock_post, async_client, generate_token, app
@@ -167,7 +168,7 @@ async def test_patch_same_assignee_does_not_fire(
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 @patch("apps.api.auth.decorators.get_current_user")
 async def test_patch_without_assignee_field_does_not_fire(
     mock_get_user, mock_post, async_client, generate_token, app
@@ -192,7 +193,7 @@ async def test_patch_without_assignee_field_does_not_fire(
 
 
 @pytest.mark.asyncio
-@patch("apps.api.services.webhooks.assignment.requests.post")
+@patch(ENGINE_HTTP, new_callable=WebhookPostRecorder)
 @patch("apps.api.auth.decorators.get_current_user")
 async def test_patch_cannot_clear_assignee_does_not_fire(
     mock_get_user, mock_post, async_client, generate_token, app

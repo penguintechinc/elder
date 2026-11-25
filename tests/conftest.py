@@ -262,6 +262,7 @@ def generate_token(app):
         now = datetime.now(UTC)
         payload = {
             "sub": "test-user-123",
+            "type": "access",
             "tenant": str(tenant_id),  # Important: tenant claim as string
             "iat": now,
             "exp": now + timedelta(hours=1),

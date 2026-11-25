@@ -215,6 +215,7 @@ def _upgrade_postgres(conn: sa.Connection) -> None:
 
         # 1. Add village_id VARCHAR(32) if missing (safe on both new and drifted tables)
         conn.execute(
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
             sa.text(
                 f"ALTER TABLE {table_name} "  # nosec B608 - hardcoded allowlist
                 "ADD COLUMN IF NOT EXISTS village_id VARCHAR(32)"
@@ -226,6 +227,7 @@ def _upgrade_postgres(conn: sa.Connection) -> None:
         vid_info = col_info.get("village_id")
         if vid_info is not None and vid_info[1] is not None and vid_info[1] < 32:
             conn.execute(
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
                 sa.text(
                     f"ALTER TABLE {table_name} "  # nosec B608 - hardcoded allowlist
                     "ALTER COLUMN village_id TYPE VARCHAR(32)"
@@ -234,6 +236,7 @@ def _upgrade_postgres(conn: sa.Connection) -> None:
 
         # 3. Ensure unique index exists
         conn.execute(
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
             sa.text(
                 f"CREATE UNIQUE INDEX IF NOT EXISTS ix_{table_name}_village_id "  # nosec B608
                 f"ON {table_name} (village_id)"
@@ -252,6 +255,7 @@ def _upgrade_postgres(conn: sa.Connection) -> None:
             has_identities=has_identities,
         )
         conn.execute(
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
             sa.text(
                 f"UPDATE {table_name} AS t "  # nosec B608 - hardcoded allowlist
                 f"SET village_id = LPAD(TO_HEX({tenant_expr}), 8, '0') || '-' || "
@@ -285,6 +289,7 @@ def _upgrade_generic(conn: sa.Connection) -> None:
             continue
 
         rows = conn.execute(
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
             sa.text(
                 f"SELECT id FROM {table_name} WHERE village_id IS NULL"  # nosec B608
             )
@@ -293,6 +298,7 @@ def _upgrade_generic(conn: sa.Connection) -> None:
             tenant_id = row_id if table_name == "tenants" else 1
             vid = f"{int(tenant_id) & 0xFFFFFFFF:08x}-{(table_code << 40) + int(row_id):016x}"
             conn.execute(
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- constant DDL/DML; only identifiers from the migration's hardcoded table allowlist are interpolated, values are bound
                 sa.text(
                     f"UPDATE {table_name} SET village_id = :vid WHERE id = :id"  # nosec B608
                 ),

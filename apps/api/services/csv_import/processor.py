@@ -15,12 +15,13 @@ from typing import Any
 from urllib.parse import urlparse
 
 from apps.api.utils.tenant_scoping import get_tenant_scoped
+from shared.csv_safety import FORMULA_TRIGGERS
 
 MAX_CSV_ROWS = 1000
 MAX_BATCH_CSV_ROWS = 50000
 MAX_CSV_BYTES = 5 * 1024 * 1024
 MAX_ERRORS_RETURNED = 50
-FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+FORMULA_PREFIXES = FORMULA_TRIGGERS
 
 
 @dataclass(frozen=True)

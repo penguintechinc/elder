@@ -93,6 +93,13 @@ def create_app(config_name: str = None) -> Quart:
     app.config.from_object(config)
     config.init_app(app)
     app.config["APP_VERSION"] = _resolve_app_version(app.config.get("APP_VERSION"))
+    if app.config.get("PLATFORM_TENANT_ALLOW_DEFAULT_FALLBACK"):
+        logger.warning(
+            "platform_tenant_default_fallback_enabled",
+            platform_tenant_slug=app.config.get("PLATFORM_TENANT_SLUG", "system"),
+            detail="superusers of the 'default' tenant act as super-admins when "
+            "the platform tenant is missing; pin ELDER_PLATFORM_TENANT_SLUG instead",
+        )
 
     # Initialize OpenTelemetry (Phase 0.5) — must be before logging/DB init
     otel = init_telemetry(app.config.get("OTEL_SERVICE_NAME", "hub-api"))
@@ -183,6 +190,46 @@ def create_app(config_name: str = None) -> Quart:
         from apps.api.services.ai_researcher_mcp import aclose_embedded_mcp
 
         await aclose_embedded_mcp(app)
+
+    @app.after_serving
+    async def _drain_webhook_deliveries() -> None:
+        """Give in-flight background webhook deliveries a bounded chance to finish.
+
+        Deliveries run as fire-and-forget tasks on this loop; without a
+        drain a rolling restart would silently drop any still retrying.
+        """
+        from shared.webhooks.delivery import drain_background
+
+        recovery = app.extensions.pop("webhook_outbox_recovery", None)
+        if recovery is not None and not recovery.done():
+            # The recovery pass may be idling in its observation window;
+            # it holds no claim yet, so cancelling it loses nothing.
+            recovery.cancel()
+        # Anything still unfinished is logged per delivery by the drain and
+        # keeps its pending/retrying outbox row for the next startup.
+        await drain_background(timeout=10.0)
+
+    @app.before_serving
+    async def _recover_webhook_outbox() -> None:
+        """Resume webhook deliveries a previous process left unfinished.
+
+        Runs as a background task so startup (and readiness) never waits on
+        it; the pass is bounded, replica-safe and never raises (see
+        WebhookService.recover_pending_deliveries). Skipped under TESTING
+        so unit tests do not inherit a long-lived background task.
+        """
+        if app.config.get("TESTING") or getattr(app, "db", None) is None:
+            return
+        import asyncio
+
+        from apps.api.services.webhooks import WebhookService
+
+        app.extensions["webhook_outbox_recovery"] = (
+            asyncio.get_running_loop().create_task(
+                WebhookService(app.db).recover_pending_deliveries(),
+                name="webhook-outbox-recovery",
+            )
+        )
 
     # Install OTel auto-instrumentation (ASGI, Redis, psycopg, httpx)
     auto_instrument_app(app)

@@ -9,7 +9,7 @@ from typing import Optional
 
 from penguin_libs.pydantic import RequestModel
 from pydantic import Field
-from quart import Blueprint, current_app, g, jsonify, request
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
@@ -135,15 +135,36 @@ class BulkDeleteDependenciesRequest(RequestModel):
     )
 
 
-def get_resource(db, resource_type: str, resource_id: int):
-    """Get a resource by type and ID."""
+def _lookup_resource(db, resource_type: str, resource_id: int):
+    """Unscoped lookup by type and ID; callers must verify tenant ownership."""
     table_name = RESOURCE_TABLE_MAP.get(resource_type)
     if not table_name:
         return None
     table = getattr(db, table_name, None)
     if not table:
         return None
-    return table[resource_id]
+    return table[resource_id]  # tenant-scope-exempt: get_tenant_resource verifies
+
+
+def get_resource(db, resource_type: str, resource_id: int, tenant_id: int | None):
+    """Get a dependency endpoint by type and ID, scoped to ``tenant_id``.
+
+    Returns None when the type is unknown, the row is missing, or it belongs
+    to another tenant -- callers map that to a 404 so foreign ids are
+    indistinguishable from missing ones.
+    """
+    return get_tenant_resource(db, resource_type, resource_id, tenant_id)
+
+
+def _caller_tenant() -> int | None:
+    """Return the caller's tenant id from verified claims, or None (-> 403)."""
+    tid = get_current_tenant_id()
+    return tid if tid and tid > 0 else None
+
+
+def _tenant_required():
+    """403 response for a token that carries no usable tenant claim."""
+    return jsonify({"error": "Tenant context required"}), 403
 
 
 def _owned_by_tenant(db, row, tenant_id: int) -> bool | None:
@@ -173,7 +194,7 @@ def get_tenant_resource(
     """
     if not tenant_id:
         return None
-    resource = get_resource(db, resource_type, resource_id)
+    resource = _lookup_resource(db, resource_type, resource_id)
     if not resource:
         return None
     owned = _owned_by_tenant(db, resource, tenant_id)
@@ -302,10 +323,10 @@ async def create_dependency(body: CreateDependencyRequest):
     target_type = body.target_type
     target_id = body.target_id
 
-    # Capture tenant_id from current user before entering threadpool
-    current_user_tenant_id = getattr(
-        getattr(g, "current_user", None), "tenant_id", None
-    )
+    # Tenant from the verified token only; resolved before the threadpool.
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return _tenant_required()
 
     # Validate resource types
     if source_type not in VALID_RESOURCE_TYPES:
@@ -338,13 +359,12 @@ async def create_dependency(body: CreateDependencyRequest):
     redis_client = getattr(current_app, "redis_client", None)
 
     def validate_and_create():
-        # Check if source resource exists
-        source = get_resource(db, source_type, source_id)
+        # Both endpoints must exist inside the caller's tenant (404 otherwise)
+        source = get_resource(db, source_type, source_id, tenant_id)
         if not source:
             return {"error": f"Source {source_type} {source_id} not found"}, 404, None
 
-        # Check if target resource exists
-        target = get_resource(db, target_type, target_id)
+        target = get_resource(db, target_type, target_id, tenant_id)
         if not target:
             return {"error": f"Target {target_type} {target_id} not found"}, 404, None
 
@@ -356,6 +376,7 @@ async def create_dependency(body: CreateDependencyRequest):
                 & (db.dependencies.target_type == target_type)
                 & (db.dependencies.target_id == target_id)
                 & (db.dependencies.dependency_type == body.dependency_type)
+                & (db.dependencies.tenant_id == tenant_id)
             )
             .select()
             .first()
@@ -367,11 +388,6 @@ async def create_dependency(body: CreateDependencyRequest):
                 409,
                 None,
             )
-
-        # Get tenant from source resource, falling back to current user's tenant
-        tenant_id = getattr(source, "tenant_id", None) or current_user_tenant_id
-        if not tenant_id:
-            return {"error": f"Source {source_type} must have a tenant"}, 400, None
 
         # Create dependency
         dep_id = db.dependencies.insert(
@@ -411,7 +427,9 @@ async def get_dependency(id: int):
         404: Dependency not found
     """
     db = current_app.db
-    tenant_id = get_current_tenant_id()
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return _tenant_required()
 
     row = await run_in_threadpool(
         lambda: get_tenant_scoped(db, db.dependencies, id, tenant_id)
@@ -444,7 +462,9 @@ async def update_dependency(id: int, body: UpdateDependencyRequest):
         404: Dependency not found
     """
     db = current_app.db
-    tenant_id = get_current_tenant_id()
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return _tenant_required()
 
     # Check if dependency exists and belongs to caller's tenant (gh-237)
     existing = await run_in_threadpool(
@@ -472,6 +492,29 @@ async def update_dependency(id: int, body: UpdateDependencyRequest):
             ),
             400,
         )
+
+    # Re-pointed endpoints must also live in the caller's tenant (404 otherwise)
+    def endpoints_in_tenant():
+        new_source = (
+            body.source_type or existing.source_type,
+            body.source_id or existing.source_id,
+        )
+        new_target = (
+            body.target_type or existing.target_type,
+            body.target_id or existing.target_id,
+        )
+        for label, (rtype, rid) in (("Source", new_source), ("Target", new_target)):
+            if not get_resource(db, rtype, rid, tenant_id):
+                return f"{label} {rtype} {rid} not found"
+        return None
+
+    if any(
+        v is not None
+        for v in (body.source_type, body.source_id, body.target_type, body.target_id)
+    ):
+        missing = await run_in_threadpool(endpoints_in_tenant)
+        if missing:
+            return jsonify({"error": missing}), 404
 
     # Update dependency
     def update_in_db():
@@ -514,7 +557,9 @@ async def delete_dependency(id: int):
         404: Dependency not found
     """
     db = current_app.db
-    tenant_id = get_current_tenant_id()
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return _tenant_required()
 
     # Check if dependency exists and belongs to caller's tenant (gh-237)
     existing = await run_in_threadpool(
@@ -556,6 +601,9 @@ async def create_bulk_dependencies():
         400: Validation error
     """
     db = current_app.db
+    tenant_id = _caller_tenant()
+    if tenant_id is None:
+        return _tenant_required()
 
     try:
         data = await request.get_json()
@@ -569,20 +617,32 @@ async def create_bulk_dependencies():
         # Validate and create dependencies
         redis_client = getattr(current_app, "redis_client", None)
 
+        # Validate every endpoint against the caller's tenant before inserting
+        # anything, so one foreign id rejects the whole batch with a 404.
+        for i, dep_req in enumerate(validated.dependencies):
+            if (
+                dep_req.source_type not in VALID_RESOURCE_TYPES
+                or dep_req.target_type not in VALID_RESOURCE_TYPES
+            ):
+                return jsonify({"error": f"Invalid resource type at index {i}"}), 400
+
+        def first_missing_endpoint():
+            for i, dep_req in enumerate(validated.dependencies):
+                for label, rtype, rid in (
+                    ("Source", dep_req.source_type, dep_req.source_id),
+                    ("Target", dep_req.target_type, dep_req.target_id),
+                ):
+                    if not get_resource(db, rtype, rid, tenant_id):
+                        return f"{label} {rtype} {rid} not found at index {i}"
+            return None
+
+        missing = await run_in_threadpool(first_missing_endpoint)
+        if missing:
+            return jsonify({"error": missing}), 404
+
         def create_all():
             created_ids = []
-            for i, dep_req in enumerate(validated.dependencies):
-                # Get source resource for tenant
-                source = get_resource(db, dep_req.source_type, dep_req.source_id)
-                if not source:
-                    raise ValueError(
-                        f"Source {dep_req.source_type} {dep_req.source_id} not found at index {i}"
-                    )
-
-                tenant_id = getattr(source, "tenant_id", None)
-                if not tenant_id:
-                    raise ValueError(f"Source must have tenant at index {i}")
-
+            for dep_req in validated.dependencies:
                 # Create dependency
                 dep_id = db.dependencies.insert(
                     tenant_id=tenant_id,
@@ -599,7 +659,10 @@ async def create_bulk_dependencies():
             db.commit()
 
             # Fetch created dependencies
-            return db(db.dependencies.id.belongs(created_ids)).select()
+            return db(
+                db.dependencies.id.belongs(created_ids)
+                & (db.dependencies.tenant_id == tenant_id)
+            ).select()
 
         rows = await run_in_threadpool(create_all)
         dependencies = from_pydal_rows(rows, DependencyDTO)

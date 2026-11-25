@@ -6295,10 +6295,13 @@ paths:
       description: "\nCalled by the scanner service when a job finishes.\n\nregression: gh-237 -- this\
         \ route previously had no auth at all, letting\nany caller submit arbitrary results for any tenant's\
         \ job (arbitrary\nwrite). Now requires discovery:write and verifies job_id belongs to the\ncaller's\
-        \ tenant via organization_id before mutating it.\n\nRequest body:\n    {\n        \"success\"\
-        : true,\n        \"results\": {...},\n        \"error_message\": null\n    }\n\nReturns:\n   \
-        \ 200: Results recorded\n    400: Request body required\n    401: Authentication required\n  \
-        \  404: Job not found (including jobs belonging to another tenant)"
+        \ tenant via organization_id before mutating it.\n\nRequest body (``claim_token`` is the value\
+        \ returned by ``/start``; it\nmay instead be sent as the ``X-Claim-Token`` header):\n    {\n \
+        \       \"success\": true,\n        \"results\": {...},\n        \"error_message\": null,\n  \
+        \      \"claim_token\": \"...\"\n    }\n\nReturns:\n    200: Results recorded (or ignored: job\
+        \ no longer running)\n    400: Request body required\n    401: Authentication required\n    404:\
+        \ Job not found (including jobs belonging to another tenant)\n    409: Missing claim token, or\
+        \ it does not match the current claim"
       operationId: post_complete_job
       parameters:
       - in: path
@@ -6342,8 +6345,9 @@ paths:
       description: "\nCalled by the scanner service when it picks up a job.\n\nregression: gh-237 -- this\
         \ route previously had no auth at all, letting\nany caller mark any tenant's job as running (arbitrary\
         \ write). Now\nrequires discovery:write and verifies job_id belongs to the caller's\ntenant via\
-        \ organization_id before mutating it.\n\nReturns:\n    200: Job marked as running\n    401: Authentication\
-        \ required\n    404: Job not found (including jobs belonging to another tenant)"
+        \ organization_id before mutating it.\n\nReturns:\n    200: Job marked as running; body carries\
+        \ the one-time ``claim_token``\n    401: Authentication required\n    404: Job not found (including\
+        \ jobs belonging to another tenant)\n    409: Job already claimed by another scanner, or not due"
       operationId: post_start_job
       parameters:
       - in: path
@@ -13335,8 +13339,10 @@ paths:
     get:
       description: "\nThis endpoint is used by the scanner worker to fetch all pending scans\nthat need\
         \ to be processed. Results are not paginated since the worker\nneeds all pending scans to process\
-        \ them efficiently.\n\nReturns:\n    200: List of pending scans (ordered by created_at ascending,\
-        \ oldest first)\n\nExample:\n    GET /api/v1/sbom/scans/pending"
+        \ them efficiently.\n\nThe list is advisory: a scan is only owned once ``POST /<id>/start``\n\
+        succeeds (atomic claim), and claimed scans no longer appear here.\nScans whose claim lease expired\
+        \ are re-queued before listing.\n\nReturns:\n    200: List of pending scans (ordered by created_at\
+        \ ascending, oldest first)\n\nExample:\n    GET /api/v1/sbom/scans/pending"
       operationId: get_get_pending_scans
       parameters: []
       responses: {}
@@ -13383,13 +13389,18 @@ paths:
   /api/v1/sbom/scans/{id}/results:
     post:
       description: "\nThis endpoint is called by the scanner worker to submit the results\nof a completed\
-        \ scan job.\n\nPath Parameters:\n    - id: Scan ID\n\nRequest Body:\n    - success: Boolean indicating\
-        \ if scan succeeded - required\n    - components: List of component dicts to insert - optional\n\
-        \    - files_scanned: List of files scanned - optional\n    - commit_hash: Git commit hash - optional\n\
-        \    - error_message: Error message if failed - optional\n    - scan_duration_ms: Scan duration\
-        \ in milliseconds - optional\n\nReturns:\n    200: Results processed\n    400: Invalid request\n\
-        \    404: Scan not found\n\nExample:\n    POST /api/v1/sbom/scans/1/results\n    {\n        \"\
-        success\": true,\n        \"components\": [...],\n        \"files_scanned\": [\"package.json\"\
+        \ scan job. The caller must present the claim token it got\nfrom ``POST /<id>/start`` (body ``claim_token``\
+        \ or ``X-Claim-Token``\nheader); results are applied only while the scan is running under that\n\
+        exact claim, so another caller -- or a claimant whose lease expired and\nwhose scan was re-claimed\
+        \ -- gets 409. Completion is idempotent: once a\nscan is terminal, later submissions are acknowledged\
+        \ with the stored\nscan and change nothing.\n\nPath Parameters:\n    - id: Scan ID\n\nRequest\
+        \ Body:\n    - success: Boolean indicating if scan succeeded - required\n    - components: List\
+        \ of component dicts to insert - optional\n    - files_scanned: List of files scanned - optional\n\
+        \    - commit_hash: Git commit hash - optional\n    - error_message: Error message if failed -\
+        \ optional\n    - scan_duration_ms: Scan duration in milliseconds - optional\n\nReturns:\n   \
+        \ 200: Results processed\n    400: Invalid request\n    404: Scan not found\n    409: Missing,\
+        \ wrong or superseded claim token\n\nExample:\n    POST /api/v1/sbom/scans/1/results\n    {\n\
+        \        \"success\": true,\n        \"components\": [...],\n        \"files_scanned\": [\"package.json\"\
         , \"requirements.txt\"],\n        \"commit_hash\": \"abc123\",\n        \"scan_duration_ms\":\
         \ 5432\n    }"
       operationId: post_submit_results
@@ -13404,8 +13415,11 @@ paths:
   /api/v1/sbom/scans/{id}/start:
     post:
       description: "\nThis endpoint is called by the scanner worker when it begins processing\na scan\
-        \ job.\n\nPath Parameters:\n    - id: Scan ID\n\nReturns:\n    200: Scan marked as running\n \
-        \   404: Scan not found\n    400: Scan already running or completed\n\nExample:\n    POST /api/v1/sbom/scans/1/start"
+        \ job. It is the atomic claim: with any number of scanner replicas\nracing on the same scan exactly\
+        \ one receives 200, the rest 400 and must\nskip the scan. The winner's response carries ``claim_token``,\
+        \ which must\nbe presented to ``POST /<id>/results``; it is returned exactly once.\n\nPath Parameters:\n\
+        \    - id: Scan ID\n\nReturns:\n    200: Scan marked as running\n    404: Scan not found\n   \
+        \ 400: Scan already running or completed\n\nExample:\n    POST /api/v1/sbom/scans/1/start"
       operationId: post_start_scan
       parameters:
       - in: path

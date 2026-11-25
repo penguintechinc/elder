@@ -12,7 +12,11 @@ Extracts dependency information and returns standardized component data.
 
 import re
 from typing import Any, Dict, List, Optional
-from xml.etree.ElementTree import Element  # For type hints only
+
+# nosemgrep: python.lang.security.use-defused-xml.use-defused-xml -- type-hint-only import; all parsing uses defusedxml.ElementTree below
+from xml.etree.ElementTree import (
+    Element,  # For type hints only
+)
 
 import defusedxml.ElementTree as ET
 

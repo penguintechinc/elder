@@ -54,8 +54,11 @@ class KafkaHTTP3Handler(logging.Handler):
             import httpx
 
             self.httpx = httpx
+            # Explicit timeout: a stalled log sink must never hang the
+            # thread that is emitting a log record.
             self.session = httpx.Client(
-                http2=True
+                http2=True,
+                timeout=httpx.Timeout(5.0, connect=3.0),
             )  # HTTP/3 support requires specific build
         except ImportError:
             structlog.get_logger().warning(

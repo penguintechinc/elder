@@ -190,9 +190,19 @@ class TestDiscoveryCompleteJobAuthGate:
         own_org_id = _org(db, 1, "Own Org Complete")
         own_job_id = _discovery_job(db, own_org_id)
 
+        # Completion is bound to the claim: start the job to obtain the
+        # claim token, then present it.
+        start = await async_client.post(
+            f"/api/v1/discovery/jobs/{own_job_id}/start",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert start.status_code == 200, (await start.get_data()).decode()
+        claim_token = (await start.get_json())["claim_token"]
+
         resp = await async_client.post(
             f"/api/v1/discovery/jobs/{own_job_id}/complete",
             headers={"Authorization": f"Bearer {token}"},
-            json={"success": True, "results": {}},
+            json={"success": True, "results": {}, "claim_token": claim_token},
         )
         assert resp.status_code == 200, (await resp.get_data()).decode()
+        assert (await resp.get_json())["status"] == "completed"

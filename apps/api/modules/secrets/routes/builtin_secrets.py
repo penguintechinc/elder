@@ -4,7 +4,7 @@
 
 import logging
 
-from quart import Blueprint, jsonify, request
+from quart import Blueprint, current_app, jsonify, request
 from quart_schema import validate_response
 
 from apps.api.auth.decorators import login_required, require_scope
@@ -17,10 +17,29 @@ from apps.api.models.pydantic.secrets import (
     SecretValueResponse,
 )
 from apps.api.services.secrets import BuiltinSecretsClient
+from apps.api.services.secrets.tenancy import org_in_tenant, tenant_org_ids
+from apps.api.utils.tenant_scoping import get_current_tenant_id
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("builtin_secrets", __name__, url_prefix="/api/v1/builtin-secrets")
+
+
+def _scoped_org(organization_id):
+    """Check a caller-supplied organization id against the verified tenant.
+
+    Returns ``(org_id, None)`` when the organization belongs to the tenant in
+    the caller's token, otherwise ``(None, error_response)``: 403 without a
+    tenant, 400 when the id is missing, 404 for foreign or unknown orgs.
+    """
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return None, (jsonify({"error": "Tenant context required"}), 403)
+    if not organization_id:
+        return None, (jsonify({"error": "organization_id parameter required"}), 400)
+    if not org_in_tenant(current_app.db, organization_id, tenant_id):
+        return None, (jsonify({"error": "Organization not found"}), 404)
+    return int(organization_id), None
 
 
 @bp.route("", methods=["GET"])
@@ -30,11 +49,12 @@ bp = Blueprint("builtin_secrets", __name__, url_prefix="/api/v1/builtin-secrets"
 def list_secrets():
     """List built-in secrets for an organization."""
     try:
-        organization_id = request.args.get("organization_id", type=int)
         prefix = request.args.get("prefix")
-
-        if not organization_id:
-            return jsonify({"error": "organization_id parameter required"}), 400
+        organization_id, error = _scoped_org(
+            request.args.get("organization_id", type=int)
+        )
+        if error:
+            return error
 
         config = {"organization_id": organization_id}
         client = BuiltinSecretsClient(config)
@@ -56,10 +76,11 @@ def list_secrets():
 def get_secret(secret_path):
     """Get a built-in secret by path."""
     try:
-        organization_id = request.args.get("organization_id", type=int)
-
-        if not organization_id:
-            return jsonify({"error": "organization_id parameter required"}), 400
+        organization_id, error = _scoped_org(
+            request.args.get("organization_id", type=int)
+        )
+        if error:
+            return error
 
         config = {"organization_id": organization_id}
         client = BuiltinSecretsClient(config)
@@ -84,7 +105,7 @@ async def create_secret():
     try:
         data = await request.get_json()
 
-        if not data:
+        if not data or not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
 
         required_fields = ["name", "value", "organization_id"]
@@ -95,7 +116,11 @@ async def create_secret():
                 400,
             )
 
-        config = {"organization_id": data["organization_id"]}
+        organization_id, error = _scoped_org(data["organization_id"])
+        if error:
+            return error
+
+        config = {"organization_id": organization_id}
         client = BuiltinSecretsClient(config)
 
         metadata = {
@@ -129,13 +154,14 @@ async def update_secret(secret_path):
     try:
         data = await request.get_json()
 
-        if not data:
+        if not data or not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
 
-        organization_id = request.args.get("organization_id", type=int)
-
-        if not organization_id:
-            return jsonify({"error": "organization_id parameter required"}), 400
+        organization_id, error = _scoped_org(
+            request.args.get("organization_id", type=int)
+        )
+        if error:
+            return error
 
         if "value" not in data:
             return jsonify({"error": "Missing required field: value"}), 400
@@ -164,10 +190,11 @@ async def update_secret(secret_path):
 def delete_secret(secret_path):
     """Delete a built-in secret."""
     try:
-        organization_id = request.args.get("organization_id", type=int)
-
-        if not organization_id:
-            return jsonify({"error": "organization_id parameter required"}), 400
+        organization_id, error = _scoped_org(
+            request.args.get("organization_id", type=int)
+        )
+        if error:
+            return error
 
         config = {"organization_id": organization_id}
         client = BuiltinSecretsClient(config)
@@ -191,7 +218,20 @@ async def test_connection():
     """Test built-in secrets database connection."""
     try:
         data = await request.get_json() or {}
-        organization_id = data.get("organization_id", 1)
+        if not isinstance(data, dict):
+            return jsonify({"error": "JSON object body required"}), 400
+        requested = data.get("organization_id")
+        if requested is None:
+            tenant_id = get_current_tenant_id()
+            if not tenant_id:
+                return jsonify({"error": "Tenant context required"}), 403
+            owned = tenant_org_ids(current_app.db, tenant_id)
+            if not owned:
+                return jsonify({"error": "Organization not found"}), 404
+            requested = owned[0]
+        organization_id, error = _scoped_org(requested)
+        if error:
+            return error
 
         config = {"organization_id": organization_id}
         client = BuiltinSecretsClient(config)

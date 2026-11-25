@@ -12,7 +12,12 @@ from quart import Blueprint, current_app, g, jsonify, make_response, request
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth import generate_token, login_required, verify_password
-from apps.api.auth.jwt_handler import verify_token
+from apps.api.auth.jwt_handler import (
+    IDENTITY_REFRESH_TOKEN_TYPES,
+    carried_auth_time,
+    interactive_auth_time,
+    verify_token,
+)
 from apps.api.auth.portal_cookies import set_portal_auth_cookies
 from apps.api.auth.web_auth import COOKIE_NAME, clear_session_cookie, set_session_cookie
 from apps.api.models.dataclasses import IdentityDTO, from_pydal_row
@@ -300,8 +305,11 @@ async def login():
         return jsonify({"error": error}), status
 
     # Generate tokens
-    access_token = generate_token(identity, "access")
-    refresh_token = generate_token(identity, "refresh")
+    # Password login is an interactive authentication: stamp auth_time on
+    # both tokens so a later refresh can carry (never renew) it.
+    auth_time = interactive_auth_time()
+    access_token = generate_token(identity, "access", auth_time=auth_time)
+    refresh_token = generate_token(identity, "refresh", auth_time=auth_time)
 
     response = await make_response(
         jsonify(
@@ -493,7 +501,7 @@ async def refresh_token_endpoint():
         return ApiResponse.bad_request("Refresh token required")
 
     # Verify refresh token
-    payload = verify_token(refresh_token_str)
+    payload = verify_token(refresh_token_str, IDENTITY_REFRESH_TOKEN_TYPES)
 
     if not payload or payload.get("type") != "refresh":
         return ApiResponse.unauthorized("Invalid refresh token")
@@ -507,8 +515,11 @@ async def refresh_token_endpoint():
     if not identity or not identity.is_active:
         return ApiResponse.unauthorized("User not found or inactive")
 
-    # Generate new access token
-    access_token = generate_token(identity, "access")
+    # Generate new access token. auth_time is copied from the refresh
+    # token, never reset: refreshing is not re-authenticating.
+    access_token = generate_token(
+        identity, "access", auth_time=carried_auth_time(payload)
+    )
 
     return (
         jsonify(

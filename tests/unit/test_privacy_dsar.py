@@ -99,10 +99,19 @@ class TestPrivacyServiceErasure:
                 db, 42, tenant_id=7, tenant_legal_hold=False
             )
 
-        assert result == {"identity_id": 42, "anonymized": True}
+        assert result["identity_id"] == 42
+        assert result["anonymized"] is True
+        assert result["already_erased"] is False
+        # The result now also carries the PII-free erasure receipt.
+        assert result["receipt"]["tables"][0]["table"] == "identities"
+        assert result["receipt"]["revocation"]["subject_deactivated"] is True
         assert db.commit.called
-        # Anonymize via UPDATE, never DELETE -- the row (and its id) must
-        # survive so audit_logs/RBAC history referencing it by FK stay intact.
+        # Anonymize via UPDATE, never DELETE -- the identity row (and its id)
+        # must survive so retained records referencing it by FK stay valid.
+        # (Linked personal rows in OTHER tables are deleted per the
+        # inventory; that is proven on real Postgres in
+        # tests/unit/test_privacy_inventory.py. This fake db exposes no
+        # tables, so no delete may be issued at all here.)
         assert not db.return_value.delete.called
         update_kwargs = db.return_value.update.call_args.kwargs
         assert update_kwargs["is_active"] is False
@@ -145,7 +154,11 @@ class TestPrivacyServiceConsent:
         with _patch_scoped(_fake_identity()):
             result = PrivacyService.set_do_not_sell(db, 42, tenant_id=7, opted_out=True)
 
-        assert result == {"identity_id": 42, "do_not_sell_share": True}
+        assert result["identity_id"] == 42
+        assert result["do_not_sell_share"] is True
+        # The opt-out is now also a consent-ledger entry: sale/sharing
+        # (purpose 1), withdrawn (state 2), legal obligation (basis 2).
+        assert (result["purpose"], result["state"], result["lawful_basis"]) == (1, 2, 2)
         update_kwargs = db.return_value.update.call_args.kwargs
         assert update_kwargs["do_not_sell_share"] is True
         assert update_kwargs["consent_withdrawn_at"] is not None
@@ -182,7 +195,10 @@ class TestPrivacyServiceBulkErase:
             )
         mock_scoped.assert_called_once_with(db, db.identities, 1, 7)
 
-        assert result["results"][0] == {"identity_id": 1, "anonymized": True}
+        first = result["results"][0]
+        assert (first["identity_id"], first["anonymized"]) == (1, True)
+        assert first["already_erased"] is False
+        assert "error" not in first
 
     def test_bulk_erase_collects_missing_identity_as_not_found(self):
         db = MagicMock()
@@ -257,7 +273,10 @@ class TestCrossTenantIsolation:
                 db, [1, 2], tenant_id=7, tenant_legal_hold=False
             )
 
-        assert result["results"][0] == {"identity_id": 1, "anonymized": True}
+        first = result["results"][0]
+        assert (first["identity_id"], first["anonymized"]) == (1, True)
+        assert first["already_erased"] is False
+        assert "error" not in first
         assert result["results"][1]["anonymized"] is False
         assert "not found" in result["results"][1]["error"]
 
@@ -447,7 +466,8 @@ class TestSelfServiceRoutesCarryNoTierGate:
                 # No tier/license mocking at all -- if the route consulted the
                 # license tier it would need `license_client` in app.extensions;
                 # it doesn't, so this succeeds regardless of deployment tier.
-                patch("apps.api.api.v1.privacy.flag_enabled", return_value=True),
+                # No flag mocking either: the statutory routes no longer
+                # consult PostHog at all (compliance audit H1).
             ):
                 async with app.test_request_context("/api/v1/privacy/me/export"):
                     from quart import g

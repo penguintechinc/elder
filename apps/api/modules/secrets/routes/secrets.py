@@ -4,30 +4,34 @@
 
 import logging
 
-from quart import Blueprint, jsonify, request
+from quart import Blueprint, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
+from apps.api.modules.secrets.routes.tenant_guard import tenant_required
 from apps.api.services.secrets import SecretsService
 from apps.api.services.secrets.base import (
     SecretAccessDeniedException,
     SecretNotFoundException,
     SecretProviderException,
 )
+from apps.api.services.secrets.tenancy import TenantResourceNotFound
 from apps.api.utils.pagination import parse_limit
+from apps.api.utils.tenant_scoping import get_current_tenant_id
 
 logger = logging.getLogger(__name__)
 bp = Blueprint("secrets", __name__)
 
 
 def get_secrets_service():
-    """Get secrets service instance."""
-    return SecretsService()
+    """Get a secrets service bound to the caller's verified tenant."""
+    return SecretsService(tenant_id=get_current_tenant_id())
 
 
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@tenant_required
 def list_secrets():
     """
     List all secrets accessible by current user/organization.
@@ -62,6 +66,7 @@ def list_secrets():
 @bp.route("/<int:secret_id>", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@tenant_required
 def get_secret(secret_id):
     """
     Get a specific secret (masked by default).
@@ -75,8 +80,6 @@ def get_secret(secret_id):
         404: Secret not found
     """
     try:
-        from flask import g
-
         service = get_secrets_service()
         unmask = request.args.get("unmask", "false").lower() == "true"
 
@@ -106,6 +109,7 @@ def get_secret(secret_id):
 @bp.route("/<int:secret_id>/unmask", methods=["POST"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 def unmask_secret(secret_id):
     """
     Unmask a secret and retrieve its actual value.
@@ -118,8 +122,6 @@ def unmask_secret(secret_id):
         404: Secret not found
     """
     try:
-        from flask import g
-
         service = get_secrets_service()
 
         # TODO: Add permission check for unmask_secret
@@ -148,6 +150,7 @@ def unmask_secret(secret_id):
 @bp.route("", methods=["POST"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 async def create_secret():
     """
     Register a new secret from a provider.
@@ -171,7 +174,7 @@ async def create_secret():
     try:
         data = await request.get_json()
 
-        if not data:
+        if not data or not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
 
         required_fields = [
@@ -196,8 +199,6 @@ async def create_secret():
 
         service = get_secrets_service()
 
-        from flask import g
-
         secret = service.create_secret(
             name=data["name"],
             provider_id=data["provider_id"],
@@ -211,6 +212,8 @@ async def create_secret():
 
         return jsonify({"secret": secret}), 201
 
+    except TenantResourceNotFound as e:
+        return log_error_and_respond(logger, e, "Failed to process request", 404)
     except ValueError as e:
         return log_error_and_respond(logger, e, "Failed to process request", 400)
     except SecretNotFoundException as e:
@@ -226,6 +229,7 @@ async def create_secret():
 @bp.route("/<int:secret_id>", methods=["PUT"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 async def update_secret(secret_id):
     """
     Update secret metadata (not the actual value in provider).
@@ -242,11 +246,9 @@ async def update_secret(secret_id):
         404: Secret not found
     """
     try:
-        from flask import g
-
         data = await request.get_json()
 
-        if not data:
+        if not data or not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
 
         service = get_secrets_service()
@@ -271,6 +273,7 @@ async def update_secret(secret_id):
 @bp.route("/<int:secret_id>", methods=["DELETE"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 def delete_secret(secret_id):
     """
     Remove secret registration (does not delete from provider).
@@ -280,8 +283,6 @@ def delete_secret(secret_id):
         404: Secret not found
     """
     try:
-        from flask import g
-
         service = get_secrets_service()
 
         service.delete_secret(secret_id=secret_id, identity_id=g.current_user.id)
@@ -298,6 +299,7 @@ def delete_secret(secret_id):
 @bp.route("/<int:secret_id>/sync", methods=["POST"])
 @login_required
 @require_scope("secrets:write")
+@tenant_required
 def sync_secret(secret_id):
     """
     Force sync secret metadata from provider.
@@ -307,8 +309,6 @@ def sync_secret(secret_id):
         404: Secret not found
     """
     try:
-        from flask import g
-
         service = get_secrets_service()
 
         secret = service.sync_secret(secret_id=secret_id, identity_id=g.current_user.id)
@@ -332,6 +332,7 @@ def sync_secret(secret_id):
 @bp.route("/<int:secret_id>/access-log", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@tenant_required
 def get_secret_access_log(secret_id):
     """
     Get access log for a secret.
@@ -360,6 +361,8 @@ def get_secret_access_log(secret_id):
             200,
         )
 
+    except ValueError as e:
+        return log_error_and_respond(logger, e, "Failed to process request", 404)
     except Exception as e:
         logger.error(f"Error retrieving access log for secret {secret_id}: {str(e)}")
         return (
@@ -372,6 +375,7 @@ def get_secret_access_log(secret_id):
 @bp.route("/providers", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@tenant_required
 def list_secret_providers():
     """
     List all secret providers.
@@ -403,6 +407,7 @@ def list_secret_providers():
 @bp.route("/providers", methods=["POST"])
 @login_required
 @require_scope("secrets:admin")
+@tenant_required
 async def create_secret_provider():
     """
     Register a new secret provider.
@@ -426,7 +431,7 @@ async def create_secret_provider():
     try:
         data = await request.get_json()
 
-        if not data:
+        if not data or not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
 
         required_fields = ["name", "provider", "organization_id", "config_json"]
@@ -454,6 +459,8 @@ async def create_secret_provider():
 
         return jsonify({"provider": provider}), 201
 
+    except TenantResourceNotFound as e:
+        return log_error_and_respond(logger, e, "Failed to process request", 404)
     except ValueError as e:
         return log_error_and_respond(logger, e, "Failed to process request", 400)
     except Exception as e:
@@ -464,6 +471,7 @@ async def create_secret_provider():
 @bp.route("/providers/<int:provider_id>", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@tenant_required
 def get_secret_provider(provider_id):
     """
     Get secret provider details.
@@ -489,6 +497,7 @@ def get_secret_provider(provider_id):
 @bp.route("/providers/<int:provider_id>", methods=["PUT"])
 @login_required
 @require_scope("secrets:admin")
+@tenant_required
 async def update_secret_provider(provider_id):
     """
     Update secret provider configuration.
@@ -507,7 +516,7 @@ async def update_secret_provider(provider_id):
     try:
         data = await request.get_json()
 
-        if not data:
+        if not data or not isinstance(data, dict):
             return jsonify({"error": "Request body required"}), 400
 
         service = get_secrets_service()
@@ -521,6 +530,8 @@ async def update_secret_provider(provider_id):
 
         return jsonify({"provider": provider}), 200
 
+    except TenantResourceNotFound as e:
+        return log_error_and_respond(logger, e, "Failed to process request", 404)
     except ValueError as e:
         return log_error_and_respond(logger, e, "Failed to process request", 400)
     except Exception as e:
@@ -531,6 +542,7 @@ async def update_secret_provider(provider_id):
 @bp.route("/providers/<int:provider_id>", methods=["DELETE"])
 @login_required
 @require_scope("secrets:admin")
+@tenant_required
 def delete_secret_provider(provider_id):
     """
     Delete secret provider.
@@ -560,6 +572,7 @@ def delete_secret_provider(provider_id):
 @bp.route("/providers/<int:provider_id>/sync", methods=["POST"])
 @login_required
 @require_scope("secrets:admin")
+@tenant_required
 def sync_secret_provider(provider_id):
     """
     Sync all secrets from provider.
@@ -587,6 +600,7 @@ def sync_secret_provider(provider_id):
 @bp.route("/providers/<int:provider_id>/test", methods=["POST"])
 @login_required
 @require_scope("secrets:admin")
+@tenant_required
 def test_secret_provider(provider_id):
     """
     Test provider connection.

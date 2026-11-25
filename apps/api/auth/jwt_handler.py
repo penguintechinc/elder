@@ -4,6 +4,8 @@
 
 import hashlib
 import logging
+import time
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -57,6 +59,63 @@ SERVICE_WORKER_ALLOWED_SCOPES: dict[str, frozenset[str]] = {
 }
 
 WORKER_TOKEN_PREFIX = "ewk_"
+
+# Token-type allow-lists, one per verification context. Every verifier names
+# the exact `type` values it accepts; a missing or unrecognised type is never
+# defaulted to an identity access token.
+IDENTITY_ACCESS_TOKEN_TYPES: frozenset[str] = frozenset({"access"})
+IDENTITY_REFRESH_TOKEN_TYPES: frozenset[str] = frozenset({"refresh"})
+PORTAL_ACCESS_TOKEN_TYPES: frozenset[str] = frozenset({"portal_user"})
+PORTAL_REFRESH_TOKEN_TYPES: frozenset[str] = frozenset({"portal_refresh"})
+SERVICE_WORKER_TOKEN_TYPES: frozenset[str] = frozenset({"service_worker"})
+CODERUN_TOKEN_TYPES: frozenset[str] = frozenset({"coderun"})
+SERVICE_RESEARCHER_TOKEN_TYPES: frozenset[str] = frozenset({"service_researcher"})
+# Types accepted as an API credential (Authorization bearer / access cookie).
+# Refresh tokens are deliberately absent: they are only valid at their
+# refresh endpoint.
+API_BEARER_TOKEN_TYPES: frozenset[str] = (
+    IDENTITY_ACCESS_TOKEN_TYPES
+    | PORTAL_ACCESS_TOKEN_TYPES
+    | SERVICE_WORKER_TOKEN_TYPES
+    | CODERUN_TOKEN_TYPES
+    | SERVICE_RESEARCHER_TOKEN_TYPES
+)
+
+PRINCIPAL_IDENTITY = "identity"
+PRINCIPAL_PORTAL_USER = "portal_user"
+PRINCIPAL_SERVICE = "service"
+
+# Principal kind each token type is bound to. The user loader resolves `sub`
+# only in the table matching this kind.
+TOKEN_TYPE_PRINCIPAL_KIND: dict[str, str] = {
+    "access": PRINCIPAL_IDENTITY,
+    "refresh": PRINCIPAL_IDENTITY,
+    "portal_user": PRINCIPAL_PORTAL_USER,
+    "portal_refresh": PRINCIPAL_PORTAL_USER,
+    "service_worker": PRINCIPAL_SERVICE,
+    "coderun": PRINCIPAL_SERVICE,
+    "service_researcher": PRINCIPAL_SERVICE,
+}
+
+
+def token_principal_kind(payload: dict[str, Any]) -> str | None:
+    """Return the principal kind a decoded token is bound to, or None.
+
+    Derived strictly from the token `type`. When the token also carries an
+    explicit `principal_kind` claim it must agree with the derived kind;
+    any ambiguity (unknown type, mismatched claim) yields None (reject).
+    """
+    token_type = payload.get("type")
+    if not isinstance(token_type, str):
+        return None
+    derived = TOKEN_TYPE_PRINCIPAL_KIND.get(token_type)
+    if derived is None:
+        return None
+    explicit = payload.get("principal_kind")
+    if explicit is not None and explicit != derived:
+        return None
+    return derived
+
 
 WORKER_TYPE_TO_SERVICE_SUB: dict[str, str] = {
     "runworker": "svc-runworker",
@@ -186,6 +245,67 @@ def is_system_service_worker() -> bool:
         and getattr(user, "token_type", None) == "service_worker"
         and getattr(user, "tenant_id", None) is None
         and getattr(user, "username", None) in SERVICE_WORKER_ALLOWED_SCOPES
+    )
+
+
+def authenticated_service_worker_scope(sub: str) -> tuple[bool, int | None]:
+    """Return ``(ok, tenant_id)`` for a verified ``service_worker`` caller named ``sub``.
+
+    ``tenant_id`` is None for a platform-wide (system tenant) worker and the
+    worker's tenant for a tenant-scoped one. Only endpoints that enforce the
+    tenant themselves may accept tenant-scoped workers; everything else keeps
+    using :func:`is_system_service_worker`.
+    """
+    claims = getattr(g, "claims", {}) or {}
+    user = getattr(g, "current_user", None)
+    if (
+        claims.get("type") != "service_worker"
+        or claims.get("sub") != sub
+        or user is None
+        or getattr(user, "token_type", None) != "service_worker"
+        or getattr(user, "username", None) != sub
+        or sub not in SERVICE_WORKER_ALLOWED_SCOPES
+    ):
+        return False, None
+    if is_system_service_worker():
+        return True, None
+    tenant_raw = claims.get("tenant")
+    user_tid = getattr(user, "tenant_id", None)
+    if (
+        isinstance(tenant_raw, str)
+        and tenant_raw.isascii()
+        and tenant_raw.isdigit()
+        and int(tenant_raw) > 0
+        and isinstance(user_tid, int)
+        and not isinstance(user_tid, bool)
+        and user_tid == int(tenant_raw)
+    ):
+        return True, user_tid
+    return False, None
+
+
+_legacy_platform_worker_warned: set[str] = set()
+_LEGACY_PLATFORM_WORKER_WARN_MAX = 10_000
+
+
+def warn_platform_wide_worker_once(worker_id: str | None, source: str) -> None:
+    """Log ``platform_wide_worker_legacy`` once per provisioned platform-wide worker.
+
+    A NULL-tenant ``ewk_`` worker serves every tenant's queue; operators should
+    review whether it ought to be tenant-scoped instead. The set is bounded so
+    a churning fleet cannot grow memory without limit.
+    """
+    if not worker_id or worker_id in _legacy_platform_worker_warned:
+        return
+    if len(_legacy_platform_worker_warned) >= _LEGACY_PLATFORM_WORKER_WARN_MAX:
+        _legacy_platform_worker_warned.clear()
+    _legacy_platform_worker_warned.add(worker_id)
+    logger.warning(
+        "platform_wide_worker_legacy: provisioned worker %s (seen at %s) has no "
+        "tenant and can serve every tenant; re-provision it tenant-scoped unless "
+        "platform-wide is intended",
+        worker_id,
+        source,
     )
 
 
@@ -534,13 +654,45 @@ def generate_service_researcher_token(
     return jwt.encode(payload, secret, algorithm=algorithm)
 
 
-def generate_token(identity: Row, token_type: str = "access") -> str:
+def interactive_auth_time() -> int:
+    """`auth_time` for a token minted by an interactive login happening right now.
+
+    Call this ONLY where the user has just proven who they are (password
+    login, MFA completion, SSO callback). A token refresh must carry the
+    original value forward with `carried_auth_time` instead, so `auth_time`
+    always answers "when did this person last actually authenticate".
+    """
+    return int(time.time())
+
+
+def carried_auth_time(payload: dict[str, Any] | None) -> int | None:
+    """The `auth_time` of a verified token, for copying into a refreshed token.
+
+    Returns None (the new token then has no `auth_time`, which every
+    recent-authentication check treats as "not recent") when the claim is
+    absent, malformed or in the future -- a refresh can never create or
+    renew it.
+    """
+    value = (payload or {}).get("auth_time")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if value <= 0 or value > int(time.time()) + 60:
+        return None
+    return value
+
+
+def generate_token(
+    identity: Row, token_type: str = "access", auth_time: int | None = None
+) -> str:
     """
     Generate JWT token for an identity.
 
     Args:
         identity: Identity model instance
         token_type: 'access' or 'refresh'
+        auth_time: Epoch seconds of the interactive authentication this
+            token descends from (`interactive_auth_time()` at login,
+            `carried_auth_time()` on refresh). Omitted -> no claim.
 
     Returns:
         JWT token string
@@ -560,6 +712,7 @@ def generate_token(identity: Row, token_type: str = "access") -> str:
         "sub": str(identity.id),
         "username": identity.username,
         "type": token_type,
+        "principal_kind": PRINCIPAL_IDENTITY,
         "iat": now,
         "exp": now + expires_delta,
         # penguin-aaa compatible claims — enables RBAC and tenant middleware
@@ -571,6 +724,8 @@ def generate_token(identity: Row, token_type: str = "access") -> str:
         "iss": current_app.config.get("JWT_ISSUER", "elder-api"),
         "aud": current_app.config.get("JWT_AUDIENCE", "elder-api"),
     }
+    if auth_time is not None:
+        payload["auth_time"] = int(auth_time)
 
     secret = current_app.config["JWT_SECRET_KEY"] or current_app.config["SECRET_KEY"]
     algorithm = current_app.config["JWT_ALGORITHM"]
@@ -579,9 +734,17 @@ def generate_token(identity: Row, token_type: str = "access") -> str:
     return token
 
 
-def verify_token(token: str) -> dict[str, Any] | None:
+def verify_token(
+    token: str, expected_types: Collection[str] = API_BEARER_TOKEN_TYPES
+) -> dict[str, Any] | None:
     """
     Verify and decode JWT token.
+
+    Only tokens whose `type` is in ``expected_types`` are accepted; the
+    default is the API-bearer allow-list, so refresh tokens and any missing
+    or unrecognised type are rejected unless a caller explicitly asks for
+    them (e.g. the refresh endpoint passes ``IDENTITY_REFRESH_TOKEN_TYPES``).
+    The token must also bind unambiguously to a principal kind.
 
     Rejects a token whose `iss`/`aud` claim is PRESENT but does not match
     this service's configured `JWT_ISSUER`/`JWT_AUDIENCE` -- a mismatch
@@ -605,13 +768,13 @@ def verify_token(token: str) -> dict[str, Any] | None:
         Decoded payload dict or None if invalid
     """
     if isinstance(token, str) and token.startswith(WORKER_TOKEN_PREFIX):
-        return resolve_remote_worker_token(token)
+        return _enforce_token_type(resolve_remote_worker_token(token), expected_types)
 
     try:
         secret = (
             current_app.config["JWT_SECRET_KEY"] or current_app.config["SECRET_KEY"]
         )
-        algorithm = current_app.config["JWT_ALGORITHM"]
+        algorithm = current_app.config.get("JWT_ALGORITHM", "HS256")
 
         # Never log the signing secret or token contents, at any level --
         # both are credential material (gh security review finding #4).
@@ -635,6 +798,9 @@ def verify_token(token: str) -> dict[str, Any] | None:
         token_audience = payload.get("aud")
         if token_audience is not None and token_audience != expected_audience:
             logger.warning("Rejected token: audience mismatch")
+            return None
+
+        if _enforce_token_type(payload, expected_types) is None:
             return None
 
         if payload.get("type") == "service_researcher":
@@ -731,6 +897,26 @@ def verify_token(token: str) -> dict[str, Any] | None:
         return None
 
 
+def _enforce_token_type(
+    payload: dict[str, Any] | None, expected_types: Collection[str]
+) -> dict[str, Any] | None:
+    """Return ``payload`` only if its type is allowed here and its principal is unambiguous.
+
+    Fails closed: a missing, unknown or out-of-context `type` is rejected
+    rather than being treated as an identity access token.
+    """
+    if payload is None:
+        return None
+    token_type = payload.get("type")
+    if not isinstance(token_type, str) or token_type not in expected_types:
+        logger.warning("Rejected token: type not accepted in this context")
+        return None
+    if token_principal_kind(payload) is None:
+        logger.warning("Rejected token: ambiguous principal kind")
+        return None
+    return payload
+
+
 def get_token_from_header() -> str | None:
     """
     Extract the JWT, preferring the Authorization header but falling back to
@@ -800,7 +986,7 @@ def get_current_user() -> Any:
     db = current_app.db
 
     try:
-        token_type = payload.get("type", "access")
+        token_type = payload.get("type")
         if token_type == "service_researcher":
             tenant_id = int(str(payload["tenant"]).strip())
             read_scopes = [
@@ -923,11 +1109,27 @@ def get_current_user() -> Any:
             g.current_user = coderun_identity
             return coderun_identity
 
+        # Fail closed: only an explicit identity or portal-user access token
+        # may resolve to a stored principal, and only in its own table.
+        principal_kind = token_principal_kind(payload)
+        if (
+            token_type in PORTAL_ACCESS_TOKEN_TYPES
+            and principal_kind == PRINCIPAL_PORTAL_USER
+        ):
+            lookup_table = "portal_users"
+        elif (
+            token_type in IDENTITY_ACCESS_TOKEN_TYPES
+            and principal_kind == PRINCIPAL_IDENTITY
+        ):
+            lookup_table = "identities"
+        else:
+            logger.warning("Rejected token: type cannot authenticate a user")
+            return None
+
         user_id = int(payload["sub"])  # Convert string back to integer
-        token_type = payload.get("type", "access")
 
         # Handle portal_user tokens (from web UI login)
-        if token_type == "portal_user":
+        if lookup_table == "portal_users":
             portal_user = db.portal_users[user_id]
             if not portal_user:
                 logger.warning(f"Portal user not found with ID: {user_id}")

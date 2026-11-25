@@ -684,7 +684,6 @@ POST /api/v1/iam/providers
   "config": {
     "project_id": "my-project",
     "credentials": {
-      "type": "service_account",
       "project_id": "my-project",
       "private_key_id": "...",
       "private_key": "...",

@@ -18,8 +18,9 @@ from sqlalchemy import text
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.auth.jwt_handler import (
     MAX_CODERUN_TTL_SECONDS,
+    authenticated_service_worker_scope,
     generate_coderun_token,
-    is_system_service_worker,
+    warn_platform_wide_worker_once,
 )
 from apps.api.modules.runs.models.runs import (
     EXECUTION_STATUSES,
@@ -172,18 +173,23 @@ def _current_identity_id() -> int | None:
     return None
 
 
-def _require_runworker() -> tuple[Any, int] | None:
-    """Enforce that the caller is the ``svc-runworker`` system service worker."""
+def _require_runworker() -> tuple[tuple[Any, int] | None, int | None]:
+    """Enforce that the caller is an ``svc-runworker`` service worker.
+
+    Returns ``(error_response, worker_tenant_id)``. ``worker_tenant_id`` is
+    None for a platform-wide worker (serves every tenant) and the worker's
+    tenant for a tenant-scoped one; callers MUST confine claims, results and
+    logs to that tenant.
+    """
     claims = getattr(g, "claims", None) or {}
-    user = getattr(g, "current_user", None)
-    if (
-        not is_system_service_worker()
-        or claims.get("sub") != "svc-runworker"
-        or getattr(user, "username", None) != "svc-runworker"
-    ):
+    ok, worker_tenant_id = authenticated_service_worker_scope("svc-runworker")
+    if not ok:
         return (
-            jsonify({"error": "Forbidden: svc-runworker service worker required"}),
-            403,
+            (
+                jsonify({"error": "Forbidden: svc-runworker service worker required"}),
+                403,
+            ),
+            None,
         )
 
     raw_scope = claims.get("scope")
@@ -195,8 +201,22 @@ def _require_runworker() -> tuple[Any, int] | None:
         scopes = set()
 
     if "runs:invoke" not in scopes:
-        return jsonify({"error": "Forbidden: runs:invoke scope required"}), 403
-    return None
+        return (
+            (jsonify({"error": "Forbidden: runs:invoke scope required"}), 403),
+            None,
+        )
+    if worker_tenant_id is None and claims.get("remote_worker_id"):
+        warn_platform_wide_worker_once(
+            str(claims.get("remote_worker_id")), "runs_internal"
+        )
+    return None, worker_tenant_id
+
+
+def _execution_outside_worker_tenant(row: Any, worker_tenant_id: int | None) -> bool:
+    """Return True when a tenant-scoped worker targets another tenant's execution."""
+    if worker_tenant_id is None:
+        return False
+    return getattr(row, "tenant_id", None) != worker_tenant_id
 
 
 def _audit_claim_anomalies(
@@ -207,7 +227,7 @@ def _audit_claim_anomalies(
 ) -> None:
     """Flag claims that do not match a worker's history (first tenant, rate spike).
 
-    A worker token is accepted for every tenant's queue, so a leaked token
+    A platform-wide worker token is accepted for every tenant's queue, so a leaked token
     shows up as a worker suddenly serving tenants it never served, or claiming
     far faster than usual. Both raise a structured warning and a metric for
     alerting. Detection never blocks or fails a claim.
@@ -1214,7 +1234,7 @@ async def cancel_run_execution(execution_id: str):
 @require_scope("runs:invoke")
 async def claim_pending_executions():
     """Atomically claim pending executions for ``svc-runworker``."""
-    auth_error = _require_runworker()
+    auth_error, worker_tenant_id = _require_runworker()
     if auth_error is not None:
         return auth_error
 
@@ -1236,6 +1256,12 @@ async def claim_pending_executions():
             cluster_filter = (
                 "AND f.worker_cluster = :worker_cluster " if worker_cluster else ""
             )
+            tenant_filter = (
+                "AND e.tenant_id = :worker_tenant_id "
+                if worker_tenant_id is not None
+                else ""
+            )
+            # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- SQL fragments are constants; worker_cluster/tenant/limit values are bound params
             claim_sql = text(
                 f"""
                 WITH next_jobs AS (
@@ -1245,6 +1271,7 @@ async def claim_pending_executions():
                     WHERE e.status = 'pending'
                       AND f.is_enabled = TRUE
                       {cluster_filter}
+                      {tenant_filter}
                     ORDER BY e.created_at ASC, e.id ASC
                     FOR UPDATE OF e SKIP LOCKED
                     LIMIT :limit
@@ -1282,7 +1309,7 @@ async def claim_pending_executions():
                     f.allowed_egress_domains_json,
                     f.execution_namespace,
                     f.worker_cluster
-                """  # nosec B608 - cluster_filter is a hardcoded SQL fragment
+                """  # nosec B608 - cluster_filter/tenant_filter are hardcoded SQL fragments
             )
             params: dict[str, Any] = {
                 "limit": limit,
@@ -1291,6 +1318,8 @@ async def claim_pending_executions():
             }
             if worker_cluster:
                 params["worker_cluster"] = worker_cluster
+            if worker_tenant_id is not None:
+                params["worker_tenant_id"] = worker_tenant_id
 
             with engine.begin() as conn:
                 rows = conn.execute(claim_sql, params).mappings().all()
@@ -1339,10 +1368,15 @@ async def claim_pending_executions():
             return claimed_items
 
         # Generic / SQLite fallback: select pending candidates and conditionally claim
-        pending_rows = db(db.run_executions.status == "pending").select(
+        pending_query = db.run_executions.status == "pending"
+        if worker_tenant_id is not None:
+            pending_query &= db.run_executions.tenant_id == worker_tenant_id
+        pending_rows = db(
+            pending_query
+        ).select(
             orderby=db.run_executions.id,
             limitby=(0, limit * 3),
-        )  # tenant-scope-exempt: internal svc-runworker claims across active tenants
+        )  # tenant-scope-exempt: platform-wide svc-runworker claims across tenants; tenant-scoped workers filtered above
 
         for ex in pending_rows:
             if len(claimed_items) >= limit:
@@ -1458,7 +1492,7 @@ async def claim_pending_executions():
 @require_scope("runs:invoke")
 async def report_execution_result(execution_id: str):
     """Record terminal execution output and logs from ``svc-runworker``."""
-    auth_error = _require_runworker()
+    auth_error, worker_tenant_id = _require_runworker()
     if auth_error is not None:
         return auth_error
 
@@ -1504,7 +1538,7 @@ async def report_execution_result(execution_id: str):
         existing = (
             db(db.run_executions.execution_id == execution_id).select().first()
         )  # tenant-scope-exempt: internal svc-runworker updates by unique execution_id
-        if not existing:
+        if not existing or _execution_outside_worker_tenant(existing, worker_tenant_id):
             return None
 
         duration_ms: int | None = None
@@ -1551,7 +1585,7 @@ async def report_execution_result(execution_id: str):
 @require_scope("runs:invoke")
 async def flush_execution_logs(execution_id: str):
     """Update in-progress ``stdout_log`` for a running execution from ``svc-runworker``."""
-    auth_error = _require_runworker()
+    auth_error, worker_tenant_id = _require_runworker()
     if auth_error is not None:
         return auth_error
 
@@ -1573,7 +1607,7 @@ async def flush_execution_logs(execution_id: str):
         existing = (
             db(db.run_executions.execution_id == execution_id).select().first()
         )  # tenant-scope-exempt: internal svc-runworker updates by unique execution_id
-        if not existing:
+        if not existing or _execution_outside_worker_tenant(existing, worker_tenant_id):
             return None, False
 
         if existing.status != "running":

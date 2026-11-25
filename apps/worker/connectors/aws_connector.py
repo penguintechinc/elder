@@ -765,6 +765,7 @@ class AWSConnector(BaseConnector):
                     result = await self.elder_client.get_or_create_identity(
                         Identity(
                             username=f"aws:{username}",
+                            # nosemgrep: generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account -- identity-type enum value / placeholder text, not a credential
                             identity_type="service_account",
                             auth_provider="aws",
                             auth_provider_id=arn,
@@ -788,6 +789,7 @@ class AWSConnector(BaseConnector):
                     result = await self.elder_client.get_or_create_identity(
                         Identity(
                             username=f"aws-role:{role_name}",
+                            # nosemgrep: generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account -- identity-type enum value / placeholder text, not a credential
                             identity_type="service_account",
                             auth_provider="aws",
                             auth_provider_id=arn,

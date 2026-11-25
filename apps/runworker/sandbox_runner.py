@@ -117,6 +117,22 @@ _PR_GET_DUMPABLE = 3
 _PR_SET_DUMPABLE = 4
 
 
+def _validate_argv(cmd: Any) -> None:
+    """Reject anything other than a non-empty list of NUL-free strings.
+
+    Defence in depth before ``Popen``: guarantees an argv vector is passed
+    (never a shell string) and that argv[0] is an absolute executable path
+    or the fixed ``sh`` used for the rust compile-then-exec wrapper.
+    """
+    if not isinstance(cmd, list) or not cmd:
+        raise ValueError("sandbox command must be a non-empty argv list")
+    for arg in cmd:
+        if not isinstance(arg, str) or "\x00" in arg:
+            raise ValueError("sandbox argv elements must be NUL-free strings")
+    if cmd[0] != "sh" and not os.path.isabs(cmd[0]):
+        raise ValueError("sandbox executable must be an absolute path")
+
+
 class SandboxIsolationError(RuntimeError):
     """Raised when the in-pod sandbox is requested without an isolation boundary."""
 
@@ -498,10 +514,16 @@ end
             return [binary_path, "run", str(script_path)]
         if canonical_runtime == "rust":
             out_bin = tmp_dir / "elder_run_bin"
+            # Paths are passed as positional parameters ($1..$3), never
+            # interpolated into the shell program text.
             return [
                 "sh",
                 "-c",
-                f'"{binary_path}" "{script_path}" -o "{out_bin}" && exec "{out_bin}"',
+                '"$1" "$2" -o "$3" && exec "$3"',
+                "sh",
+                binary_path,
+                str(script_path),
+                str(out_bin),
             ]
         if canonical_runtime == "wasm":
             cmd = [
@@ -629,6 +651,8 @@ end
             # tenant code that could introspect this process.
             harden_worker_process()
 
+            _validate_argv(cmd)
+            # nosemgrep: python.django.security.injection.command.subprocess-injection.subprocess-injection -- argv list (no shell=True), validated by _validate_argv; executable from resolve_local_runtime_binary()
             proc = subprocess.Popen(  # noqa: S603
                 cmd,
                 cwd=str(workspace),

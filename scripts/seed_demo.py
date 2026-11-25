@@ -57,6 +57,7 @@ def row_counts(db: Any) -> dict[str, int]:
     with db.engine.connect() as conn:
         for name in sorted(db.tables):
             counts[name] = conn.execute(
+                # nosemgrep: python.sqlalchemy.security.audit.avoid-sqlalchemy-text.avoid-sqlalchemy-text -- seed tooling; table names come from the ORM metadata, values are bound
                 text(f'SELECT count(*) FROM "{name}"')
             ).scalar_one()  # noqa: S608
     return counts
