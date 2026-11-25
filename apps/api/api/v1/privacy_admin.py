@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import structlog
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import admin_required, login_required
@@ -30,6 +31,8 @@ from apps.api.services.privacy.service import PrivacyService
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.tenant_scoping import get_current_tenant_id
+
+logger = structlog.get_logger()
 
 bp = Blueprint("privacy_admin", __name__)
 
@@ -132,11 +135,13 @@ async def bulk_erase() -> tuple[Any, int]:
 
     legal_hold = await run_in_threadpool(_tenant_legal_hold, db, tenant_id)
     result = await run_in_threadpool(
-        PrivacyService.bulk_erase, db, identity_ids, tenant_id, legal_hold
+        PrivacyService.bulk_erase, db, identity_ids, tenant_id, legal_hold, admin_id
     )
 
     for entry in result["results"]:
-        if entry.get("anonymized"):
+        # An idempotent replay of an already-erased identity is not a new
+        # erasure and must not add a duplicate activity-log row.
+        if entry.get("anonymized") and not entry.get("already_erased"):
             await run_in_threadpool(
                 _log_bulk_request, db, tenant_id, entry["identity_id"], admin_id
             )
@@ -145,7 +150,11 @@ async def bulk_erase() -> tuple[Any, int]:
 
 
 def _log_bulk_request(db: Any, tenant_id: int, identity_id: int, admin_id: int) -> None:
-    """Best-effort write to the dsar_requests activity log for a bulk erasure."""
+    """Best-effort write to the dsar_requests activity log for a bulk erasure.
+
+    Never raises -- the erasure already happened -- but a failed write is
+    logged (ids only), not swallowed.
+    """
     try:
         db.dsar_requests.insert(
             tenant_id=tenant_id,
@@ -155,5 +164,10 @@ def _log_bulk_request(db: Any, tenant_id: int, identity_id: int, admin_id: int) 
             requested_by_identity_id=admin_id,
         )
         db.commit()
-    except Exception:
-        db.rollback()
+    except Exception as exc:
+        logger.warning(
+            "dsar_request_log_failed",
+            tenant_id=tenant_id,
+            request_type="bulk_erasure",
+            error_type=type(exc).__name__,
+        )

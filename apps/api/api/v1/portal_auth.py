@@ -15,6 +15,7 @@ import jwt
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, make_response, request
 
+from apps.api.auth.jwt_handler import carried_auth_time, interactive_auth_time
 from apps.api.auth.portal_cookies import (
     clear_portal_auth_cookies,
     get_access_token_from_cookie,
@@ -102,8 +103,15 @@ def portal_token_required(f):
     return decorated
 
 
-def generate_tokens(user: dict) -> dict:
-    """Generate access and refresh tokens for a portal user."""
+def generate_tokens(user: dict, auth_time: int | None = None) -> dict:
+    """Generate access and refresh tokens for a portal user.
+
+    `auth_time` (epoch seconds) is stamped on both tokens: pass
+    `interactive_auth_time()` from an interactive login (password, MFA
+    completion, SSO callback) and `carried_auth_time(refresh_payload)` from
+    the refresh endpoint. Omitted -> no claim, which recent-authentication
+    checks treat as "not recent".
+    """
     secret_key = current_app.config.get("JWT_SECRET_KEY") or current_app.config.get(
         "SECRET_KEY"
     )
@@ -118,6 +126,8 @@ def generate_tokens(user: dict) -> dict:
     access_payload = PortalAuthService.generate_jwt_claims(user)
     access_payload["exp"] = now + access_token_expires
     access_payload["iat"] = now
+    if auth_time is not None:
+        access_payload["auth_time"] = int(auth_time)
     access_token = jwt.encode(access_payload, secret_key, algorithm="HS256")
 
     # Refresh token
@@ -128,6 +138,8 @@ def generate_tokens(user: dict) -> dict:
         "exp": now + refresh_token_expires,
         "iat": now,
     }
+    if auth_time is not None:
+        refresh_payload["auth_time"] = int(auth_time)
     refresh_token = jwt.encode(refresh_payload, secret_key, algorithm="HS256")
 
     return {
@@ -285,7 +297,7 @@ async def register():
         )
 
     # Generate tokens
-    tokens = generate_tokens(result)
+    tokens = generate_tokens(result, auth_time=interactive_auth_time())
 
     return await _issue_token_response(
         result, tokens, roles=["reader"], status_code=201
@@ -388,7 +400,7 @@ async def login():
         )
 
     # Generate tokens
-    tokens = generate_tokens(result)
+    tokens = generate_tokens(result, auth_time=interactive_auth_time())
 
     # Format response for react-libs LoginPageBuilder compatibility
     roles = [result.get("tenant_role")] if result.get("tenant_role") else []
@@ -431,7 +443,7 @@ async def verify_mfa():
         )
 
     # Generate tokens
-    tokens = generate_tokens(result)
+    tokens = generate_tokens(result, auth_time=interactive_auth_time())
 
     roles = [result.get("tenant_role")] if result.get("tenant_role") else []
     return await _issue_token_response(result, tokens, roles=roles)
@@ -618,7 +630,8 @@ async def refresh_token():
             "tenant_role": user.tenant_role,
             "global_role": user.global_role,
         }
-        tokens = generate_tokens(user_dict)
+        # Rotation keeps the ORIGINAL auth_time: a refresh is not a login.
+        tokens = generate_tokens(user_dict, auth_time=carried_auth_time(payload))
 
         response = await make_response(jsonify(tokens), 200)
         secure = not current_app.config.get("DEBUG", False)
