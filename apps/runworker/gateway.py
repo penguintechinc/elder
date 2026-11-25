@@ -179,11 +179,21 @@ def _is_blocked_ip(ip_str: str) -> bool:
     return False
 
 
-def _domain_matches_allowlist(hostname: str, allowed_domains: Collection[str]) -> bool:
-    """Return True if ``hostname`` matches an entry in ``allowed_domains``."""
+_DNS_LABEL_CHAR_MAP: dict[str, str] = {
+    c: c for c in "abcdefghijklmnopqrstuvwxyz0123456789-."
+}
+_SUBDOMAIN_RE = re.compile(
+    r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$"
+)
+
+
+def _match_allowed_domain(
+    hostname: str, allowed_domains: Collection[str]
+) -> str | None:
+    """Return a canonical allowlisted hostname reconstructed from ``allowed_domains``, or None."""
     host = hostname.strip().lower().rstrip(".")
     if not host or host == "localhost" or host.endswith(".localhost"):
-        return False
+        return None
     for raw in allowed_domains:
         pattern = (raw or "").strip().lower().rstrip(".")
         if not pattern:
@@ -191,10 +201,18 @@ def _domain_matches_allowlist(hostname: str, allowed_domains: Collection[str]) -
         if pattern.startswith("*."):
             suffix = pattern[1:]  # ".example.com"
             if host.endswith(suffix) and len(host) > len(suffix):
-                return True
+                sub = host[: -len(suffix)]
+                if _SUBDOMAIN_RE.fullmatch(sub):
+                    safe_sub = "".join(_DNS_LABEL_CHAR_MAP[ch] for ch in sub)
+                    return f"{safe_sub}{suffix}"
         elif host == pattern:
-            return True
-    return False
+            return pattern
+    return None
+
+
+def _domain_matches_allowlist(hostname: str, allowed_domains: Collection[str]) -> bool:
+    """Return True if ``hostname`` matches an entry in ``allowed_domains``."""
+    return _match_allowed_domain(hostname, allowed_domains) is not None
 
 
 def validate_egress_url(
@@ -214,9 +232,19 @@ def validate_egress_url(
     if not raw:
         return False, "missing_egress_url"
 
+    if any(ch in raw for ch in ("\r", "\n", "\x00", "\\")):
+        return False, "invalid_url"
+
     parsed = urlsplit(raw)
+    if parsed.username is not None or parsed.password is not None:
+        return False, "userinfo_not_allowed"
+
     scheme = (parsed.scheme or "").lower()
-    if scheme not in ("http", "https"):
+    if scheme == "https":
+        safe_scheme = "https"
+    elif scheme == "http":
+        safe_scheme = "http"
+    else:
         return False, "unsupported_scheme"
 
     hostname = (parsed.hostname or "").strip().lower().rstrip(".")
@@ -229,19 +257,25 @@ def validate_egress_url(
     if hostname == "localhost" or hostname.endswith(".localhost"):
         return False, "loopback_hostname_blocked"
 
-    if not _domain_matches_allowlist(hostname, allowed_domains):
+    safe_host = _match_allowed_domain(hostname, allowed_domains)
+    if safe_host is None:
         return False, "domain_not_allowlisted"
 
     try:
-        port = parsed.port or (443 if scheme == "https" else 80)
+        raw_port = parsed.port
     except ValueError:
         return False, "invalid_port"
 
+    default_port = 443 if safe_scheme == "https" else 80
+    port = int(raw_port) if raw_port is not None else default_port
+    if port < 1 or port > 65535:
+        return False, "invalid_port"
+
     if dns_resolver is not None:
-        resolved_ips = dns_resolver(hostname, port)
+        resolved_ips = dns_resolver(safe_host, port)
     else:
         try:
-            infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+            infos = socket.getaddrinfo(safe_host, port, type=socket.SOCK_STREAM)
             resolved_ips = [str(info[4][0]) for info in infos]
         except OSError:
             return False, "dns_resolution_failed"
@@ -253,7 +287,24 @@ def validate_egress_url(
         if _is_blocked_ip(ip_str):
             return False, "blocked_ip_address"
 
-    return True, raw
+    raw_path = parsed.path or ""
+    if raw_path and not raw_path.startswith("/"):
+        return False, "invalid_path"
+    if ".." in unquote(raw_path).split("/"):
+        return False, "invalid_path"
+
+    safe_netloc = safe_host if port == default_port else f"{safe_host}:{port}"
+    safe_base = f"{safe_scheme}://{safe_netloc}"
+    if raw_path:
+        safe_url = f"{safe_base}{raw_path}"
+    elif parsed.query:
+        safe_url = f"{safe_base}/"
+    else:
+        safe_url = safe_base
+    if parsed.query:
+        safe_url = f"{safe_url}?{parsed.query}"
+
+    return True, safe_url
 
 
 class RestrictionGateway:

@@ -6,6 +6,7 @@ import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timezone
+from urllib.parse import urlparse
 
 from quart import Blueprint, current_app, jsonify, request
 
@@ -210,13 +211,17 @@ async def create_pipeline():
     if not data.get("repository_url"):
         return ApiResponse.error("repository_url is required", 400)
 
-    # Auto-detect repository provider from URL
-    repo_url = data["repository_url"].lower()
+    # Auto-detect repository provider from URL hostname
     provider = data.get("repository_provider")
     if not provider:
-        if "github.com" in repo_url:
+        raw_repo_url = str(data["repository_url"]).strip()
+        if "://" not in raw_repo_url and "@" in raw_repo_url and ":" in raw_repo_url:
+            host = raw_repo_url.split("@", 1)[1].split(":", 1)[0].lower().rstrip(".")
+        else:
+            host = (urlparse(raw_repo_url).hostname or "").lower().rstrip(".")
+        if host == "github.com" or host.endswith(".github.com"):
             provider = "github"
-        elif "gitlab.com" in repo_url or "gitlab" in repo_url:
+        elif host == "gitlab.com" or host.endswith(".gitlab.com"):
             provider = "gitlab"
         else:
             provider = "github"

@@ -212,6 +212,24 @@ class TestScopeMappingAndEgressValidation:
                 ["93.184.216.34"],
                 "unsupported_scheme",
             ),
+            (
+                "https://user:pass@api.example.com/v1",
+                ["api.example.com"],
+                ["93.184.216.34"],
+                "userinfo_not_allowed",
+            ),
+            (
+                "https://api.example.com/v1/../../secret",
+                ["api.example.com"],
+                ["93.184.216.34"],
+                "invalid_path",
+            ),
+            (
+                "https://api.example.com/v1\\evil",
+                ["api.example.com"],
+                ["93.184.216.34"],
+                "invalid_url",
+            ),
         ],
     )
     def test_validate_egress_url_blocks_ssrf(

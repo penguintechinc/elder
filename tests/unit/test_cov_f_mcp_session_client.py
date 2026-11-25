@@ -430,7 +430,7 @@ class TestClientRequests:
                     await c.get("/x")
         assert excinfo.value.status_code == 0
         assert excinfo.value.message == "Upstream request failed"
-        assert secret not in caplog.text and "token=****" in caplog.text
+        assert secret not in caplog.text and "ConnectError" in caplog.text
 
     @pytest.mark.asyncio
     async def test_transport_failure_is_generic_and_masked(

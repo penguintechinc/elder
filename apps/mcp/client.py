@@ -285,9 +285,9 @@ class ElderClient:
                 method, 0, (time.perf_counter() - started) * 1000.0
             )
             _log.warning(
-                "mcp_upstream_transport_error path=%s error=%s",
+                "mcp_upstream_transport_error path=%s error_type=%s",
                 path,
-                mask_secrets(f"{type(exc).__name__}: {exc}"),
+                type(exc).__name__,
             )
             raise ElderAPIError(0, public_error_message(0)) from None
 
@@ -310,9 +310,9 @@ class ElderClient:
                         method, 0, (time.perf_counter() - started) * 1000.0
                     )
                     _log.warning(
-                        "mcp_upstream_transport_error path=%s error=%s",
+                        "mcp_upstream_transport_error path=%s error_type=%s",
                         path,
-                        mask_secrets(f"{type(exc).__name__}: {exc}"),
+                        type(exc).__name__,
                     )
                     raise ElderAPIError(0, public_error_message(0)) from None
 
@@ -332,10 +332,9 @@ class ElderClient:
         if resp.status_code >= 400:
             msg, detail = _extract_error_detail(resp)
             _log.warning(
-                "mcp_upstream_error path=%s status=%d detail=%s",
+                "mcp_upstream_error path=%s status=%d",
                 path,
                 resp.status_code,
-                mask_secrets(msg)[:300],
             )
             raise ElderAPIError(resp.status_code, msg, detail=detail)
 

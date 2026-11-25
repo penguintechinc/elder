@@ -924,5 +924,5 @@ class K8sRunner:
                 return
             logger.error(
                 "runworker_gateway_secret_cleanup_failed",
-                extra={"secret": secret_name, "error": str(exc)},
+                extra={"error_type": type(exc).__name__},
             )

@@ -190,9 +190,8 @@ def ensure_database_ready(app) -> dict:
     # Get SQLAlchemy URL
     db_url = get_sqlalchemy_url(app)
 
-    # Create engine (don't log password)
-    safe_url = db_url.split("@")[-1] if "@" in db_url else db_url
-    logger.info(f"Checking database at: ...@{safe_url}")
+    # Create engine (don't log database URL or credentials)
+    logger.info("Checking database connectivity and schema readiness")
 
     engine = create_engine(db_url, echo=False)
 

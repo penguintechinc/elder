@@ -62,6 +62,8 @@ ENVELOPE_PREFIX = f"{ENVELOPE_VERSION}:"
 
 _KEY_INFO = b"elder/portal-auth/mfa-totp-secret/aes-256-gcm/v1"
 _KID_INFO = b"elder/portal-auth/mfa-totp-secret/key-id/v1"
+_CHALLENGE_HASH_SALT = b"elder/portal-auth/mfa-challenge-id/v1"
+_CHALLENGE_HASH_ITERATIONS = 100_000
 _NONCE_BYTES = 12
 _KID_HEX_CHARS = 16
 _BACKUP_CODE_RE = re.compile(r"^[0-9a-f]{8}$")
@@ -134,12 +136,18 @@ def derive_subkey(master_secret: str, info: bytes, length: int = 32) -> bytes:
 
 
 def hash_challenge_id(challenge_id: str) -> str:
-    """Return the SHA-256 hex digest stored for an opaque MFA challenge id.
+    """Return a PBKDF2-HMAC-SHA256 hex digest stored for an opaque MFA challenge id.
 
-    The id itself is high-entropy random, so an unsalted digest is enough to
-    keep a database read from yielding usable challenges.
+    Deterministic (for indexed lookup) and stretched via PBKDF2-HMAC-SHA256 so a
+    database read cannot yield usable challenges.
     """
-    return hashlib.sha256(challenge_id.encode("utf-8")).hexdigest()
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        challenge_id.encode("utf-8"),
+        _CHALLENGE_HASH_SALT,
+        _CHALLENGE_HASH_ITERATIONS,
+        dklen=32,
+    ).hex()
 
 
 def _derive(master_secret: str) -> tuple[str, bytes]:
