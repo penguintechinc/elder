@@ -23,7 +23,12 @@ import networkx as nx
 import structlog
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from apps.api.auth.jwt_handler import generate_token, verify_token
+from apps.api.auth.jwt_handler import (
+    carried_auth_time,
+    generate_token,
+    interactive_auth_time,
+    verify_token,
+)
 from apps.api.grpc.auth import GrpcCaller, current_caller, run_in_app_context
 from apps.api.grpc.converters import (
     dependency_to_proto,
@@ -263,9 +268,13 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         context.set_code(grpc.StatusCode.INTERNAL)
         context.set_details(f"{operation} failed: {str(e)}")
 
-    def _generate_jwt_token(self, identity, token_type: str = "access") -> str:
+    def _generate_jwt_token(
+        self, identity, token_type: str = "access", auth_time: int | None = None
+    ) -> str:
         """Issue a token with the REST API's issuer (same key and claims)."""
-        return run_in_app_context(self.app, generate_token, identity, token_type)
+        return run_in_app_context(
+            self.app, generate_token, identity, token_type, auth_time
+        )
 
     def _verify_jwt_token(self, token: str) -> dict | None:
         """Verify a token with the REST API's shared verifier."""
@@ -325,8 +334,10 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             identity = db.identities[identity.id]
 
             # Generate tokens
-            access_token = self._generate_jwt_token(identity, "access")
-            refresh_token = self._generate_jwt_token(identity, "refresh")
+            # Password login is an interactive authentication.
+            auth_time = interactive_auth_time()
+            access_token = self._generate_jwt_token(identity, "access", auth_time)
+            refresh_token = self._generate_jwt_token(identity, "refresh", auth_time)
             expires_in = self._access_expires_in()
 
             identity_dto = from_pydal_row(identity, IdentityDTO)
@@ -368,8 +379,10 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 context.set_details("User not found or inactive")
                 return auth_pb2.RefreshTokenResponse()
 
-            # Generate new access token
-            access_token = self._generate_jwt_token(identity, "access")
+            # A refresh carries the original auth_time forward, never renews it.
+            access_token = self._generate_jwt_token(
+                identity, "access", carried_auth_time(payload)
+            )
             expires_in = self._access_expires_in()
 
             return auth_pb2.RefreshTokenResponse(

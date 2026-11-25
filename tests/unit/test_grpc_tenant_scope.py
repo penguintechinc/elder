@@ -340,6 +340,8 @@ def test_login_token_authenticates_follow_up_calls(world):
         auth_pb2.LoginRequest(username=username, password=PASSWORD),
     )
     assert code == grpc.StatusCode.OK and login.access_token
+    claims = jwt.decode(login.access_token, options={"verify_signature": False})
+    assert isinstance(claims.get("auth_time"), int)
     code, resp = _call(
         world,
         "GetEntity",
