@@ -30,8 +30,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /app/.local
 COPY --from=builder /root/.local /app/.local
 
-# Copy application code
+# Copy application code and version metadata
 COPY apps/runworker /app/apps/runworker
+COPY .version /app/.version
+
+# Optional build-time version override (falls back to /app/.version at runtime)
+ARG APP_VERSION=
+ENV APP_VERSION=${APP_VERSION}
 
 # Fix permissions for non-root user
 RUN chown -R appuser:appuser /app

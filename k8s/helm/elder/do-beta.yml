@@ -4,6 +4,14 @@
 
 namespace: elder
 
+# Credentials come from an operator-managed Secret (issue #385); no literal
+# credentials in this file. Create it before install — see
+# k8s/helm/elder/SECRETS.md for the required keys.
+environment: beta
+secrets:
+  existingSecret: elder-secrets
+  create: false
+
 # Global settings for DO beta
 global:
   imageRegistry: ""
@@ -32,11 +40,6 @@ postgres:
   env:
     POSTGRES_DB: elder
     POSTGRES_USER: elder
-    # Real value supplied at deploy time — either `--set postgres.env.POSTGRES_PASSWORD=...`
-    # or a pre-created Secret patched in post-render. This chart has no
-    # secret.yaml template (matches values-beta.yaml: plaintext env value in
-    # the Deployment spec) — do not invent new secret plumbing here.
-    POSTGRES_PASSWORD: "CHANGE_AT_DEPLOY_POSTGRES_PASSWORD"
     POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
     PGDATA: /var/lib/postgresql/data/pgdata
   resources:
@@ -60,8 +63,6 @@ redis:
     repository: redis
     tag: 7-bookworm@sha256:24ea35ee039d7345bef2377611e3b1a615231746de4cfea74c1414575ee56167
     pullPolicy: IfNotPresent
-  env:
-    REDIS_PASSWORD: "CHANGE_AT_DEPLOY_REDIS_PASSWORD"
   resources:
     requests:
       memory: "128Mi"
@@ -110,18 +111,13 @@ hub-api:
     pullPolicy: Always
   env:
     FLASK_ENV: production
-    SECRET_KEY: "CHANGE_AT_DEPLOY_SECRET_KEY"
     SITE_URL: "https://elderrms.app"
     LOG_LEVEL: INFO
     RELEASE_MODE: "false"
     GRPC_REQUIRE_LICENSE: "true"
-    LICENSE_KEY: "CHANGE_AT_DEPLOY_LICENSE_KEY"
     LICENSE_SERVER_URL: "https://license.penguintech.io"
     DB_HOST: elder-postgres
-    DB_PASSWORD: "CHANGE_AT_DEPLOY_POSTGRES_PASSWORD"
-    DATABASE_URL: "postgresql://elder:CHANGE_AT_DEPLOY_POSTGRES_PASSWORD@elder-postgres:5432/elder"
     REDIS_HOST: elder-redis
-    REDIS_URL: "redis://:CHANGE_AT_DEPLOY_REDIS_PASSWORD@elder-redis:6379/0"
     MCP_SERVER_URL: "http://hub-mcp:8080"
   resources:
     requests:
@@ -233,10 +229,9 @@ svc-worker:
     LOG_LEVEL: INFO
     LOG_FORMAT: json
     SYNC_ON_STARTUP: "true"
-    DATABASE_URL: "postgresql://elder:CHANGE_AT_DEPLOY_POSTGRES_PASSWORD@elder-postgres:5432/elder"
-    DATABASE_READ_URL: ""
-    DB_POOL_SIZE: "10"
-    REDIS_URL: "redis://:CHANGE_AT_DEPLOY_REDIS_PASSWORD@elder-redis:6379/0"
+  database:
+    poolSize: 10
+    maxOverflow: 0
   resources:
     requests:
       memory: "256Mi"
@@ -258,11 +253,10 @@ svc-flows-invoker:
     pullPolicy: Always
   env:
     LOG_LEVEL: INFO
-    DATABASE_URL: "postgresql://elder:CHANGE_AT_DEPLOY_POSTGRES_PASSWORD@elder-postgres:5432/elder"
-    DATABASE_READ_URL: ""
-    DB_POOL_SIZE: "5"
-    REDIS_URL: "redis://:CHANGE_AT_DEPLOY_REDIS_PASSWORD@elder-redis:6379/0"
     FLOWS_WORKSPACE_ROOT: "/workspace"
+  database:
+    poolSize: 5
+    maxOverflow: 0
   resources:
     requests:
       memory: "128Mi"

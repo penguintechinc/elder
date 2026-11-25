@@ -18,6 +18,7 @@ from apps.api.auth.jwt_handler import (
     get_token_from_header,
     hash_worker_token,
     verify_token,
+    warn_platform_wide_worker_once,
 )
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
@@ -29,6 +30,11 @@ bp = Blueprint("admin_workers", __name__)
 
 VALID_WORKER_TYPES = frozenset({"runworker", "scanner"})
 VALID_STATUSES = frozenset({"online", "stale", "offline", "revoked"})
+# Worker kinds: a platform-wide worker (tenant_id NULL, authenticates as the
+# system tenant) serves every tenant's queue; a tenant worker serves only its
+# own tenant. Only a super-admin may mint or manage platform-wide workers.
+WORKER_KIND_PLATFORM_WIDE = "platform_wide"
+WORKER_KIND_TENANT = "tenant"
 DEFAULT_POLL_INTERVAL_SECONDS = 30.0
 _SERVICE_SUB_TO_WORKER_TYPE = {
     sub: worker_type for worker_type, sub in WORKER_TYPE_TO_SERVICE_SUB.items()
@@ -132,6 +138,9 @@ def _serialize_worker(row: Any, now: datetime | None = None) -> dict[str, Any]:
         "worker_id": row.worker_id,
         "tenant_id": row.tenant_id,
         "worker_type": row.worker_type,
+        "kind": WORKER_KIND_PLATFORM_WIDE
+        if row.tenant_id is None
+        else WORKER_KIND_TENANT,
         "name": row.name,
         "cluster": row.cluster,
         "token_prefix": row.token_prefix,
@@ -215,13 +224,62 @@ def _row_visible_to_caller(
     row: Any,
     *,
     caller_tenant_id: int | None,
-    is_superuser: bool,
+    super_admin: bool,
 ) -> bool:
-    """Enforce tenant isolation for tenant-scoped workers while allowing global workers."""
-    if is_superuser or caller_tenant_id is None:
+    """Return True when the caller may see or manage ``row``.
+
+    A super-admin sees every worker. Everyone else (tenant admins and
+    superusers homed outside the system tenant) sees only workers of their
+    own tenant: platform-wide and other tenants' workers are invisible.
+    """
+    if super_admin:
         return True
-    row_tenant = getattr(row, "tenant_id", None)
-    return row_tenant is None or row_tenant == caller_tenant_id
+    if caller_tenant_id is None:
+        return False
+    return getattr(row, "tenant_id", None) == caller_tenant_id
+
+
+def _platform_tenant_id(db: Any) -> int | None:
+    """Return the deployment's operator (platform) tenant id, or None.
+
+    The slug comes from ``PLATFORM_TENANT_SLUG`` (default ``system``). Only when
+    ``PLATFORM_TENANT_ALLOW_DEFAULT_FALLBACK`` is set and that tenant is
+    missing does the bootstrap ``default`` tenant act as the platform tenant.
+    """
+    cfg = current_app.config
+    slug = str(cfg.get("PLATFORM_TENANT_SLUG") or "system").strip() or "system"
+    row = db(db.tenants.slug == slug).select().first()
+    if row is None and bool(cfg.get("PLATFORM_TENANT_ALLOW_DEFAULT_FALLBACK", False)):
+        row = db(db.tenants.slug == "default").select().first()
+    return int(row.id) if row is not None else None
+
+
+def _caller_is_super_admin(
+    db: Any, *, caller_tenant_id: int | None, is_superuser: bool
+) -> bool:
+    """Return True only for a superuser whose verified token is in the platform tenant."""
+    if not is_superuser or caller_tenant_id is None:
+        return False
+    return caller_tenant_id == _platform_tenant_id(db)
+
+
+async def _authorize_caller(
+    db: Any, caller_tenant_id: int | None, is_superuser: bool
+) -> tuple[tuple[Any, int] | None, bool]:
+    """Return ``(error_response, super_admin)`` for an admin-workers request.
+
+    Fails closed: a caller without a tenant in its verified token is refused
+    outright (a super-admin always carries the platform tenant).
+    """
+    if caller_tenant_id is None:
+        return ApiResponse.error("Tenant context required", 403), False
+    super_admin = await run_in_threadpool(
+        _caller_is_super_admin,
+        db,
+        caller_tenant_id=caller_tenant_id,
+        is_superuser=is_superuser,
+    )
+    return None, bool(super_admin)
 
 
 def _fetch_worker_by_pk(db: Any, worker_pk: int) -> Any | None:
@@ -236,6 +294,11 @@ async def list_workers() -> tuple[Any, int]:
     """List registered remote and in-cluster workers with filtering and status counts."""
     db = current_app.db
     caller_tenant_id, is_superuser, _ = _caller_context()
+    auth_error, super_admin = await _authorize_caller(
+        db, caller_tenant_id, is_superuser
+    )
+    if auth_error is not None:
+        return auth_error
 
     worker_type = (request.args.get("worker_type") or "").strip().lower() or None
     if worker_type and worker_type not in VALID_WORKER_TYPES:
@@ -273,7 +336,7 @@ async def list_workers() -> tuple[Any, int]:
         filtered: list[dict[str, Any]] = []
         for row in rows:
             if not _row_visible_to_caller(
-                row, caller_tenant_id=caller_tenant_id, is_superuser=is_superuser
+                row, caller_tenant_id=caller_tenant_id, super_admin=super_admin
             ):
                 continue
             serialized = _serialize_worker(row, now)
@@ -306,6 +369,11 @@ async def create_worker() -> tuple[Any, int]:
     """Onboard a new remote worker and return its one-time Bearer token."""
     db = current_app.db
     caller_tenant_id, is_superuser, identity_id = _caller_context()
+    auth_error, super_admin = await _authorize_caller(
+        db, caller_tenant_id, is_superuser
+    )
+    if auth_error is not None:
+        return auth_error
 
     body = await request.get_json(silent=True)
     if not isinstance(body, dict):
@@ -362,8 +430,31 @@ async def create_worker() -> tuple[Any, int]:
             "capabilities", "must be a JSON object or array"
         )
 
+    platform_wide = body.get("platform_wide", False)
+    if not isinstance(platform_wide, bool):
+        return ApiResponse.validation_error("platform_wide", "must be a boolean")
+
     tenant_id = body.get("tenant_id")
-    if tenant_id is not None:
+    if platform_wide and tenant_id is not None:
+        return ApiResponse.validation_error(
+            "tenant_id", "must be omitted when platform_wide is true"
+        )
+    if platform_wide:
+        if not super_admin:
+            return ApiResponse.error(
+                "Only a super-admin (system tenant superuser) can provision a "
+                "platform-wide worker",
+                403,
+            )
+    elif tenant_id is None:
+        if is_superuser:
+            return ApiResponse.validation_error(
+                "tenant_id",
+                "superusers must pass tenant_id or platform_wide: true explicitly",
+            )
+        # Default for tenant admins: a worker scoped to the caller's own tenant.
+        tenant_id = caller_tenant_id
+    elif tenant_id is not None:
         if (
             isinstance(tenant_id, bool)
             or not isinstance(tenant_id, int)
@@ -372,13 +463,11 @@ async def create_worker() -> tuple[Any, int]:
             return ApiResponse.validation_error(
                 "tenant_id", "must be a positive integer or null"
             )
-        if (
-            not is_superuser
-            and caller_tenant_id is not None
-            and tenant_id != caller_tenant_id
-        ):
+        # Another tenant's worker claims that tenant's runs (and mints coderun
+        # tokens for them): only a super-admin may provision one.
+        if tenant_id != caller_tenant_id and not super_admin:
             return ApiResponse.error(
-                "Cannot provision a worker for another tenant", 403
+                "Only a super-admin can provision a worker for another tenant", 403
             )
 
     token, token_hash, token_prefix = _generate_worker_token()
@@ -421,6 +510,8 @@ async def create_worker() -> tuple[Any, int]:
         "remote_worker_created",
         worker_id=worker_id,
         worker_type=worker_type,
+        kind=worker_dto["kind"] if worker_dto else None,
+        tenant_id=tenant_id,
         cluster=cluster,
         token_prefix=token_prefix,
     )
@@ -443,11 +534,16 @@ async def get_worker(id: int) -> tuple[Any, int]:
     """Retrieve a single remote worker by numeric ID."""
     db = current_app.db
     caller_tenant_id, is_superuser, _ = _caller_context()
+    auth_error, super_admin = await _authorize_caller(
+        db, caller_tenant_id, is_superuser
+    )
+    if auth_error is not None:
+        return auth_error
 
     def _fetch() -> dict[str, Any] | None:
         row = _fetch_worker_by_pk(db, id)
         if row is None or not _row_visible_to_caller(
-            row, caller_tenant_id=caller_tenant_id, is_superuser=is_superuser
+            row, caller_tenant_id=caller_tenant_id, super_admin=super_admin
         ):
             return None
         return _serialize_worker(row, datetime.now(UTC))
@@ -465,6 +561,11 @@ async def update_worker(id: int) -> tuple[Any, int]:
     """Update a worker's metadata, live config, capabilities, or enabled state."""
     db = current_app.db
     caller_tenant_id, is_superuser, _ = _caller_context()
+    auth_error, super_admin = await _authorize_caller(
+        db, caller_tenant_id, is_superuser
+    )
+    if auth_error is not None:
+        return auth_error
 
     body = await request.get_json(silent=True)
     if not isinstance(body, dict):
@@ -518,20 +619,20 @@ async def update_worker(id: int) -> tuple[Any, int]:
             return ApiResponse.validation_error("is_enabled", "must be a boolean")
         updates["is_enabled"] = is_enabled
 
-    def _update() -> dict[str, Any] | None:
+    def _update() -> tuple[dict[str, Any] | None, str | None]:
         row = _fetch_worker_by_pk(db, id)
         if row is None or not _row_visible_to_caller(
-            row, caller_tenant_id=caller_tenant_id, is_superuser=is_superuser
+            row, caller_tenant_id=caller_tenant_id, super_admin=super_admin
         ):
-            return None
+            return None, "not_found"
         now = datetime.now(UTC)
         updates["updated_at"] = now
         db(db.remote_workers.id == id).update(**updates)
         db.commit()
         updated = _fetch_worker_by_pk(db, id)
-        return _serialize_worker(updated, now)
+        return _serialize_worker(updated, now), None
 
-    worker_dto = await run_in_threadpool(_update)
+    worker_dto, err = await run_in_threadpool(_update)
     if worker_dto is None:
         return ApiResponse.not_found("Worker", id)
 
@@ -546,13 +647,18 @@ async def rotate_worker_token(id: int) -> tuple[Any, int]:
     """Rotate a worker's Bearer token hash and return the new one-time token."""
     db = current_app.db
     caller_tenant_id, is_superuser, _ = _caller_context()
+    auth_error, super_admin = await _authorize_caller(
+        db, caller_tenant_id, is_superuser
+    )
+    if auth_error is not None:
+        return auth_error
 
     token, token_hash, token_prefix = _generate_worker_token()
 
     def _rotate() -> tuple[dict[str, Any] | None, str | None]:
         row = _fetch_worker_by_pk(db, id)
         if row is None or not _row_visible_to_caller(
-            row, caller_tenant_id=caller_tenant_id, is_superuser=is_superuser
+            row, caller_tenant_id=caller_tenant_id, super_admin=super_admin
         ):
             return None, "not_found"
         if getattr(row, "revoked_at", None) is not None:
@@ -588,13 +694,18 @@ async def revoke_worker(id: int) -> tuple[Any, int]:
     """Offboard and revoke a remote worker, clearing its stored token hash."""
     db = current_app.db
     caller_tenant_id, is_superuser, _ = _caller_context()
+    auth_error, super_admin = await _authorize_caller(
+        db, caller_tenant_id, is_superuser
+    )
+    if auth_error is not None:
+        return auth_error
 
-    def _revoke() -> dict[str, Any] | None:
+    def _revoke() -> tuple[dict[str, Any] | None, str | None]:
         row = _fetch_worker_by_pk(db, id)
         if row is None or not _row_visible_to_caller(
-            row, caller_tenant_id=caller_tenant_id, is_superuser=is_superuser
+            row, caller_tenant_id=caller_tenant_id, super_admin=super_admin
         ):
-            return None
+            return None, "not_found"
         now = datetime.now(UTC)
         db(db.remote_workers.id == id).update(
             revoked_at=now,
@@ -604,9 +715,9 @@ async def revoke_worker(id: int) -> tuple[Any, int]:
         )
         db.commit()
         updated = _fetch_worker_by_pk(db, id)
-        return _serialize_worker(updated, now)
+        return _serialize_worker(updated, now), None
 
-    worker_dto = await run_in_threadpool(_revoke)
+    worker_dto, err = await run_in_threadpool(_revoke)
     if worker_dto is None:
         return ApiResponse.not_found("Worker", id)
 
@@ -692,6 +803,8 @@ async def worker_heartbeat() -> tuple[Any, int]:
                 row, "is_enabled", False
             ):
                 return None, 403, "Worker has been revoked or disabled"
+            if getattr(row, "tenant_id", None) is None:
+                warn_platform_wide_worker_once(row.worker_id, "heartbeat")
 
             now = datetime.now(UTC)
             updates: dict[str, Any] = {
@@ -742,6 +855,13 @@ async def worker_heartbeat() -> tuple[Any, int]:
             "Forbidden: only svc-runworker and svc-scanner may send heartbeats", 403
         )
 
+    # In-cluster JWT heartbeats are platform workers only; a tenant-scoped
+    # worker must use its provisioned ewk_ token (handled above).
+    if payload.get("tenant") != "system":
+        return ApiResponse.error(
+            "Forbidden: in-cluster heartbeats require a platform service worker", 403
+        )
+
     effective_worker_id = (body_worker_id or hostname or sub)[:64]
 
     def _handle_in_cluster() -> tuple[dict[str, Any] | None, int, str | None]:
@@ -752,6 +872,13 @@ async def worker_heartbeat() -> tuple[Any, int]:
                 row, "is_enabled", False
             ):
                 return None, 403, "Worker has been revoked or disabled"
+            # Never let an in-cluster JWT overwrite a provisioned or
+            # tenant-scoped worker record that shares its worker_id.
+            if (
+                getattr(row, "token_hash", None) is not None
+                or getattr(row, "tenant_id", None) is not None
+            ):
+                return None, 403, "worker_id belongs to a provisioned worker"
             updates: dict[str, Any] = {
                 "last_heartbeat_at": now,
                 "updated_at": now,

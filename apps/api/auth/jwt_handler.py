@@ -4,6 +4,7 @@
 
 import hashlib
 import logging
+import time
 from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -244,6 +245,67 @@ def is_system_service_worker() -> bool:
         and getattr(user, "token_type", None) == "service_worker"
         and getattr(user, "tenant_id", None) is None
         and getattr(user, "username", None) in SERVICE_WORKER_ALLOWED_SCOPES
+    )
+
+
+def authenticated_service_worker_scope(sub: str) -> tuple[bool, int | None]:
+    """Return ``(ok, tenant_id)`` for a verified ``service_worker`` caller named ``sub``.
+
+    ``tenant_id`` is None for a platform-wide (system tenant) worker and the
+    worker's tenant for a tenant-scoped one. Only endpoints that enforce the
+    tenant themselves may accept tenant-scoped workers; everything else keeps
+    using :func:`is_system_service_worker`.
+    """
+    claims = getattr(g, "claims", {}) or {}
+    user = getattr(g, "current_user", None)
+    if (
+        claims.get("type") != "service_worker"
+        or claims.get("sub") != sub
+        or user is None
+        or getattr(user, "token_type", None) != "service_worker"
+        or getattr(user, "username", None) != sub
+        or sub not in SERVICE_WORKER_ALLOWED_SCOPES
+    ):
+        return False, None
+    if is_system_service_worker():
+        return True, None
+    tenant_raw = claims.get("tenant")
+    user_tid = getattr(user, "tenant_id", None)
+    if (
+        isinstance(tenant_raw, str)
+        and tenant_raw.isascii()
+        and tenant_raw.isdigit()
+        and int(tenant_raw) > 0
+        and isinstance(user_tid, int)
+        and not isinstance(user_tid, bool)
+        and user_tid == int(tenant_raw)
+    ):
+        return True, user_tid
+    return False, None
+
+
+_legacy_platform_worker_warned: set[str] = set()
+_LEGACY_PLATFORM_WORKER_WARN_MAX = 10_000
+
+
+def warn_platform_wide_worker_once(worker_id: str | None, source: str) -> None:
+    """Log ``platform_wide_worker_legacy`` once per provisioned platform-wide worker.
+
+    A NULL-tenant ``ewk_`` worker serves every tenant's queue; operators should
+    review whether it ought to be tenant-scoped instead. The set is bounded so
+    a churning fleet cannot grow memory without limit.
+    """
+    if not worker_id or worker_id in _legacy_platform_worker_warned:
+        return
+    if len(_legacy_platform_worker_warned) >= _LEGACY_PLATFORM_WORKER_WARN_MAX:
+        _legacy_platform_worker_warned.clear()
+    _legacy_platform_worker_warned.add(worker_id)
+    logger.warning(
+        "platform_wide_worker_legacy: provisioned worker %s (seen at %s) has no "
+        "tenant and can serve every tenant; re-provision it tenant-scoped unless "
+        "platform-wide is intended",
+        worker_id,
+        source,
     )
 
 
@@ -592,13 +654,45 @@ def generate_service_researcher_token(
     return jwt.encode(payload, secret, algorithm=algorithm)
 
 
-def generate_token(identity: Row, token_type: str = "access") -> str:
+def interactive_auth_time() -> int:
+    """`auth_time` for a token minted by an interactive login happening right now.
+
+    Call this ONLY where the user has just proven who they are (password
+    login, MFA completion, SSO callback). A token refresh must carry the
+    original value forward with `carried_auth_time` instead, so `auth_time`
+    always answers "when did this person last actually authenticate".
+    """
+    return int(time.time())
+
+
+def carried_auth_time(payload: dict[str, Any] | None) -> int | None:
+    """The `auth_time` of a verified token, for copying into a refreshed token.
+
+    Returns None (the new token then has no `auth_time`, which every
+    recent-authentication check treats as "not recent") when the claim is
+    absent, malformed or in the future -- a refresh can never create or
+    renew it.
+    """
+    value = (payload or {}).get("auth_time")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if value <= 0 or value > int(time.time()) + 60:
+        return None
+    return value
+
+
+def generate_token(
+    identity: Row, token_type: str = "access", auth_time: int | None = None
+) -> str:
     """
     Generate JWT token for an identity.
 
     Args:
         identity: Identity model instance
         token_type: 'access' or 'refresh'
+        auth_time: Epoch seconds of the interactive authentication this
+            token descends from (`interactive_auth_time()` at login,
+            `carried_auth_time()` on refresh). Omitted -> no claim.
 
     Returns:
         JWT token string
@@ -630,6 +724,8 @@ def generate_token(identity: Row, token_type: str = "access") -> str:
         "iss": current_app.config.get("JWT_ISSUER", "elder-api"),
         "aud": current_app.config.get("JWT_AUDIENCE", "elder-api"),
     }
+    if auth_time is not None:
+        payload["auth_time"] = int(auth_time)
 
     secret = current_app.config["JWT_SECRET_KEY"] or current_app.config["SECRET_KEY"]
     algorithm = current_app.config["JWT_ALGORITHM"]

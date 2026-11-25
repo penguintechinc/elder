@@ -385,6 +385,11 @@ class SubmitSBOMResultsRequest(BaseModel):
     commit_hash: str | None = Field(None, description="Git commit hash")
     error_message: str | None = Field(None, description="Error message if failed")
     scan_duration_ms: int | None = Field(None, description="Scan duration in ms")
+    claim_token: str | None = Field(
+        None,
+        max_length=256,
+        description="Claim token returned by POST /start (or X-Claim-Token header)",
+    )
 
     class Config:
         from_attributes = True

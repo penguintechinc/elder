@@ -14,6 +14,7 @@ from quart_schema import document_request, document_response, validate_response
 
 from apps.api.api.v1.portal_auth import generate_tokens, portal_token_required
 from apps.api.auth.decorators import login_required
+from apps.api.auth.jwt_handler import interactive_auth_time
 from apps.api.auth.portal_cookies import set_portal_auth_cookies
 from apps.api.models.pydantic.idp import (
     CreateIdPConfigRequest,
@@ -581,7 +582,7 @@ async def saml_acs(tenant_id):
         return jsonify(result), 400
 
     # Generate tokens
-    tokens = generate_tokens(result)
+    tokens = generate_tokens(result, auth_time=interactive_auth_time())
 
     # Carry the JWTs as HttpOnly/Secure/SameSite cookies (gh #285) -- the body
     # keeps them only for non-browser callers, mirroring portal-auth.
@@ -722,7 +723,7 @@ def oidc_callback():
             return jsonify(user), 400
 
         # Generate Elder JWT tokens
-        elder_tokens = generate_tokens(user)
+        elder_tokens = generate_tokens(user, auth_time=interactive_auth_time())
 
         # Carry the JWTs as HttpOnly/Secure/SameSite cookies (gh #285) -- the
         # body keeps them only for non-browser callers, mirroring portal-auth.

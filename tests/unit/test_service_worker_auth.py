@@ -273,11 +273,16 @@ class TestServiceWorkerRoutesCrossTenantAndIsolation:
             f"/api/v1/discovery/jobs/{job_b}/start", headers=headers
         )
         assert start_resp.status_code == 200
+        claim_token = (await start_resp.get_json())["claim_token"]
 
         complete_resp = await async_client.post(
             f"/api/v1/discovery/jobs/{job_b}/complete",
             headers=headers,
-            json={"success": True, "results": {"scanned": 1}},
+            json={
+                "success": True,
+                "results": {"scanned": 1},
+                "claim_token": claim_token,
+            },
         )
         assert complete_resp.status_code == 200
 
@@ -365,6 +370,7 @@ class TestServiceWorkerRoutesCrossTenantAndIsolation:
             f"/api/v1/sbom/scans/{scan_b_own_cred}/start", headers=headers
         )
         assert start_resp.status_code == 200, (await start_resp.get_data()).decode()
+        claim_token = (await start_resp.get_json())["claim_token"]
 
         with patch("asyncio.create_task") as mock_bg:
             mock_bg.side_effect = lambda coro: coro.close()
@@ -372,6 +378,7 @@ class TestServiceWorkerRoutesCrossTenantAndIsolation:
                 f"/api/v1/sbom/scans/{scan_b_own_cred}/results",
                 headers=headers,
                 json={
+                    "claim_token": claim_token,
                     "success": True,
                     "components": [
                         {

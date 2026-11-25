@@ -281,11 +281,12 @@ def export_logs():
 
     if export_format == "csv":
         # Convert to CSV
-        import csv
         import io
 
+        from shared.csv_safety import safe_writer
+
         output = io.StringIO()
-        writer = csv.writer(output)
+        writer = safe_writer(output)
 
         # Header
         writer.writerow(

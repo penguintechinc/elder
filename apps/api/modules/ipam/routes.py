@@ -26,8 +26,25 @@ from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import ValidationErrorResponse
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 bp = Blueprint("ipam", __name__)
+
+
+def _missing_tenant():
+    """Return the 403 response used when the verified token carries no tenant."""
+    return jsonify({"error": "Missing tenant claim in token"}), 403
+
+
+def _scoped(db, table, record_id, tenant_id):
+    """Return the ``table`` row with ``record_id`` only if it is in ``tenant_id``.
+
+    IPAM tables carry their own ``tenant_id``; organizations do too. Foreign
+    and missing rows both return None so callers answer 404 either way.
+    """
+    if record_id is None:
+        return None
+    return get_tenant_scoped(db, table, record_id, tenant_id)
 
 
 # =============================================================================
@@ -58,13 +75,16 @@ async def list_prefixes():
         GET /api/v1/ipam/prefixes?organization_id=1&status=active
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
 
     # Get pagination params
     pagination = PaginationParams.from_request()
 
     # Build query
     def get_prefixes():
-        query = db.ipam_prefixes.id > 0
+        query = db.ipam_prefixes.tenant_id == tenant_id
 
         # Apply filters
         if request.args.get("organization_id"):
@@ -149,15 +169,26 @@ async def create_prefix():
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
-    # Get organization to derive tenant_id
-    def get_org():
-        return db.organizations[data.organization_id]
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
 
-    org = await run_in_threadpool(get_org)
+    # Organization, parent prefix and VLAN must all belong to the caller's tenant
+    def get_refs():
+        return (
+            _scoped(db, db.organizations, data.organization_id, tenant_id),
+            data.parent_id is None
+            or _scoped(db, db.ipam_prefixes, data.parent_id, tenant_id),
+            data.vlan_id is None or _scoped(db, db.ipam_vlans, data.vlan_id, tenant_id),
+        )
+
+    org, parent_ok, vlan_ok = await run_in_threadpool(get_refs)
     if not org:
         return ApiResponse.error("Organization not found", 404)
-    if not org.tenant_id:
-        return ApiResponse.bad_request("Organization must have a tenant")
+    if not parent_ok:
+        return ApiResponse.error("Parent prefix not found", 404)
+    if not vlan_ok:
+        return ApiResponse.error("VLAN not found", 404)
 
     def find_existing():
         return (
@@ -194,7 +225,7 @@ async def create_prefix():
                 updated_at=now,
             )
             db.commit()
-            return db.ipam_prefixes[existing.id]
+            return _scoped(db, db.ipam_prefixes, existing.id, tenant_id)
 
         prefix = await run_in_threadpool(overwrite_prefix)
         return jsonify(dict(prefix)), 200
@@ -225,7 +256,7 @@ async def create_prefix():
         )
         db.commit()
 
-        return db.ipam_prefixes[prefix_id]
+        return _scoped(db, db.ipam_prefixes, prefix_id, tenant_id)
 
     prefix = await run_in_threadpool(create)
 
@@ -250,8 +281,13 @@ async def get_prefix(id: int):
         GET /api/v1/ipam/prefixes/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
 
-    prefix = await run_in_threadpool(lambda: db.ipam_prefixes[id])
+    prefix = await run_in_threadpool(
+        lambda: _scoped(db, db.ipam_prefixes, id, tenant_id)
+    )
 
     if not prefix:
         return ApiResponse.error("Prefix not found", 404)
@@ -277,14 +313,20 @@ async def get_prefix_tree(id: int):
         GET /api/v1/ipam/prefixes/1/tree
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
 
     def get_tree():
-        prefix = db.ipam_prefixes[id]
+        prefix = _scoped(db, db.ipam_prefixes, id, tenant_id)
         if not prefix:
             return None
 
         def build_tree(parent_id):
-            children = db(db.ipam_prefixes.parent_id == parent_id).select()
+            children = db(
+                (db.ipam_prefixes.parent_id == parent_id)
+                & (db.ipam_prefixes.tenant_id == tenant_id)
+            ).select()
             result = []
             for child in children:
                 child_dict = dict(child)
@@ -339,22 +381,30 @@ async def update_prefix(id: int):
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
-    # If organization is being changed, validate and get tenant
-    org_tenant_id = None
-    if data.organization_id is not None:
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
 
-        def get_org():
-            return db.organizations[data.organization_id]
+    # Any re-pointed organization, parent prefix or VLAN must be in-tenant
+    def get_refs():
+        return (
+            data.organization_id is None
+            or _scoped(db, db.organizations, data.organization_id, tenant_id),
+            data.parent_id is None
+            or _scoped(db, db.ipam_prefixes, data.parent_id, tenant_id),
+            data.vlan_id is None or _scoped(db, db.ipam_vlans, data.vlan_id, tenant_id),
+        )
 
-        org = await run_in_threadpool(get_org)
-        if not org:
-            return ApiResponse.error("Organization not found", 404)
-        if not org.tenant_id:
-            return ApiResponse.bad_request("Organization must have a tenant")
-        org_tenant_id = org.tenant_id
+    org_ok, parent_ok, vlan_ok = await run_in_threadpool(get_refs)
+    if not org_ok:
+        return ApiResponse.error("Organization not found", 404)
+    if not parent_ok:
+        return ApiResponse.error("Parent prefix not found", 404)
+    if not vlan_ok:
+        return ApiResponse.error("VLAN not found", 404)
 
     def update():
-        prefix = db.ipam_prefixes[id]
+        prefix = _scoped(db, db.ipam_prefixes, id, tenant_id)
         if not prefix:
             return None
 
@@ -374,13 +424,14 @@ async def update_prefix(id: int):
             update_dict["is_pool"] = data.is_pool
         if data.organization_id is not None:
             update_dict["organization_id"] = data.organization_id
-            update_dict["tenant_id"] = org_tenant_id
 
         if update_dict:
-            db(db.ipam_prefixes.id == id).update(**update_dict)
+            db(
+                (db.ipam_prefixes.id == id) & (db.ipam_prefixes.tenant_id == tenant_id)
+            ).update(**update_dict)
             db.commit()
 
-        return db.ipam_prefixes[id]
+        return _scoped(db, db.ipam_prefixes, id, tenant_id)
 
     prefix = await run_in_threadpool(update)
 
@@ -412,13 +463,19 @@ async def delete_prefix(id: int):
         DELETE /api/v1/ipam/prefixes/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
 
     def delete():
-        prefix = db.ipam_prefixes[id]
+        prefix = _scoped(db, db.ipam_prefixes, id, tenant_id)
         if not prefix:
             return False
 
-        del db.ipam_prefixes[id]
+        db(
+            (db.ipam_prefixes.id == prefix.id)
+            & (db.ipam_prefixes.tenant_id == tenant_id)
+        ).delete()
         db.commit()
         return True
 
@@ -457,13 +514,16 @@ async def list_addresses():
         GET /api/v1/ipam/addresses?prefix_id=1&status=active
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
 
     # Get pagination params
     pagination = PaginationParams.from_request()
 
     # Build query
     def get_addresses():
-        query = db.ipam_addresses.id > 0
+        query = db.ipam_addresses.tenant_id == tenant_id
 
         # Apply filters
         if request.args.get("prefix_id"):
@@ -542,19 +602,32 @@ async def create_address():
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
-    # Get prefix to derive tenant_id and organization_id
-    def get_prefix():
-        return db.ipam_prefixes[data.prefix_id]
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
 
-    prefix = await run_in_threadpool(get_prefix)
+    # The prefix must belong to the caller's tenant
+    prefix = await run_in_threadpool(
+        lambda: _scoped(db, db.ipam_prefixes, data.prefix_id, tenant_id)
+    )
     if not prefix:
         return ApiResponse.error("Prefix not found", 404)
 
     def find_existing():
+        # Addresses carry no organization column: "same organization" means
+        # under any in-tenant prefix of the target prefix's organization.
+        org_prefix_ids = [
+            row.id
+            for row in db(
+                (db.ipam_prefixes.organization_id == prefix.organization_id)
+                & (db.ipam_prefixes.tenant_id == tenant_id)
+            ).select(db.ipam_prefixes.id)
+        ]
         return (
             db(
                 (db.ipam_addresses.address == data.address)
-                & (db.ipam_addresses.organization_id == prefix.organization_id)
+                & (db.ipam_addresses.tenant_id == tenant_id)
+                & (db.ipam_addresses.prefix_id.belongs(org_prefix_ids))
             )
             .select()
             .first()
@@ -584,7 +657,7 @@ async def create_address():
                 updated_at=now,
             )
             db.commit()
-            return db.ipam_addresses[existing.id]
+            return _scoped(db, db.ipam_addresses, existing.id, tenant_id)
 
         address = await run_in_threadpool(overwrite_address)
         return jsonify(dict(address)), 200
@@ -613,7 +686,7 @@ async def create_address():
         )
         db.commit()
 
-        return db.ipam_addresses[address_id]
+        return _scoped(db, db.ipam_addresses, address_id, tenant_id)
 
     address = await run_in_threadpool(create)
 
@@ -639,7 +712,13 @@ async def get_address(id: int):
     """
     db = current_app.db
 
-    address = await run_in_threadpool(lambda: db.ipam_addresses[id])
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
+
+    address = await run_in_threadpool(
+        lambda: _scoped(db, db.ipam_addresses, id, tenant_id)
+    )
 
     if not address:
         return ApiResponse.error("Address not found", 404)
@@ -682,18 +761,20 @@ async def update_address(id: int):
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
-    # If prefix is being changed, validate it
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
+
+    # A re-pointed prefix must belong to the caller's tenant
     if data.prefix_id is not None:
-
-        def get_prefix():
-            return db.ipam_prefixes[data.prefix_id]
-
-        prefix = await run_in_threadpool(get_prefix)
+        prefix = await run_in_threadpool(
+            lambda: _scoped(db, db.ipam_prefixes, data.prefix_id, tenant_id)
+        )
         if not prefix:
             return ApiResponse.error("Prefix not found", 404)
 
     def update():
-        address = db.ipam_addresses[id]
+        address = _scoped(db, db.ipam_addresses, id, tenant_id)
         if not address:
             return None
 
@@ -711,10 +792,13 @@ async def update_address(id: int):
             update_dict["dns_name"] = data.dns_name
 
         if update_dict:
-            db(db.ipam_addresses.id == id).update(**update_dict)
+            db(
+                (db.ipam_addresses.id == id)
+                & (db.ipam_addresses.tenant_id == tenant_id)
+            ).update(**update_dict)
             db.commit()
 
-        return db.ipam_addresses[id]
+        return _scoped(db, db.ipam_addresses, id, tenant_id)
 
     address = await run_in_threadpool(update)
 
@@ -746,13 +830,19 @@ async def delete_address(id: int):
         DELETE /api/v1/ipam/addresses/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
 
     def delete():
-        address = db.ipam_addresses[id]
+        address = _scoped(db, db.ipam_addresses, id, tenant_id)
         if not address:
             return False
 
-        del db.ipam_addresses[id]
+        db(
+            (db.ipam_addresses.id == address.id)
+            & (db.ipam_addresses.tenant_id == tenant_id)
+        ).delete()
         db.commit()
         return True
 
@@ -791,13 +881,16 @@ async def list_vlans():
         GET /api/v1/ipam/vlans?organization_id=1&status=active
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
 
     # Get pagination params
     pagination = PaginationParams.from_request()
 
     # Build query
     def get_vlans():
-        query = db.ipam_vlans.id > 0
+        query = db.ipam_vlans.tenant_id == tenant_id
 
         # Apply filters
         if request.args.get("organization_id"):
@@ -876,15 +969,16 @@ async def create_vlan():
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
-    # Get organization to derive tenant_id
-    def get_org():
-        return db.organizations[data.organization_id]
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
 
-    org = await run_in_threadpool(get_org)
+    # The organization must belong to the caller's tenant
+    org = await run_in_threadpool(
+        lambda: _scoped(db, db.organizations, data.organization_id, tenant_id)
+    )
     if not org:
         return ApiResponse.error("Organization not found", 404)
-    if not org.tenant_id:
-        return ApiResponse.bad_request("Organization must have a tenant")
 
     def find_existing():
         return (
@@ -919,7 +1013,7 @@ async def create_vlan():
                 updated_at=now,
             )
             db.commit()
-            return db.ipam_vlans[existing.id]
+            return _scoped(db, db.ipam_vlans, existing.id, tenant_id)
 
         vlan = await run_in_threadpool(overwrite_vlan)
         return jsonify(dict(vlan)), 200
@@ -948,7 +1042,7 @@ async def create_vlan():
         )
         db.commit()
 
-        return db.ipam_vlans[vlan_id]
+        return _scoped(db, db.ipam_vlans, vlan_id, tenant_id)
 
     vlan = await run_in_threadpool(create)
 
@@ -974,7 +1068,11 @@ async def get_vlan(id: int):
     """
     db = current_app.db
 
-    vlan = await run_in_threadpool(lambda: db.ipam_vlans[id])
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
+
+    vlan = await run_in_threadpool(lambda: _scoped(db, db.ipam_vlans, id, tenant_id))
 
     if not vlan:
         return ApiResponse.error("VLAN not found", 404)
@@ -1016,22 +1114,23 @@ async def update_vlan(id: int):
     if not data:
         return ApiResponse.bad_request("Request body must be JSON")
 
-    # If organization is being changed, validate and get tenant
-    org_tenant_id = None
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
+
+    # A re-pointed organization must belong to the caller's tenant
     if "organization_id" in data:
-
-        def get_org():
-            return db.organizations[data["organization_id"]]
-
-        org = await run_in_threadpool(get_org)
+        new_org_id = data["organization_id"]
+        if not isinstance(new_org_id, int) or isinstance(new_org_id, bool):
+            return ApiResponse.bad_request("organization_id must be an integer")
+        org = await run_in_threadpool(
+            lambda: _scoped(db, db.organizations, new_org_id, tenant_id)
+        )
         if not org:
             return ApiResponse.error("Organization not found", 404)
-        if not org.tenant_id:
-            return ApiResponse.bad_request("Organization must have a tenant")
-        org_tenant_id = org.tenant_id
 
     def update():
-        vlan = db.ipam_vlans[id]
+        vlan = _scoped(db, db.ipam_vlans, id, tenant_id)
         if not vlan:
             return None
 
@@ -1047,13 +1146,14 @@ async def update_vlan(id: int):
             update_dict["status"] = data["status"]
         if "organization_id" in data:
             update_dict["organization_id"] = data["organization_id"]
-            update_dict["tenant_id"] = org_tenant_id
 
         if update_dict:
-            db(db.ipam_vlans.id == id).update(**update_dict)
+            db(
+                (db.ipam_vlans.id == id) & (db.ipam_vlans.tenant_id == tenant_id)
+            ).update(**update_dict)
             db.commit()
 
-        return db.ipam_vlans[id]
+        return _scoped(db, db.ipam_vlans, id, tenant_id)
 
     vlan = await run_in_threadpool(update)
 
@@ -1085,13 +1185,18 @@ async def delete_vlan(id: int):
         DELETE /api/v1/ipam/vlans/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return _missing_tenant()
 
     def delete():
-        vlan = db.ipam_vlans[id]
+        vlan = _scoped(db, db.ipam_vlans, id, tenant_id)
         if not vlan:
             return False
 
-        del db.ipam_vlans[id]
+        db(
+            (db.ipam_vlans.id == vlan.id) & (db.ipam_vlans.tenant_id == tenant_id)
+        ).delete()
         db.commit()
         return True
 

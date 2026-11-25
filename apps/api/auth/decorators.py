@@ -10,7 +10,7 @@ from typing import List
 from penguin_dal import Row
 from quart import current_app, g, jsonify, request
 
-from apps.api.auth.jwt_handler import get_current_user
+from apps.api.auth.jwt_handler import get_current_user, is_system_service_worker
 from apps.api.auth.rbac import check_org_permission, check_permission, enforcer
 
 
@@ -354,11 +354,10 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
             if not user:
                 return jsonify({"error": "Authentication required"}), 401
 
-            # Superusers and verified service_worker tokens bypass per-identity resource_roles rows
-            if user.is_superuser or (
-                getattr(user, "token_type", None) == "service_worker"
-                and (getattr(g, "claims", {}) or {}).get("type") == "service_worker"
-            ):
+            # Superusers and verified PLATFORM (system-tenant) service_worker
+            # tokens bypass per-identity resource_roles rows. Tenant-scoped
+            # workers go through the normal checks like any tenant identity.
+            if user.is_superuser or is_system_service_worker():
                 g.current_user = user
                 if inspect.iscoroutinefunction(f):
                     return await f(*args, **kwargs)
@@ -463,8 +462,9 @@ def role_required(allowed_roles, *, allow_service_worker_scopes: tuple[str, ...]
     Args:
         allowed_roles: String or list of allowed portal roles ('admin', 'editor', 'observer')
         allow_service_worker_scopes: Optional scopes permitting an authenticated
-            ``service_worker`` token to access this route when all listed scopes
-            are present in ``g.claims["scope"]``.
+            platform (system-tenant) ``service_worker`` token to access this route
+            when all listed scopes are present in ``g.claims["scope"]``.
+            Tenant-scoped workers are never admitted by this bypass.
 
     Usage:
         @bp.route('/admin-only')
@@ -501,8 +501,9 @@ def role_required(allowed_roles, *, allow_service_worker_scopes: tuple[str, ...]
 
             if (
                 allow_service_worker_scopes
-                and getattr(user, "token_type", None) == "service_worker"
-                and (getattr(g, "claims", {}) or {}).get("type") == "service_worker"
+                # Only platform (system-tenant) workers: these routes run
+                # global operations a tenant-scoped worker must never trigger.
+                and is_system_service_worker()
             ):
                 granted_scopes = set((getattr(g, "claims", {}) or {}).get("scope", []))
                 if all(s in granted_scopes for s in allow_service_worker_scopes):

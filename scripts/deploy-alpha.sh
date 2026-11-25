@@ -44,20 +44,24 @@ readonly REGISTRY="${REGISTRY:-localhost:32000}"
 # Services with their build contexts and Dockerfile paths (relative to
 # PROJECT_ROOT). All service Dockerfiles COPY paths relative to the repo root
 # (e.g. `COPY services/svc-scanning ...`), so all need repo root as build context.
-declare -A SERVICE_DOCKERFILE=(
-    ["hub-api"]="apps/api/Dockerfile"
-    ["svc-worker"]="apps/worker/Dockerfile"
-    ["svc-scanner"]="services/svc-scanner/Dockerfile"
-    ["svc-integrations"]="services/svc-integrations/Dockerfile"
-    ["hub-webui"]="web/Dockerfile"
-)
-declare -A SERVICE_CONTEXT=(
-    ["hub-api"]="."
-    ["svc-worker"]="."
-    ["svc-scanner"]="."
-    ["svc-integrations"]="."
-    ["hub-webui"]="."
-)
+# Bash 3.2-compatible (no associative arrays): an ordered service list plus a
+# lookup function for each service's Dockerfile.
+readonly SERVICES="hub-api svc-worker svc-scanner svc-integrations hub-webui"
+# Every service builds with the repo root as its context.
+readonly SERVICE_CONTEXT="."
+
+# service_dockerfile SERVICE — print SERVICE's Dockerfile path (relative to
+# PROJECT_ROOT); returns 1 for an unknown service so callers fail loudly.
+service_dockerfile() {
+    case "$1" in
+        hub-api) echo "apps/api/Dockerfile" ;;
+        svc-worker) echo "apps/worker/Dockerfile" ;;
+        svc-scanner) echo "services/svc-scanner/Dockerfile" ;;
+        svc-integrations) echo "services/svc-integrations/Dockerfile" ;;
+        hub-webui) echo "web/Dockerfile" ;;
+        *) return 1 ;;
+    esac
+}
 
 APP_VERSION="$(cat "${PROJECT_ROOT}/.version" 2>/dev/null || echo "0.0.0.0")"
 readonly APP_VERSION
@@ -161,8 +165,13 @@ check_prerequisites() {
 build_and_push() {
     local service="$1"
     local tag="$2"
-    local dockerfile="${PROJECT_ROOT}/${SERVICE_DOCKERFILE[${service}]}"
-    local context="${PROJECT_ROOT}/${SERVICE_CONTEXT[${service}]}"
+    local rel_dockerfile
+    if ! rel_dockerfile="$(service_dockerfile "${service}")"; then
+        print_error "Unknown service: ${service}"
+        return 1
+    fi
+    local dockerfile="${PROJECT_ROOT}/${rel_dockerfile}"
+    local context="${PROJECT_ROOT}/${SERVICE_CONTEXT}"
 
     if [[ ! -f "${dockerfile}" ]]; then
         print_warning "No Dockerfile found for ${service} (${dockerfile}) — skipping"
@@ -439,7 +448,7 @@ main() {
     # Build images
     if [[ "${SKIP_BUILD}" != "true" ]]; then
         print_info "Building and pushing Docker images to ${REGISTRY}..."
-        for service in "${!SERVICE_DOCKERFILE[@]}"; do
+        for service in ${SERVICES}; do
             if [[ -z "${SERVICE_FILTER}" ]] || [[ "${SERVICE_FILTER}" == "${service}" ]]; then
                 build_and_push "${service}" "${TAG}" || {
                     print_error "Failed to build ${service}"
