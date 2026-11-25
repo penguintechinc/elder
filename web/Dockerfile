@@ -1,5 +1,5 @@
 # Build stage
-FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c AS builder
+FROM --platform=$BUILDPLATFORM node:25-bookworm-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370 AS builder
 
 WORKDIR /app
 
@@ -49,7 +49,7 @@ RUN set -eu; \
 # Production stage — serve built SPA via rootless Express on Node 24 (PenguinTech standard).
 # In-cluster, Envoy (Cilium Gateway API HTTPRoute) routes /api directly to hub-api
 # and / to hub-webui. Express also proxies /api for local/port-forward access.
-FROM node:24-bookworm-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c AS runner
+FROM node:25-bookworm-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370 AS runner
 
 WORKDIR /app
 
