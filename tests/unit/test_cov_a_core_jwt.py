@@ -244,21 +244,18 @@ class TestVerifyTokenMachineTypes:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "make_claims, ok",
+        "claims, ok",
         [
-            # Factories, not dicts: claims built at collection time carry an
-            # exp (now+120s for coderun) that has already lapsed by the time a
-            # long full-suite run reaches this test.
-            (lambda: _worker_claims(), True),
-            (lambda: _worker_claims(scope=["secrets:admin"]), False),
-            (lambda: _coderun_claims(), True),
-            (lambda: _coderun_claims(function_id=-1), False),
+            (_worker_claims(), True),
+            (_worker_claims(scope=["secrets:admin"]), False),
+            (_coderun_claims(), True),
+            (_coderun_claims(function_id=-1), False),
         ],
     )
-    async def test_worker_and_coderun_dispatch(self, app, make_claims, ok):
+    async def test_worker_and_coderun_dispatch(self, app, claims, ok):
         """verify_token routes worker/coderun tokens through their validators."""
         async with app.app_context():
-            out = jh.verify_token(_sign(app, make_claims()))
+            out = jh.verify_token(_sign(app, claims))
         assert (out is not None) is ok
 
     @pytest.mark.asyncio
@@ -620,9 +617,7 @@ class TestGetCurrentUserDb:
             "/x", headers={"Authorization": "Bearer placeholder"}
         ):
             with (
-                patch.object(
-                    jh, "verify_token", return_value={"sub": "1", "type": "access"}
-                ),
+                patch.object(jh, "verify_token", return_value={"sub": "1"}),
                 patch.object(jh, "current_app", SimpleNamespace(db=broken)),
             ):
                 assert jh.get_current_user() is None
@@ -707,9 +702,7 @@ class TestMintingValidation:
             id=77, username="cov-user", portal_role=None, tenant_id=4
         )
         async with app.app_context():
-            refresh = jh.verify_token(
-                jh.generate_token(identity, "refresh"), jh.IDENTITY_REFRESH_TOKEN_TYPES
-            )
+            refresh = jh.verify_token(jh.generate_token(identity, "refresh"))
             access = jh.verify_token(jh.generate_token(identity))
             delta = app.config["JWT_REFRESH_TOKEN_EXPIRES"].total_seconds()
         assert refresh["type"] == "refresh"

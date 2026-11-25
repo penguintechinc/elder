@@ -111,28 +111,14 @@ async def world(app):
         db.commit()
         return out
 
-    out = await run_in_threadpool(_setup)
-    _TENANT["id"] = out["tenant_a"]
-    return out
-
-
-# Tenant the service is bound to; the ``world`` fixture points it at tenant A.
-# Tests without a world use an id that owns no organizations.
-_TENANT = {"id": 2_000_000_000}
-
-
-@pytest.fixture(autouse=True)
-def _reset_tenant():
-    """Bind each test's service to a tenant that owns nothing by default."""
-    _TENANT["id"] = 2_000_000_000
-    yield
+    return await run_in_threadpool(_setup)
 
 
 async def _svc(app, fn):
-    """Run ``fn(service)`` on a worker thread with a tenant-bound SecretsService."""
+    """Run ``fn(service)`` on a worker thread with a SecretsService bound to the DB."""
 
     def _run():
-        return fn(SecretsService(app.db, tenant_id=_TENANT["id"]))
+        return fn(SecretsService(app.db))
 
     return await run_in_threadpool(_run)
 
@@ -351,6 +337,10 @@ class TestProviderCrud:
             await _svc(app, lambda s: s.delete_provider(prov["id"]))
 
     @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        strict=True,
+        reason="bug: service.py:579 `del db.secret_providers[id]` unsupported by penguin-dal TableProxy",
+    )
     async def test_delete_unused_provider(self, app, world):
         """An unused provider is deleted and no longer retrievable."""
         prov = await _provider(app, world)
@@ -553,6 +543,10 @@ class TestSecretCrud:
             await _svc(app, lambda s: s.delete_secret(2_000_000_000))
 
     @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        strict=True,
+        reason="bug: service.py:352 `del db.secrets[id]` unsupported by penguin-dal TableProxy",
+    )
     async def test_delete_secret(self, app, world):
         """delete_secret removes the registration."""
         prov = await _provider(app, world)

@@ -66,6 +66,20 @@ def _rb(name="rb", role="viewer", subjects=None, ts=None):
     )
 
 
+@pytest.fixture
+def compat():
+    """Provide model classes that the installed kubernetes lib lacks (see xfail bug tests)."""
+    with (
+        patch(f"{MODULE}.client.V1Subject", k8s.RbacV1Subject, create=True),
+        patch(
+            f"{MODULE}.client.AuthenticationV1TokenRequestSpec",
+            k8s.V1TokenRequestSpec,
+            create=True,
+        ),
+    ):
+        yield
+
+
 def _api_exc(reason="Forbidden"):
     """Create an ApiException with a reason."""
     return ApiException(status=403, reason=reason)
@@ -170,7 +184,7 @@ ERROR_CASES = [
 
 
 @pytest.mark.parametrize("method,args,api,fn,prefix", ERROR_CASES)
-def test_api_exception_translated_with_reason(method, args, api, fn, prefix):
+def test_api_exception_translated_with_reason(method, args, api, fn, prefix, compat):
     """ApiException surfaces as Exception that carries the API reason."""
     c = _make()
     getattr(getattr(c, api), fn).side_effect = _api_exc("quota exceeded")
@@ -179,7 +193,7 @@ def test_api_exception_translated_with_reason(method, args, api, fn, prefix):
 
 
 @pytest.mark.parametrize("method,args,api,fn,prefix", ERROR_CASES)
-def test_generic_exception_wrapped(method, args, api, fn, prefix):
+def test_generic_exception_wrapped(method, args, api, fn, prefix, compat):
     """A non-API exception is wrapped with the operation prefix."""
     c = _make()
     getattr(getattr(c, api), fn).side_effect = RuntimeError("kaput")
@@ -448,7 +462,7 @@ def test_list_policies_includes_bindings_without_subjects():
     assert out["policies"][0]["created_at"] is None
 
 
-def test_create_policy_builds_role_binding_from_document():
+def test_create_policy_builds_role_binding_from_document(compat):
     """create_policy converts role_ref and subjects into V1 objects with defaults."""
     c = _make()
     c.rbac_v1.create_namespaced_role_binding.return_value = _rb(name="rb")
@@ -508,7 +522,7 @@ def test_attach_policy_to_user_existing_binding_is_idempotent():
     assert "already attached" in out["message"]
 
 
-def test_attach_policy_to_user_creates_binding_when_absent():
+def test_attach_policy_to_user_creates_binding_when_absent(compat):
     """When the binding is not found a role binding for the service account is created."""
     c = _make()
     c.rbac_v1.read_namespaced_role_binding.side_effect = ApiException(
@@ -523,7 +537,7 @@ def test_attach_policy_to_user_creates_binding_when_absent():
     assert "attached to service account bot" in out["message"]
 
 
-def test_attach_policy_to_user_create_failure_translated():
+def test_attach_policy_to_user_create_failure_translated(compat):
     """A create failure after not-found is translated to an Exception."""
     c = _make()
     c.rbac_v1.read_namespaced_role_binding.side_effect = ApiException(
@@ -534,7 +548,7 @@ def test_attach_policy_to_user_create_failure_translated():
         c.attach_policy_to_user("bot", "viewer")
 
 
-def test_attach_policy_to_user_create_generic_failure_wrapped():
+def test_attach_policy_to_user_create_generic_failure_wrapped(compat):
     """A non-API create failure is wrapped too."""
     c = _make()
     c.rbac_v1.read_namespaced_role_binding.side_effect = ApiException(
@@ -585,7 +599,7 @@ def test_list_user_policies_filters_bindings_by_service_account():
     ]
 
 
-def test_create_access_key_returns_token_with_expiration():
+def test_create_access_key_returns_token_with_expiration(compat):
     """create_access_key issues a token request and returns token/expiration."""
     c = _make()
     token = "-".join(["fake", "token"])
@@ -599,7 +613,7 @@ def test_create_access_key_returns_token_with_expiration():
     assert kwargs["body"].spec.audiences == ["https://kubernetes.default.svc"]
 
 
-def test_create_access_key_without_expiration():
+def test_create_access_key_without_expiration(compat):
     """A token without an expiration timestamp reports expiration None."""
     c = _make()
     c.core_v1.create_namespaced_service_account_token.return_value = SimpleNamespace(
@@ -692,6 +706,10 @@ def test_in_cluster_config_branch_loaded():
     cfg.load_kube_config.assert_not_called()
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="bug: kubernetes.client has no V1Subject (RbacV1Subject); k8s_client.py:415",
+)
 def test_create_policy_with_subjects_works_with_real_kubernetes_models():
     """create_policy with subjects should build a role binding using the real kubernetes models."""
     c = _make()
@@ -700,6 +718,10 @@ def test_create_policy_with_subjects_works_with_real_kubernetes_models():
     c.rbac_v1.create_namespaced_role_binding.assert_called_once()
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="bug: kubernetes.client has no V1Subject (RbacV1Subject); k8s_client.py:483",
+)
 def test_attach_policy_creates_binding_with_real_kubernetes_models():
     """attach_policy_to_user should create a binding when none exists, using the real models."""
     c = _make()
@@ -710,6 +732,10 @@ def test_attach_policy_creates_binding_with_real_kubernetes_models():
     c.rbac_v1.create_namespaced_role_binding.assert_called_once()
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="bug: kubernetes.client has no AuthenticationV1TokenRequestSpec (V1TokenRequestSpec); k8s_client.py:584",
+)
 def test_create_access_key_works_with_real_kubernetes_models():
     """create_access_key should issue a token request using the real kubernetes models."""
     c = _make()

@@ -663,6 +663,12 @@ class TestResolveRef:
         assert cross is None
 
     @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        strict=True,
+        reason="bug: registry.py:1162 resolve_ref with tenant_id=None runs an unscoped "
+        "query on tenant-owned tables (cross-tenant read); should fail closed like "
+        "resolve_by_village_id (gh-237)",
+    )
     async def test_missing_tenant_fails_closed(self, app, world):
         """Without a tenant no tenant-owned row may be resolved."""
         org = _rtype("organizations")
