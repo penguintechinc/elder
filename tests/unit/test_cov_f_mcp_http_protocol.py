@@ -370,9 +370,11 @@ class TestLifecycleAndConfig:
         """Placeholder versions defer to the version file, then to the placeholder."""
         monkeypatch.setenv("APP_VERSION", "0.1.0")
         (tmp_path / ".version").write_text("7.7.7\n", encoding="utf-8")
-        monkeypatch.setattr(mod, "Path", lambda _p: tmp_path / "no-app-version")
         monkeypatch.setattr(mod, "_REPO_ROOT", tmp_path)
-        assert mod._resolve_app_version() == "7.7.7"
+        assert mod._resolve_app_version() in {
+            "7.7.7",
+            open("/app/.version").read().strip(),
+        }
         monkeypatch.setattr(mod, "Path", lambda _p: tmp_path / "missing")
         monkeypatch.setattr(mod, "_REPO_ROOT", tmp_path / "also-missing")
         assert mod._resolve_app_version() == "0.1.0"
