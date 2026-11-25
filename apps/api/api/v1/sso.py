@@ -119,7 +119,10 @@ async def _sso_mfa_gate(user: dict):
         return _no_store(
             jsonify(
                 {
-                    "success": False,
+                    # LoginPageBuilder checks `if (!data.success)` before
+                    # `if (data.mfaRequired)`, so step-1 SSO success must
+                    # report `success: True` with zero tokens/cookies.
+                    "success": True,
                     "mfaRequired": True,
                     "mfaChallenge": challenge_id,
                     "mfa_challenge": challenge_id,
