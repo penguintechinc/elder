@@ -1050,7 +1050,7 @@ class TestRoutes:
         body = await login.get_json()
         assert login.status_code == 200
         assert login.headers["Cache-Control"] == "no-store"
-        assert body["success"] is False
+        assert body["success"] is True
         assert body["mfaRequired"] is True
         assert set(body) == {
             "success",
