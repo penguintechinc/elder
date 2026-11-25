@@ -7,6 +7,8 @@ import json
 import logging
 import os
 import tempfile
+
+# nosemgrep: python.lang.security.use-defused-xml.use-defused-xml -- stdlib ElementTree only builds and writes XML here; no untrusted XML is parsed
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional

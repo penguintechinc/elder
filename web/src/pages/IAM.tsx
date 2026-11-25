@@ -1881,7 +1881,7 @@ export default function IAM() {
                         onChange={(e) =>
                           setGcpServiceAccountKey(e.target.value)
                         }
-                        placeholder='{"type": "service_account", "project_id": "...", ...}'
+                        placeholder='{"type": "service_account", "project_id": "...", ...}' /* nosemgrep: generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account -- identity-type enum value / placeholder text, not a credential */
                         rows={6}
                         className="block w-full px-4 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-primary-500 focus:border-primary-500 font-mono"
                       />
@@ -1952,7 +1952,7 @@ export default function IAM() {
                         onChange={(e) =>
                           setGoogleServiceAccountKey(e.target.value)
                         }
-                        placeholder='{"type": "service_account", "project_id": "...", ...}'
+                        placeholder='{"type": "service_account", "project_id": "...", ...}' /* nosemgrep: generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account -- identity-type enum value / placeholder text, not a credential */
                         rows={6}
                         className="block w-full px-4 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-primary-500 focus:border-primary-500 font-mono"
                       />

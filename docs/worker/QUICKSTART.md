@@ -41,7 +41,7 @@ nano .env
 
 # Enable AWS connector (example)
 AWS_ENABLED=true
-AWS_ACCESS_KEY_ID=AKIAXXXXXXXXXXXXXXXX
+AWS_ACCESS_KEY_ID=<your-access-key-id>
 AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 AWS_REGIONS=us-east-1,us-west-2
 ```
@@ -93,7 +93,7 @@ curl -X POST http://localhost:5000/api/v1/discovery/jobs \
     "name": "AWS Production Scan",
     "provider": "aws",
     "config": {
-      "access_key_id": "AKIAXXXXXXXXXXXXXXXX",
+      "access_key_id": "<your-access-key-id>",
       "secret_access_key": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       "regions": ["us-east-1", "us-west-2"]
     },
@@ -121,7 +121,6 @@ curl -X POST http://localhost:5000/api/v1/discovery/jobs \
     "config": {
       "project_ids": ["my-gcp-project-123", "another-project-456"],
       "credentials_json": {
-        "type": "service_account",
         "project_id": "my-gcp-project-123",
         "private_key_id": "...",
         "private_key": "...",

@@ -358,6 +358,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             # Determine identity type
             identity_type = "human"
             if request.identity_type == auth_pb2.IdentityType.SERVICE_ACCOUNT:
+                # nosemgrep: generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account -- identity-type enum value / placeholder text, not a credential
                 identity_type = "service_account"
 
             # Create identity
