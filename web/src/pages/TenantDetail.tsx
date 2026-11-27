@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { ArrowLeft, Building2, Users, Database, Shield, Edit, Trash2, Plus } from 'lucide-react'
+import { ArrowLeft, Building2, Users, Database, Shield, Edit, Trash2, Plus, Mail } from 'lucide-react'
 import api from '@/lib/api'
 import Button from '@/components/Button'
 import Input from '@/components/Input'
@@ -25,6 +25,16 @@ export default function TenantDetail() {
   const queryClient = useQueryClient()
   const [editingUser, setEditingUser] = useState<PortalUser | null>(null)
   const [showAddUser, setShowAddUser] = useState(false)
+  const [showInviteUser, setShowInviteUser] = useState(false)
+  const [inviteFormData, setInviteFormData] = useState<{
+    email: string
+    full_name: string
+    tenant_role: 'reader' | 'maintainer' | 'admin'
+  }>({
+    email: '',
+    full_name: '',
+    tenant_role: 'reader',
+  })
   const [userFormData, setUserFormData] = useState({
     full_name: '',
     tenant_role: 'reader',
@@ -74,6 +84,46 @@ export default function TenantDetail() {
       toast.error(error.response?.data?.error || 'Failed to deactivate user')
     },
   })
+
+  const inviteUserMutation = useMutation({
+    mutationFn: (data: {
+      email: string
+      full_name?: string
+      tenant_role: 'reader' | 'maintainer' | 'admin'
+    }) =>
+      api.inviteTenantUser(tenantId, {
+        ...data,
+        send_invite: true,
+      }),
+    onSuccess: async (res) => {
+      await queryClient.invalidateQueries({ queryKey: ['tenant-users', tenantId] })
+      await queryClient.invalidateQueries({ queryKey: ['tenant-stats', tenantId] })
+      toast.success(
+        res.invite_sent
+          ? `One-time account setup email sent to ${res.email}`
+          : `User ${res.email} created (invite email pending)`,
+      )
+      setShowInviteUser(false)
+      setInviteFormData({ email: '', full_name: '', tenant_role: 'reader' })
+    },
+    onError: (error: ApiError) => {
+      toast.error(error.response?.data?.error || 'Failed to invite user')
+    },
+  })
+
+  const handleInviteUser = (e: React.FormEvent) => {
+    e.preventDefault()
+    const cleanedEmail = inviteFormData.email.replace(/\s+/g, '')
+    if (!cleanedEmail) {
+      toast.error('Please enter an email address')
+      return
+    }
+    inviteUserMutation.mutate({
+      email: cleanedEmail,
+      full_name: inviteFormData.full_name.trim() || undefined,
+      tenant_role: inviteFormData.tenant_role,
+    })
+  }
 
   const handleEditUser = (user: PortalUser) => {
     setEditingUser(user)
@@ -249,15 +299,26 @@ export default function TenantDetail() {
       {/* Users List */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <h2 className="text-lg font-semibold text-white">Portal Users</h2>
-            <Button
-              size="sm"
-              onClick={() => setShowAddUser(true)}
-            >
-              <Plus className="w-4 h-4 mr-1" />
-              Add User
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setShowInviteUser(true)}
+                data-testid="invite-user-email-btn"
+              >
+                <Mail className="w-4 h-4 mr-1" />
+                Invite User (Email)
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setShowAddUser(true)}
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                Add User
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -326,7 +387,7 @@ export default function TenantDetail() {
             <h3 className="text-xl font-semibold text-white mb-4">Edit User</h3>
             <form onSubmit={handleUpdateUser} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Email</label>
+                <span className="block text-sm font-medium text-slate-300 mb-1">Email</span>
                 <p className="text-white">{editingUser.email}</p>
               </div>
               <Input
@@ -336,10 +397,14 @@ export default function TenantDetail() {
                 placeholder="Full name"
               />
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">
+                <label
+                  htmlFor="edit-tenant-role"
+                  className="block text-sm font-medium text-slate-300 mb-1"
+                >
                   Tenant Role
                 </label>
                 <select
+                  id="edit-tenant-role"
                   value={userFormData.tenant_role}
                   onChange={(e) => setUserFormData({ ...userFormData, tenant_role: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-primary-500"
@@ -372,6 +437,91 @@ export default function TenantDetail() {
                   variant="ghost"
                   className="flex-1"
                   onClick={() => setEditingUser(null)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Invite User (Email) Modal */}
+      {showInviteUser && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          data-testid="invite-user-modal"
+        >
+          <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-xl font-semibold text-white mb-2 flex items-center gap-2">
+              <Mail className="w-5 h-5 text-primary-400" />
+              Invite User (Email)
+            </h3>
+            <p className="text-sm text-slate-400 mb-4">
+              Send a one-time account setup link so the user can choose their
+              password and configure MFA.
+            </p>
+            <form onSubmit={handleInviteUser} className="space-y-4">
+              <Input
+                label="Email"
+                type="email"
+                required
+                value={inviteFormData.email}
+                onChange={(e) =>
+                  setInviteFormData({ ...inviteFormData, email: e.target.value })
+                }
+                placeholder="user@company.com"
+              />
+              <Input
+                label="Full Name"
+                value={inviteFormData.full_name}
+                onChange={(e) =>
+                  setInviteFormData({
+                    ...inviteFormData,
+                    full_name: e.target.value,
+                  })
+                }
+                placeholder="Full name (optional)"
+              />
+              <div>
+                <label
+                  htmlFor="invite-tenant-role"
+                  className="block text-sm font-medium text-slate-300 mb-1"
+                >
+                  Tenant Role
+                </label>
+                <select
+                  id="invite-tenant-role"
+                  value={inviteFormData.tenant_role}
+                  onChange={(e) =>
+                    setInviteFormData({
+                      ...inviteFormData,
+                      tenant_role: e.target.value as
+                        | 'reader'
+                        | 'maintainer'
+                        | 'admin',
+                    })
+                  }
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="reader">Reader</option>
+                  <option value="maintainer">Maintainer</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <Button
+                  type="submit"
+                  className="flex-1"
+                  isLoading={inviteUserMutation.isPending}
+                >
+                  Send Invite Email
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="flex-1"
+                  onClick={() => setShowInviteUser(false)}
                 >
                   Cancel
                 </Button>

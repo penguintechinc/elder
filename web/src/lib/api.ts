@@ -2380,11 +2380,51 @@ class ApiClient {
     password: string;
     full_name?: string;
     tenant?: string;
-  }) {
+  }): Promise<PortalRegisterResponse> {
     const response = await this.client.post("/portal-auth/register", {
       ...data,
       tenant: data.tenant || "system",
     });
+    return response.data;
+  }
+
+  async verifyEmail(token: string): Promise<VerifyEmailResponse> {
+    const response = await this.client.post("/portal-auth/verify-email", {
+      token,
+    });
+    return response.data;
+  }
+
+  async resendVerificationEmail(data: {
+    email: string;
+    tenant?: string;
+  }): Promise<ResendVerificationResponse> {
+    const response = await this.client.post(
+      "/portal-auth/resend-verification",
+      data,
+    );
+    return response.data;
+  }
+
+  async getInviteInfo(token: string): Promise<InviteInfoResponse> {
+    const response = await this.client.get(
+      `/portal-auth/invite/${encodeURIComponent(token)}`,
+    );
+    return response.data;
+  }
+
+  async completeInvite(data: {
+    token: string;
+    password: string;
+    setup_mfa?: boolean;
+  }): Promise<CompleteInviteResponse> {
+    const response = await this.client.post("/portal-auth/invite/complete", data);
+    if (response.data?.success) {
+      markAuthenticated();
+      if (response.data.expires_in) {
+        this.scheduleTokenRefresh(response.data.expires_in);
+      }
+    }
     return response.data;
   }
 
@@ -2443,6 +2483,31 @@ class ApiClient {
     grace_period_days?: number;
   }): Promise<MfaPolicy> {
     const response = await this.client.put("/tenants/current/mfa-policy", data);
+    return response.data;
+  }
+
+  // Tenant Signup & Email Verification Policy
+  async getTenantSignupPolicy(tenantId?: number): Promise<TenantSignupPolicy> {
+    const path =
+      typeof tenantId === "number"
+        ? `/tenants/${tenantId}/signup-policy`
+        : "/tenants/current/signup-policy";
+    const response = await this.client.get(path);
+    return response.data;
+  }
+
+  async updateTenantSignupPolicy(
+    data: {
+      allowed_signup_domains: string[];
+      require_email_verification?: boolean;
+    },
+    tenantId?: number,
+  ): Promise<TenantSignupPolicy> {
+    const path =
+      typeof tenantId === "number"
+        ? `/tenants/${tenantId}/signup-policy`
+        : "/tenants/current/signup-policy";
+    const response = await this.client.put(path, data);
     return response.data;
   }
 
@@ -2543,6 +2608,17 @@ class ApiClient {
 
   async getTenantUsers(tenantId: number) {
     const response = await this.client.get(`/tenants/${tenantId}/users`);
+    return response.data;
+  }
+
+  async inviteTenantUser(
+    tenantId: number,
+    data: InviteTenantUserPayload,
+  ): Promise<InviteTenantUserResponse> {
+    const response = await this.client.post(`/tenants/${tenantId}/users`, {
+      ...data,
+      send_invite: data.send_invite ?? true,
+    });
     return response.data;
   }
 
@@ -4918,6 +4994,66 @@ export interface MfaPolicy {
   mfa_enrolled: boolean;
   license_tier: string;
   can_manage: boolean;
+}
+
+export interface PortalRegisterResponse {
+  success?: boolean;
+  verificationRequired?: boolean;
+  message?: string;
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+}
+
+export interface VerifyEmailResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface ResendVerificationResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface InviteInfoResponse {
+  valid: boolean;
+  email?: string;
+  full_name?: string;
+  tenant_name?: string;
+  mfa_enforced?: boolean;
+  mfa_optional?: boolean;
+  error?: string;
+}
+
+export interface CompleteInviteResponse {
+  success: boolean;
+  mfaSetupRequired?: boolean;
+  mfaSetupOptional?: boolean;
+  expires_in?: number;
+}
+
+export type TenantSignupPolicySource = "tenant" | "env_default" | "open";
+
+export interface TenantSignupPolicy {
+  allowed_signup_domains: string[];
+  require_email_verification: boolean;
+  source: TenantSignupPolicySource;
+  can_manage: boolean;
+}
+
+export interface InviteTenantUserPayload {
+  email: string;
+  full_name?: string;
+  tenant_role?: "reader" | "maintainer" | "admin";
+  send_invite?: boolean;
+}
+
+export interface InviteTenantUserResponse {
+  id: number;
+  email: string;
+  full_name?: string;
+  tenant_role?: string;
+  invite_sent: boolean;
 }
 
 export interface MfaSetupResponse {

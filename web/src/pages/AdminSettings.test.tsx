@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import AdminSettings from "./AdminSettings";
-import api, { type LicenseStatus, type MfaPolicy } from "@/lib/api";
+import api, {
+  type LicenseStatus,
+  type MfaPolicy,
+  type TenantSignupPolicy,
+} from "@/lib/api";
 
 vi.mock("react-hot-toast", () => ({
   default: {
@@ -18,10 +22,19 @@ vi.mock("@/lib/api", () => ({
     getLicenseStatus: vi.fn(),
     getMfaPolicy: vi.fn(),
     updateMfaPolicy: vi.fn(),
+    getTenantSignupPolicy: vi.fn(),
+    updateTenantSignupPolicy: vi.fn(),
     getLogs: vi.fn(),
     searchLogs: vi.fn(),
   },
 }));
+
+const DEFAULT_SIGNUP_POLICY: TenantSignupPolicy = {
+  allowed_signup_domains: ["penguintech.io"],
+  require_email_verification: true,
+  source: "tenant",
+  can_manage: true,
+};
 
 const DEFAULT_ENTERPRISE_MFA_POLICY: MfaPolicy = {
   enforced: false,
@@ -141,6 +154,12 @@ describe("AdminSettings", () => {
       enforced: true,
       enforced_at: "2026-11-24T00:00:00Z",
     });
+    vi.mocked(api.getTenantSignupPolicy).mockResolvedValue(
+      DEFAULT_SIGNUP_POLICY,
+    );
+    vi.mocked(api.updateTenantSignupPolicy).mockResolvedValue(
+      DEFAULT_SIGNUP_POLICY,
+    );
   });
 
   it("renders Enterprise badge, Domain Bypass badge, and all enabled CheckCircles when bypass is active", async () => {
@@ -272,5 +291,51 @@ describe("AdminSettings", () => {
       expect(toggle.disabled).toBe(true);
     });
     expect(screen.getByTestId("mfa-enterprise-upgrade-notice")).toBeDefined();
+  });
+
+  it("renders and updates the Signup & Email Verification Policy card", async () => {
+    vi.mocked(api.getLicenseStatus).mockResolvedValue(ENTERPRISE_BYPASS_STATUS);
+    vi.mocked(api.getTenantSignupPolicy).mockResolvedValue({
+      allowed_signup_domains: ["penguintech.io"],
+      require_email_verification: true,
+      source: "env_default",
+      can_manage: true,
+    });
+    vi.mocked(api.updateTenantSignupPolicy).mockResolvedValue({
+      allowed_signup_domains: ["penguintech.io", "example.com"],
+      require_email_verification: false,
+      source: "tenant",
+      can_manage: true,
+    });
+
+    renderPage();
+
+    const badge = await screen.findByTestId("signup-policy-source-badge");
+    await waitFor(() => {
+      expect(badge.textContent).toBe("Default env");
+    });
+
+    const domainsInput = screen.getByTestId(
+      "signup-allowed-domains-input",
+    ) as HTMLInputElement;
+    expect(domainsInput.value).toBe("penguintech.io");
+
+    const verificationToggle = screen.getByTestId(
+      "signup-require-verification-toggle",
+    );
+    expect(verificationToggle.getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.change(domainsInput, {
+      target: { value: "penguintech.io, Example.com " },
+    });
+    fireEvent.click(verificationToggle);
+    fireEvent.click(screen.getByTestId("signup-policy-save"));
+
+    await waitFor(() => {
+      expect(api.updateTenantSignupPolicy).toHaveBeenCalledWith({
+        allowed_signup_domains: ["penguintech.io", "example.com"],
+        require_email_verification: false,
+      });
+    });
   });
 });
