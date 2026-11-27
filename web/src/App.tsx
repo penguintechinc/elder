@@ -6,6 +6,8 @@ import Search from "./pages/Search";
 import Login from "./pages/LoginPageWrapper";
 import MfaEnroll from "./pages/MfaEnroll";
 import Register from "./pages/Register";
+import VerifyEmail from "./pages/VerifyEmail";
+import SetupAccount from "./pages/SetupAccount";
 import Profile from "./pages/Profile";
 // v2.2.0 Enterprise Admin Pages
 import Tenants from "./pages/Tenants";
@@ -112,6 +114,8 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/mfa-enroll" element={<MfaEnroll />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/setup-account" element={<SetupAccount />} />
         <Route
           path="/id/:villageId"
           element={

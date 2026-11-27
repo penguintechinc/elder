@@ -11,9 +11,13 @@ import {
   Search,
   RefreshCw,
   Lock,
+  Mail,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import api, { type LicenseFeatures } from "@/lib/api";
+import api, {
+  type LicenseFeatures,
+  type TenantSignupPolicySource,
+} from "@/lib/api";
 import Card, { CardHeader, CardContent } from "@/components/Card";
 
 const ENTERPRISE_FEATURES: Array<{
@@ -47,10 +51,35 @@ function getTierBadgeClass(tier: string | undefined): string {
   return "bg-yellow-500/20 text-yellow-400";
 }
 
+function getSignupSourceBadge(source: TenantSignupPolicySource | undefined): {
+  label: string;
+  className: string;
+} {
+  if (source === "tenant") {
+    return {
+      label: "Tenant override",
+      className: "bg-blue-500/20 text-blue-300",
+    };
+  }
+  if (source === "env_default") {
+    return {
+      label: "Default env",
+      className: "bg-amber-500/20 text-amber-300",
+    };
+  }
+  return {
+    label: "Unrestricted",
+    className: "bg-slate-700 text-slate-300",
+  };
+}
+
 export default function AdminSettings() {
   const [logSearch, setLogSearch] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [gracePeriodInput, setGracePeriodInput] = useState("7");
+  const [signupDomainsInput, setSignupDomainsInput] = useState("");
+  const [requireEmailVerification, setRequireEmailVerification] =
+    useState(false);
   const queryClient = useQueryClient();
 
   const { data: health } = useQuery({
@@ -137,6 +166,56 @@ export default function AdminSettings() {
     mfaPolicyMutation.mutate({
       enforced: mfaEnforced,
       grace_period_days: days,
+    });
+  };
+
+  const { data: signupPolicy } = useQuery({
+    queryKey: ["tenant-signup-policy"],
+    queryFn: () => api.getTenantSignupPolicy(),
+    enabled: isMfaAdmin,
+  });
+
+  useEffect(() => {
+    if (!signupPolicy) return;
+    setSignupDomainsInput(
+      (signupPolicy.allowed_signup_domains || []).join(", "),
+    );
+    setRequireEmailVerification(
+      Boolean(signupPolicy.require_email_verification),
+    );
+  }, [signupPolicy]);
+
+  const signupPolicyMutation = useMutation({
+    mutationFn: (payload: {
+      allowed_signup_domains: string[];
+      require_email_verification: boolean;
+    }) => api.updateTenantSignupPolicy(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["tenant-signup-policy"],
+      });
+      toast.success("Signup & email verification policy updated");
+    },
+    onError: (err: unknown) => {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data
+          ?.error || "Failed to update signup policy";
+      toast.error(msg);
+    },
+  });
+
+  const canManageSignupPolicy = Boolean(signupPolicy?.can_manage ?? isMfaAdmin);
+  const signupSourceBadge = getSignupSourceBadge(signupPolicy?.source);
+
+  const handleSaveSignupPolicy = (e: React.FormEvent) => {
+    e.preventDefault();
+    const domains = signupDomainsInput
+      .split(",")
+      .map((d) => d.trim().toLowerCase())
+      .filter(Boolean);
+    signupPolicyMutation.mutate({
+      allowed_signup_domains: domains,
+      require_email_verification: requireEmailVerification,
     });
   };
   const tierLabel = formatTierLabel(licenseStatus?.tier, licenseLoading);
@@ -468,6 +547,114 @@ export default function AdminSettings() {
                   </p>
                 )}
               </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Signup & Email Verification Policy - Admin Only */}
+      {isMfaAdmin && (
+        <div className="mt-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Mail className="w-5 h-5" />
+                  Signup &amp; Email Verification Policy
+                </h2>
+                <span
+                  data-testid="signup-policy-source-badge"
+                  className={`px-2 py-0.5 rounded text-xs font-medium ${signupSourceBadge.className}`}
+                >
+                  {signupSourceBadge.label}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSaveSignupPolicy} className="space-y-4">
+                <div>
+                  <label
+                    htmlFor="signup-allowed-domains"
+                    className="block text-sm font-medium text-slate-300 mb-1"
+                  >
+                    Allowed Signup Email Domains
+                  </label>
+                  <input
+                    id="signup-allowed-domains"
+                    data-testid="signup-allowed-domains-input"
+                    type="text"
+                    value={signupDomainsInput}
+                    disabled={
+                      !canManageSignupPolicy || signupPolicyMutation.isPending
+                    }
+                    onChange={(e) => setSignupDomainsInput(e.target.value)}
+                    placeholder="e.g. penguintech.io, example.com (leave blank for unrestricted)"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Comma-separated list of email domains allowed to
+                    self-register. Leave blank to allow any email domain.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between gap-4 pt-3 border-t border-slate-700 flex-wrap">
+                  <div>
+                    <span className="text-slate-200 font-medium block">
+                      Require Email Verification on Self-Signup
+                    </span>
+                    <p className="text-sm text-slate-400 mt-0.5">
+                      New self-registered users must click a verification link
+                      in their email before signing in.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={requireEmailVerification}
+                    aria-label="Require Email Verification on Self-Signup"
+                    data-testid="signup-require-verification-toggle"
+                    disabled={
+                      !canManageSignupPolicy || signupPolicyMutation.isPending
+                    }
+                    onClick={() =>
+                      setRequireEmailVerification((prev) => !prev)
+                    }
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+                      requireEmailVerification
+                        ? "bg-emerald-500"
+                        : "bg-slate-600"
+                    } ${
+                      !canManageSignupPolicy || signupPolicyMutation.isPending
+                        ? "opacity-50 cursor-not-allowed"
+                        : "cursor-pointer"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        requireEmailVerification
+                          ? "translate-x-6"
+                          : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    data-testid="signup-policy-save"
+                    disabled={
+                      !canManageSignupPolicy || signupPolicyMutation.isPending
+                    }
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {signupPolicyMutation.isPending
+                      ? "Saving..."
+                      : "Save Signup Policy"}
+                  </button>
+                </div>
+              </form>
             </CardContent>
           </Card>
         </div>
