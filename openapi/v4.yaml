@@ -16725,7 +16725,7 @@ paths:
     get:
       description: "\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    Tenant signup policy"
       operationId: get_get_tenant_signup_policy
-      parameters: &id001
+      parameters:
       - in: path
         name: tenant_id
         required: true
@@ -16739,7 +16739,12 @@ paths:
         \ domains\n    require_email_verification: bool (optional) - Require email verification\n\nReturns:\n\
         \    Updated tenant signup policy"
       operationId: put_update_tenant_signup_policy
-      parameters: *id001
+      parameters:
+      - in: path
+        name: tenant_id
+        required: true
+        schema:
+          type: integer
       responses: {}
       summary: Update the signup domain and email verification policy for a specific tenant.
   /api/v1/tenants/{tenant_id}/stats:
@@ -16774,7 +16779,12 @@ paths:
         \ true) - Send one-time setup email\n\nReturns:\n    201 with created user metadata and ``invite_sent``\
         \ status"
       operationId: post_create_tenant_user
-      parameters: *id001
+      parameters:
+      - in: path
+        name: tenant_id
+        required: true
+        schema:
+          type: integer
       responses: {}
       summary: Create a portal user in a tenant and optionally send a one-time onboarding invite.
   /api/v1/tenants/{tenant_id}/users/{user_id}:
