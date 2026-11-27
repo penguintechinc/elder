@@ -534,7 +534,7 @@ async def refresh_token_endpoint():
 
 @bp.route("/captcha-challenge", methods=["GET"])
 def captcha_challenge():
-    """Generate a signed ALTCHA proof-of-work challenge with expiry."""
+    """Generate ALTCHA proof-of-work challenge."""
     from apps.api.utils.altcha import create_altcha_challenge
 
     return jsonify(create_altcha_challenge())
