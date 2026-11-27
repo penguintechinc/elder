@@ -518,6 +518,42 @@ async def login():
     if not tenant_id:
         return ApiResponse.bad_request("Valid tenant is required")
 
+    # Server-side ALTCHA CAPTCHA verification:
+    # - Always verify captchaToken whenever supplied (rejects tampered/expired/replayed tokens).
+    # - Require a valid captchaToken once the account hits the failed-attempt threshold (3),
+    #   skipping step-2 MFA submissions (LoginPageBuilder does not resend captchaToken with mfaCode).
+    mfa_code = _submitted_mfa_code(data)
+    captcha_token = data.get("captchaToken") or data.get("captcha_token")
+    if mfa_code is None:
+        from apps.api.utils.altcha import requires_login_captcha, verify_altcha_payload
+
+        if captcha_token is not None and str(captcha_token).strip() != "":
+            ok, reason = verify_altcha_payload(captcha_token)
+            if not ok:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": reason or "Invalid security check",
+                            "errorCode": "CAPTCHA_INVALID",
+                            "captchaRequired": True,
+                        }
+                    ),
+                    400,
+                )
+        elif requires_login_captcha(tenant_id, validated_data.email):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Please complete the security check",
+                        "errorCode": "CAPTCHA_REQUIRED",
+                        "captchaRequired": True,
+                    }
+                ),
+                400,
+            )
+
     result = PortalAuthService.authenticate(
         tenant_id, validated_data.email, validated_data.password
     )
