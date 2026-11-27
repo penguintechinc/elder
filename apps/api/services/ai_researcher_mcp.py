@@ -71,6 +71,7 @@ DEFAULT_MAX_TOOLS_PER_CALL = 12
 
 _CORE_DISCOVERY_TOOLS: tuple[str, ...] = (
     "universal_search",
+    "search_entities",
     "search_graph",
     "resolve_ref",
     "get_ref_backlinks",
