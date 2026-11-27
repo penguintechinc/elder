@@ -654,6 +654,11 @@ async def run_ai_research(
             }
             try:
                 resp = await ollama_client.post(f"{ollama_url}/api/chat", json=payload)
+            except httpx.TimeoutException as exc:
+                raise OllamaUnavailableError(
+                    f"Ollama timed out after {timeout_seconds:.0f}s while running "
+                    f"{selected_model} (model may still be loading or prompt is large)"
+                ) from exc
             except httpx.HTTPError as exc:
                 raise OllamaUnavailableError(
                     f"Unable to reach Ollama at {ollama_url}: {exc}"
@@ -774,6 +779,11 @@ async def run_ai_research(
                     f"{ollama_url}/api/chat",
                     json=synthesis_payload,
                 )
+            except httpx.TimeoutException as exc:
+                raise OllamaUnavailableError(
+                    f"Ollama synthesis timed out after {timeout_seconds:.0f}s while "
+                    f"running {selected_model}"
+                ) from exc
             except httpx.HTTPError as exc:
                 raise OllamaUnavailableError(
                     f"Unable to reach Ollama for final synthesis: {exc}"

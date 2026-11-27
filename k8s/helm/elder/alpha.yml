@@ -179,6 +179,8 @@ hub-api:
     OLLAMA_URL: "http://ollama.waddleai.svc.cluster.local:11434"
     AI_RESEARCHER_MODEL: "gemma4:e4b"
     AI_RESEARCHER_MAX_STEPS: "6"
+    AI_RESEARCHER_TIMEOUT_SECONDS: "95"
+    AI_RESEARCHER_KEEP_ALIVE: "30m"
     ELDER_INTERNAL_API_URL: "http://127.0.0.1:5000"
     MCP_SERVER_URL: "http://hub-mcp:8080"
     # Restrict self-service signups to penguintech.io in alpha values (not baked into code)
