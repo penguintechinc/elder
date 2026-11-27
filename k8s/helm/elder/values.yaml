@@ -282,6 +282,19 @@ hub-api:
     SAML_ENABLED: "false"
     OAUTH2_ENABLED: "false"
     LDAP_ENABLED: "false"
+    # Optional comma-separated list of email domains permitted for self-service
+    # signups (empty = no domain restriction; set in environment values, never baked in).
+    ALLOWED_SIGNUP_DOMAINS: ""
+
+    # SMTP email delivery (credentials live in secretEnv: SMTP_USERNAME / SMTP_PASSWORD)
+    SMTP_HOST: ""
+    SMTP_PORT: "587"
+    SMTP_USE_TLS: "true"
+    SMTP_USE_SSL: "false"
+    SMTP_FROM_EMAIL: ""
+    SMTP_FROM_NAME: "Elder"
+    SMTP_EHLO_HOST: ""
+    SMTP_TIMEOUT: "30"
 
     # Admin user
     ADMIN_USERNAME: admin
@@ -319,6 +332,8 @@ hub-api:
     DATABASE_URL: { key: DATABASE_URL, optional: true }
     LICENSE_KEY: { key: LICENSE_KEY, optional: true }
     GUEST_PASSWORD: { key: GUEST_PASSWORD, optional: true }
+    SMTP_USERNAME: { key: SMTP_USERNAME, optional: true }
+    SMTP_PASSWORD: { key: SMTP_PASSWORD, optional: true }
   # Per-pod DB pool (DB_POOL_SIZE / SQLALCHEMY_MAX_OVERFLOW). Budget:
   # (10+5) x 10 HPA max pods = 150 of postgres.maxConnections 200.
   database:

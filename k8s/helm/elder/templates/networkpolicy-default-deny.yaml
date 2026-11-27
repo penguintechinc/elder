@@ -272,4 +272,27 @@ spec:
               protocol: TCP
             - port: "8443"
               protocol: TCP
+{{- $hubApiEnv := (index .Values "hub-api").env | default dict }}
+{{- if $hubApiEnv.SMTP_HOST }}
+---
+# Egress for hub-api to the configured SMTP relay (only rendered when SMTP_HOST is set).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-allow-hub-api-smtp-egress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "hub-api" .) | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "elder.componentSelectorLabels" (list "hub-api" .) | nindent 6 }}
+  egress:
+    - toFQDNs:
+        - matchName: {{ $hubApiEnv.SMTP_HOST | quote }}
+      toPorts:
+        - ports:
+            - port: {{ $hubApiEnv.SMTP_PORT | default "587" | quote }}
+              protocol: TCP
+{{- end }}
 {{- end }}

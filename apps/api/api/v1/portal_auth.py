@@ -7,12 +7,14 @@ MFA management, and password operations with tenant context.
 # flake8: noqa: E501
 
 import json
+import os
 from datetime import UTC, datetime, timezone
 from functools import wraps
 from inspect import iscoroutinefunction
 from typing import Any
 
 import jwt
+import structlog
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, make_response, request
 
@@ -38,7 +40,15 @@ from apps.api.services.portal_auth import (
     user_has_mfa_enrolled,
 )
 from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.email import (
+    EmailDeliveryError,
+    EmailNotConfiguredError,
+    is_smtp_configured,
+    send_email,
+)
+from apps.api.utils.signup_policy import is_signup_email_allowed
 
+logger = structlog.get_logger(__name__)
 bp = Blueprint("portal_auth", __name__)
 
 
@@ -379,6 +389,18 @@ async def register():
             )
         return jsonify({"error": "Validation failed", "details": errors}), 422
 
+    if not is_signup_email_allowed(validated_data.email):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Signups are restricted to approved email domains",
+                    "errorCode": "SIGNUP_DOMAIN_NOT_ALLOWED",
+                }
+            ),
+            403,
+        )
+
     tenant_id = data.get("tenant_id")
     tenant_slug = validated_data.tenant
 
@@ -439,6 +461,25 @@ async def register():
             ),
             status_code,
         )
+
+    if is_smtp_configured():
+        site_url = os.environ.get("SITE_URL", "").rstrip("/")
+        login_line = f"\nSign in at: {site_url}/login\n" if site_url else ""
+        try:
+            await send_email(
+                to_addresses=[validated_data.email],
+                subject="Welcome to Elder",
+                body_text=(
+                    "Your Elder account has been created.\n"
+                    f"{login_line}\n"
+                    "If you did not request this account, please contact your administrator."
+                ),
+            )
+        except (EmailNotConfiguredError, EmailDeliveryError, ValueError) as exc:
+            logger.warning(
+                "signup_welcome_email_failed",
+                error_type=type(exc).__name__,
+            )
 
     # Generate tokens
     tokens = generate_tokens(result, auth_time=interactive_auth_time())
@@ -845,6 +886,42 @@ async def reset_password():
         return ApiResponse.bad_request("tenant_id and email are required")
 
     result = PortalAuthService.reset_password(email, tenant_id)
+
+    reset_token = result.get("reset_token")
+    if reset_token and is_smtp_configured():
+        site_url = os.environ.get("SITE_URL", "").rstrip("/")
+        reset_link = (
+            f"{site_url}/reset-password?token={reset_token}"
+            if site_url
+            else f"Reset token: {reset_token}"
+        )
+        try:
+            await send_email(
+                to_addresses=[email],
+                subject="Elder Password Reset",
+                body_text=(
+                    "A password reset was requested for your Elder account.\n\n"
+                    f"{reset_link}\n\n"
+                    "If you did not request this, you can safely ignore this email."
+                ),
+            )
+            return (
+                jsonify(
+                    {
+                        "success": True,
+                        "message": "If the email exists, a reset link will be sent",
+                    }
+                ),
+                200,
+            )
+        except (EmailNotConfiguredError, EmailDeliveryError, ValueError) as exc:
+            logger.error(
+                "password_reset_email_failed",
+                error_type=type(exc).__name__,
+            )
+            return ApiResponse.service_unavailable(
+                "Unable to send password reset email"
+            )
 
     return jsonify(result), 200
 
