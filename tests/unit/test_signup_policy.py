@@ -1,4 +1,4 @@
-"""Unit tests for configurable signup email-domain allowlist."""
+"""Unit tests for per-tenant and environment-default signup policy."""
 
 from __future__ import annotations
 
@@ -7,7 +7,11 @@ import pytest
 from apps.api.utils.signup_policy import (
     extract_email_domain,
     get_allowed_signup_domains,
+    is_email_verification_required,
     is_signup_email_allowed,
+    normalize_signup_domains,
+    resolve_allowed_signup_domains,
+    resolve_tenant_signup_policy,
 )
 
 
@@ -39,6 +43,16 @@ class TestGetAllowedSignupDomains:
             "sub.example.org",
         )
 
+    def test_normalize_accepts_list_and_string(self) -> None:
+        assert normalize_signup_domains(
+            ["@Example.COM", "penguintech.io", "example.com"]
+        ) == (
+            "example.com",
+            "penguintech.io",
+        )
+        assert normalize_signup_domains([]) == ()
+        assert normalize_signup_domains(None) == ()
+
 
 class TestExtractEmailDomain:
     """Tests for email domain extraction."""
@@ -56,6 +70,140 @@ class TestExtractEmailDomain:
     )
     def test_extract_email_domain(self, email: str, expected: str) -> None:
         assert extract_email_domain(email) == expected
+
+
+class TestPerTenantSignupDomainPrecedence:
+    """Tests for per-tenant domain policy precedence."""
+
+    def test_tenant_settings_overrides_env_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("ALLOWED_SIGNUP_DOMAINS", "penguintech.io")
+        domains, source = resolve_allowed_signup_domains(
+            {"allowed_signup_domains": ["@Acme.COM", "partner.io"]},
+            tenant_slug="system",
+        )
+        assert domains == ("acme.com", "partner.io")
+        assert source == "tenant"
+        assert (
+            is_signup_email_allowed(
+                "alice@acme.com",
+                tenant_settings={"allowed_signup_domains": ["acme.com"]},
+                tenant_slug="system",
+            )
+            is True
+        )
+        assert (
+            is_signup_email_allowed(
+                "alice@penguintech.io",
+                tenant_settings={"allowed_signup_domains": ["acme.com"]},
+                tenant_slug="system",
+            )
+            is False
+        )
+
+    def test_explicit_empty_list_in_tenant_overrides_env_to_allow_all(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("ALLOWED_SIGNUP_DOMAINS", "penguintech.io")
+        domains, source = resolve_allowed_signup_domains(
+            {"allowed_signup_domains": []},
+            tenant_slug="system",
+        )
+        assert domains == ()
+        assert source == "tenant"
+        assert (
+            is_signup_email_allowed(
+                "anyone@external.example",
+                tenant_settings={"allowed_signup_domains": []},
+                tenant_slug="system",
+            )
+            is True
+        )
+
+    @pytest.mark.parametrize("slug", ["system", "default", "SYSTEM"])
+    def test_system_and_default_tenants_inherit_env_default(
+        self, monkeypatch: pytest.MonkeyPatch, slug: str
+    ) -> None:
+        monkeypatch.setenv("ALLOWED_SIGNUP_DOMAINS", "penguintech.io")
+        domains, source = resolve_allowed_signup_domains({}, tenant_slug=slug)
+        assert domains == ("penguintech.io",)
+        assert source == "env_default"
+
+    def test_non_default_tenant_without_setting_is_open(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("ALLOWED_SIGNUP_DOMAINS", "penguintech.io")
+        domains, source = resolve_allowed_signup_domains({}, tenant_slug="acme-corp")
+        assert domains == ()
+        assert source == "open"
+        assert (
+            is_signup_email_allowed(
+                "alice@acme-corp.com",
+                tenant_settings={},
+                tenant_slug="acme-corp",
+            )
+            is True
+        )
+
+
+class TestEmailVerificationPolicy:
+    """Tests for require_email_verification precedence."""
+
+    def test_tenant_setting_wins_over_env_and_smtp(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("REQUIRE_EMAIL_VERIFICATION", "true")
+        monkeypatch.setenv("SMTP_HOST", "smtp-relay.gmail.com")
+        monkeypatch.setenv("SMTP_FROM_EMAIL", "no-reply@penguintech.io")
+        assert (
+            is_email_verification_required({"require_email_verification": False})
+            is False
+        )
+
+        monkeypatch.setenv("REQUIRE_EMAIL_VERIFICATION", "false")
+        monkeypatch.delenv("SMTP_HOST", raising=False)
+        monkeypatch.delenv("SMTP_FROM_EMAIL", raising=False)
+        assert (
+            is_email_verification_required({"require_email_verification": True}) is True
+        )
+
+    def test_env_var_wins_over_smtp_auto_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SMTP_HOST", "smtp-relay.gmail.com")
+        monkeypatch.setenv("SMTP_FROM_EMAIL", "no-reply@penguintech.io")
+        monkeypatch.setenv("REQUIRE_EMAIL_VERIFICATION", "false")
+        assert is_email_verification_required({}) is False
+
+        monkeypatch.delenv("SMTP_HOST", raising=False)
+        monkeypatch.delenv("SMTP_FROM_EMAIL", raising=False)
+        monkeypatch.setenv("REQUIRE_EMAIL_VERIFICATION", "true")
+        assert is_email_verification_required({}) is True
+
+    def test_defaults_to_smtp_configured_when_unset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("REQUIRE_EMAIL_VERIFICATION", raising=False)
+        monkeypatch.delenv("SMTP_HOST", raising=False)
+        monkeypatch.delenv("SMTP_FROM_EMAIL", raising=False)
+        assert is_email_verification_required({}) is False
+
+        monkeypatch.setenv("SMTP_HOST", "smtp-relay.gmail.com")
+        monkeypatch.setenv("SMTP_FROM_EMAIL", "no-reply@penguintech.io")
+        assert is_email_verification_required({}) is True
+
+    def test_resolve_tenant_signup_policy_combines_fields(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("ALLOWED_SIGNUP_DOMAINS", "penguintech.io")
+        monkeypatch.setenv("REQUIRE_EMAIL_VERIFICATION", "true")
+        policy = resolve_tenant_signup_policy({}, tenant_slug="system")
+        assert policy == {
+            "allowed_signup_domains": ["penguintech.io"],
+            "require_email_verification": True,
+            "source": "env_default",
+        }
 
 
 class TestIsSignupEmailAllowed:

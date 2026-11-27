@@ -12747,6 +12747,29 @@ paths:
           type: integer
       responses: {}
       summary: Attach a document collection to a page.
+  /api/v1/portal-auth/invite/complete:
+    post:
+      description: "\nRequest body:\n    token: str - Single-use admin invitation token\n    password:\
+        \ str - New password (minimum 8 characters)\n    setup_mfa: bool (optional, default false) - Whether\
+        \ user opts into MFA setup now\n\nReturns:\n    200 with MFA enrollment-scoped token/cookies when\
+        \ MFA is enforced or requested,\n    or normal session tokens/cookies otherwise."
+      operationId: post_complete_admin_invite
+      parameters: []
+      responses: {}
+      summary: Complete an admin onboarding invitation by setting password and optional/enforced MFA.
+  /api/v1/portal-auth/invite/{token}:
+    get:
+      description: "\nReturns:\n    200 with invited user/tenant metadata and MFA requirement flags, or\n\
+        \    400 if the token is invalid or expired."
+      operationId: get_inspect_admin_invite
+      parameters:
+      - in: path
+        name: token
+        required: true
+        schema:
+          type: string
+      responses: {}
+      summary: Validate a one-time admin onboarding invitation token without consuming it.
   /api/v1/portal-auth/login:
     post:
       description: "\nRequest body:\n    tenant: str - Tenant slug (or use tenant_id)\n    email: str\
@@ -12885,6 +12908,24 @@ paths:
       parameters: []
       responses: {}
       summary: Register a new portal user.
+  /api/v1/portal-auth/resend-verification:
+    post:
+      description: "\nRequest body:\n    email: str - Email address\n    tenant: str (optional) - Tenant\
+        \ slug (or tenant_id)\n\nReturns:\n    Always 200 with a generic message so account existence\
+        \ is never disclosed."
+      operationId: post_resend_verification
+      parameters: []
+      responses: {}
+      summary: Resend a self-signup verification email (anti-enumeration).
+  /api/v1/portal-auth/verify-email:
+    post:
+      description: "\nRequest body:\n    token: str - Single-use email verification token from the verification\
+        \ email\n\nReturns:\n    200 on success, 400 if the token is missing, invalid, expired, or already\
+        \ used."
+      operationId: post_verify_email
+      parameters: []
+      responses: {}
+      summary: Verify a portal user's email address using a one-time verification token.
   /api/v1/privacy-admin/bulk-erase:
     post:
       description: "\nEvery id in `identity_ids` is re-verified against the admin's own tenant\nbefore\
@@ -16600,6 +16641,23 @@ paths:
       parameters: []
       responses: {}
       summary: Update the MFA enforcement policy for the authenticated user's current tenant.
+  /api/v1/tenants/current/signup-policy:
+    get:
+      description: "\nReturns:\n    Tenant signup policy including allowed domains, verification flag,\n\
+        \    policy source, and whether the caller can manage it."
+      operationId: get_get_current_tenant_signup_policy
+      parameters: []
+      responses: {}
+      summary: Get the signup domain and email verification policy for the current tenant.
+    put:
+      description: "\nRequires tenant admin or global admin.\n\nRequest body:\n    allowed_signup_domains:\
+        \ list[str] | str - Allowed signup email domains\n        (empty list allows any domain)\n   \
+        \ require_email_verification: bool (optional) - Require email verification\n\nReturns:\n    Updated\
+        \ tenant signup policy"
+      operationId: put_update_current_tenant_signup_policy
+      parameters: []
+      responses: {}
+      summary: Update the signup domain and email verification policy for the current tenant.
   /api/v1/tenants/{tenant_id}:
     delete:
       description: "\nRequires global admin. Cannot delete system tenant (id=1).\n\nArgs:\n    tenant_id:\
@@ -16663,6 +16721,32 @@ paths:
           type: integer
       responses: {}
       summary: Set module enablement state for a tenant.
+  /api/v1/tenants/{tenant_id}/signup-policy:
+    get:
+      description: "\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    Tenant signup policy"
+      operationId: get_get_tenant_signup_policy
+      parameters:
+      - in: path
+        name: tenant_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Get the signup domain and email verification policy for a specific tenant.
+    put:
+      description: "\nRequires global admin or tenant admin for the target tenant.\n\nArgs:\n    tenant_id:\
+        \ Tenant ID\n\nRequest body:\n    allowed_signup_domains: list[str] | str - Allowed signup email\
+        \ domains\n    require_email_verification: bool (optional) - Require email verification\n\nReturns:\n\
+        \    Updated tenant signup policy"
+      operationId: put_update_tenant_signup_policy
+      parameters:
+      - in: path
+        name: tenant_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Update the signup domain and email verification policy for a specific tenant.
   /api/v1/tenants/{tenant_id}/stats:
     get:
       description: "\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    Detailed usage statistics"
@@ -16687,6 +16771,22 @@ paths:
           type: integer
       responses: {}
       summary: List all portal users in a tenant.
+    post:
+      description: "\nRequires global admin or tenant admin for the target tenant.\n\nArgs:\n    tenant_id:\
+        \ Tenant ID\n\nRequest body:\n    email: str - User email address\n    full_name: str (optional)\
+        \ - Full name\n    tenant_role: str - Role within tenant (reader/maintainer/admin)\n    global_role:\
+        \ str (optional, global admin only) - Global role (admin/support)\n    send_invite: bool (default\
+        \ true) - Send one-time setup email\n\nReturns:\n    201 with created user metadata and ``invite_sent``\
+        \ status"
+      operationId: post_create_tenant_user
+      parameters:
+      - in: path
+        name: tenant_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Create a portal user in a tenant and optionally send a one-time onboarding invite.
   /api/v1/tenants/{tenant_id}/users/{user_id}:
     delete:
       description: "\nArgs:\n    tenant_id: Tenant ID\n    user_id: Portal user ID\n\nReturns:\n    Success\

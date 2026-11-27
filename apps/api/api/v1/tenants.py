@@ -6,10 +6,12 @@ and usage statistics for the Super Admin Console.
 
 # flake8: noqa: E501
 
+import secrets
 from datetime import UTC, datetime, timezone
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import redis
+import structlog
 from penguin_libs.pydantic import Name255, RequestModel, SlugStr
 from pydantic import Field, ValidationError
 from quart import Blueprint, current_app, jsonify, request
@@ -20,14 +22,32 @@ from apps.api.common.licensing.tier_gate import get_tier
 from apps.api.services.portal_auth import (
     DEFAULT_MFA_GRACE_PERIOD_DAYS,
     DEFAULT_MFA_PROVIDER,
+    PortalAuthService,
     get_tenant_mfa_policy,
+    is_tenant_mfa_enforced,
     parse_tenant_settings,
     user_has_mfa_enrolled,
 )
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.email import (
+    EmailDeliveryError,
+    EmailNotConfiguredError,
+    is_smtp_configured,
+)
+from apps.api.utils.onboarding_emails import send_admin_invite_email
+from apps.api.utils.onboarding_tokens import (
+    ADMIN_INVITE_TTL_SECONDS,
+    PURPOSE_ADMIN_INVITE,
+    issue_onboarding_token,
+)
+from apps.api.utils.signup_policy import (
+    normalize_signup_domains,
+    resolve_tenant_signup_policy,
+)
 from apps.api.utils.village_id import mint_village_id
 
+logger = structlog.get_logger(__name__)
 bp = Blueprint("tenants", __name__)
 
 
@@ -67,6 +87,23 @@ class UpdateMfaPolicyRequest(RequestModel):
     enforced: bool
     provider: Literal["google_authenticator"] = DEFAULT_MFA_PROVIDER
     grace_period_days: int | None = Field(default=None, ge=0, le=90)
+
+
+class UpdateSignupPolicyRequest(RequestModel):
+    """Validation model for updating tenant signup domain and verification policy."""
+
+    allowed_signup_domains: list[str] | str
+    require_email_verification: bool | None = None
+
+
+class CreateTenantUserRequest(RequestModel):
+    """Validation model for creating/inviting a portal user in a tenant."""
+
+    email: str = Field(..., min_length=3, max_length=255)
+    full_name: str | None = Field(default=None, max_length=255)
+    tenant_role: Literal["reader", "maintainer", "admin"] = "reader"
+    global_role: Literal["admin", "support"] | None = None
+    send_invite: bool = True
 
 
 def _is_mfa_policy_admin(portal_user: dict) -> bool:
@@ -461,6 +498,126 @@ def list_tenant_users(tenant_id):
     )
 
 
+@bp.route("/<int:tenant_id>/users", methods=["POST"])
+@portal_token_required
+async def create_tenant_user(tenant_id):
+    """Create a portal user in a tenant and optionally send a one-time onboarding invite.
+
+    Requires global admin or tenant admin for the target tenant.
+
+    Args:
+        tenant_id: Tenant ID
+
+    Request body:
+        email: str - User email address
+        full_name: str (optional) - Full name
+        tenant_role: str - Role within tenant (reader/maintainer/admin)
+        global_role: str (optional, global admin only) - Global role (admin/support)
+        send_invite: bool (default true) - Send one-time setup email
+
+    Returns:
+        201 with created user metadata and ``invite_sent`` status
+    """
+    is_global_admin = request.portal_user.get("global_role") in (
+        "admin",
+        "super_admin",
+        "superadmin",
+    )
+    is_tenant_admin = request.portal_user.get(
+        "tenant_id"
+    ) == tenant_id and _is_mfa_policy_admin(request.portal_user)
+    if not is_global_admin and not is_tenant_admin:
+        return ApiResponse.forbidden("Admin permission required")
+
+    payload = await request.get_json(silent=True)
+    if payload is None:
+        return ApiResponse.bad_request("Request body must be JSON")
+
+    try:
+        body = CreateTenantUserRequest.model_validate(payload)
+    except ValidationError as e:
+        errors = [
+            {"field": ".".join(str(x) for x in err["loc"]), "message": err["msg"]}
+            for err in e.errors()
+        ]
+        return jsonify({"error": "Validation failed", "details": errors}), 400
+
+    email = body.email.strip().lower()
+    if "@" not in email or not email.split("@")[0] or "." not in email.split("@")[-1]:
+        return ApiResponse.bad_request("Valid email address is required")
+
+    if body.global_role is not None and not is_global_admin:
+        return ApiResponse.forbidden("Only a global admin can assign global_role")
+
+    db = current_app.db
+    # Permission check above restricts non-global-admins to their own tenant_id.
+    tenant = db.tenants[tenant_id]  # tenant-scope-exempt: see above
+    if not tenant or not tenant.is_active:
+        return ApiResponse.error("Tenant not found", 404)
+
+    # Create portal user with an unusable random password; user sets their real
+    # password via the one-time /api/v1/portal-auth/invite/complete flow.
+    result = await PortalAuthService.create_portal_user(
+        tenant_id=tenant_id,
+        email=email,
+        password=secrets.token_urlsafe(48),
+        full_name=body.full_name,
+        tenant_role=body.tenant_role,
+        global_role=body.global_role if is_global_admin else None,
+    )
+    if "error" in result:
+        status_code = result.get("status_code", 400)
+        return jsonify({"error": result["error"]}), status_code
+
+    mfa_enforced = is_tenant_mfa_enforced(tenant_id, db=db)
+    invite_sent = False
+
+    if body.send_invite:
+        invite_token = issue_onboarding_token(
+            PURPOSE_ADMIN_INVITE,
+            {
+                "user_id": int(result["id"]),
+                "tenant_id": int(tenant_id),
+            },
+            ttl_seconds=ADMIN_INVITE_TTL_SECONDS,
+        )
+        if is_smtp_configured():
+            try:
+                await send_admin_invite_email(
+                    to_email=email,
+                    token=invite_token,
+                    full_name=body.full_name,
+                    tenant_name=getattr(tenant, "name", None),
+                    mfa_enforced=mfa_enforced,
+                )
+                invite_sent = True
+            except (EmailNotConfiguredError, EmailDeliveryError, ValueError) as exc:
+                logger.warning(
+                    "tenant_user_invite_email_failed",
+                    tenant_id=tenant_id,
+                    portal_user_id=result["id"],
+                    error_type=type(exc).__name__,
+                )
+
+    return (
+        jsonify(
+            {
+                "id": result["id"],
+                "email": result["email"],
+                "full_name": body.full_name,
+                "tenant_id": tenant_id,
+                "tenant_role": result["tenant_role"],
+                "global_role": result["global_role"],
+                "is_active": True,
+                "email_verified": False,
+                "mfa_enforced": mfa_enforced,
+                "invite_sent": invite_sent,
+            }
+        ),
+        201,
+    )
+
+
 @bp.route("/<int:tenant_id>/users/<int:user_id>", methods=["PUT"])
 @portal_token_required
 async def update_tenant_user(tenant_id, user_id):
@@ -739,3 +896,165 @@ async def update_current_tenant_mfa_policy():
         ),
         200,
     )
+
+
+def _can_manage_tenant_signup_policy(portal_user: dict, tenant_id: int) -> bool:
+    """Return True if caller is global admin or tenant admin for ``tenant_id``."""
+    if portal_user.get("global_role") in ("admin", "super_admin", "superadmin"):
+        return True
+    return portal_user.get("tenant_id") == tenant_id and _is_mfa_policy_admin(
+        portal_user
+    )
+
+
+def _can_view_tenant_signup_policy(portal_user: dict, tenant_id: int) -> bool:
+    """Return True if caller can view signup policy for ``tenant_id``."""
+    if portal_user.get("global_role") in (
+        "admin",
+        "super_admin",
+        "superadmin",
+        "support",
+    ):
+        return True
+    return portal_user.get("tenant_id") == tenant_id
+
+
+def _build_signup_policy_response(tenant: Any, *, can_manage: bool) -> dict[str, Any]:
+    settings = parse_tenant_settings(getattr(tenant, "settings", None))
+    policy = resolve_tenant_signup_policy(
+        tenant_settings=settings,
+        tenant_slug=getattr(tenant, "slug", None),
+    )
+    return {
+        "allowed_signup_domains": policy["allowed_signup_domains"],
+        "require_email_verification": policy["require_email_verification"],
+        "source": policy["source"],
+        "can_manage": can_manage,
+    }
+
+
+async def _update_tenant_signup_policy_impl(tenant_id: int):
+    if not _can_manage_tenant_signup_policy(request.portal_user, tenant_id):
+        return ApiResponse.forbidden(
+            "Admin permission required to manage signup policy"
+        )
+
+    payload = await request.get_json(silent=True)
+    if payload is None:
+        return ApiResponse.bad_request("Request body must be JSON")
+
+    try:
+        body = UpdateSignupPolicyRequest.model_validate(payload)
+    except ValidationError as e:
+        errors = [
+            {"field": ".".join(str(x) for x in err["loc"]), "message": err["msg"]}
+            for err in e.errors()
+        ]
+        return jsonify({"error": "Validation failed", "details": errors}), 400
+
+    db = current_app.db
+    tenant = db(db.tenants.id == tenant_id).select().first()
+    if not tenant:
+        return ApiResponse.error("Tenant not found", 404)
+
+    normalized_domains = list(normalize_signup_domains(body.allowed_signup_domains))
+    settings = parse_tenant_settings(getattr(tenant, "settings", None))
+    settings["allowed_signup_domains"] = normalized_domains
+    if body.require_email_verification is not None:
+        settings["require_email_verification"] = bool(body.require_email_verification)
+
+    db(db.tenants.id == tenant.id).update(
+        settings=settings,
+        updated_at=datetime.now(UTC),
+    )
+    db.commit()
+
+    refreshed = db(db.tenants.id == tenant.id).select().first() or tenant
+    return (
+        jsonify(_build_signup_policy_response(refreshed, can_manage=True)),
+        200,
+    )
+
+
+@bp.route("/current/signup-policy", methods=["GET"])
+@portal_token_required
+def get_current_tenant_signup_policy():
+    """Get the signup domain and email verification policy for the current tenant.
+
+    Returns:
+        Tenant signup policy including allowed domains, verification flag,
+        policy source, and whether the caller can manage it.
+    """
+    tenant_id = request.portal_user.get("tenant_id")
+    db = current_app.db
+    tenant = db(db.tenants.id == tenant_id).select().first()
+    if not tenant:
+        return ApiResponse.error("Tenant not found", 404)
+
+    can_manage = _can_manage_tenant_signup_policy(request.portal_user, tenant.id)
+    return jsonify(_build_signup_policy_response(tenant, can_manage=can_manage)), 200
+
+
+@bp.route("/current/signup-policy", methods=["PUT"])
+@portal_token_required
+async def update_current_tenant_signup_policy():
+    """Update the signup domain and email verification policy for the current tenant.
+
+    Requires tenant admin or global admin.
+
+    Request body:
+        allowed_signup_domains: list[str] | str - Allowed signup email domains
+            (empty list allows any domain)
+        require_email_verification: bool (optional) - Require email verification
+
+    Returns:
+        Updated tenant signup policy
+    """
+    tenant_id = request.portal_user.get("tenant_id")
+    if not tenant_id:
+        return ApiResponse.error("Tenant not found", 404)
+    return await _update_tenant_signup_policy_impl(int(tenant_id))
+
+
+@bp.route("/<int:tenant_id>/signup-policy", methods=["GET"])
+@portal_token_required
+def get_tenant_signup_policy(tenant_id):
+    """Get the signup domain and email verification policy for a specific tenant.
+
+    Args:
+        tenant_id: Tenant ID
+
+    Returns:
+        Tenant signup policy
+    """
+    if not _can_view_tenant_signup_policy(request.portal_user, tenant_id):
+        return ApiResponse.forbidden("Permission denied")
+
+    db = current_app.db
+    # Permission check above restricts non-global-admins to their own tenant_id.
+    tenant = db.tenants[tenant_id]  # tenant-scope-exempt: see above
+    if not tenant:
+        return ApiResponse.error("Tenant not found", 404)
+
+    can_manage = _can_manage_tenant_signup_policy(request.portal_user, tenant.id)
+    return jsonify(_build_signup_policy_response(tenant, can_manage=can_manage)), 200
+
+
+@bp.route("/<int:tenant_id>/signup-policy", methods=["PUT"])
+@portal_token_required
+async def update_tenant_signup_policy(tenant_id):
+    """Update the signup domain and email verification policy for a specific tenant.
+
+    Requires global admin or tenant admin for the target tenant.
+
+    Args:
+        tenant_id: Tenant ID
+
+    Request body:
+        allowed_signup_domains: list[str] | str - Allowed signup email domains
+        require_email_verification: bool (optional) - Require email verification
+
+    Returns:
+        Updated tenant signup policy
+    """
+    return await _update_tenant_signup_policy_impl(tenant_id)

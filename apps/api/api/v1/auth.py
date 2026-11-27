@@ -22,6 +22,7 @@ from apps.api.auth.portal_cookies import set_portal_auth_cookies
 from apps.api.auth.web_auth import COOKIE_NAME, clear_session_cookie, set_session_cookie
 from apps.api.models.dataclasses import IdentityDTO, from_pydal_row
 from apps.api.models.schemas import LoginRequest, RegisterRequest
+from apps.api.services.portal_auth import parse_tenant_settings
 from apps.api.services.webhooks.user_events import (
     UserCreatedEvent,
     schedule_user_created_webhooks,
@@ -77,7 +78,27 @@ async def register():
             )
         return jsonify({"error": "Validation failed", "details": errors}), 422
 
-    if not is_signup_email_allowed(validated_data.email):
+    default_tenant_for_policy = (
+        db(db.tenants.slug == "system").select(limitby=(0, 1)).first()
+        or db(db.tenants.slug == "default").select(limitby=(0, 1)).first()
+        or db(db.tenants.id > 0).select(limitby=(0, 1)).first()
+    )
+    default_tenant_settings = parse_tenant_settings(
+        getattr(default_tenant_for_policy, "settings", None)
+        if default_tenant_for_policy
+        else None
+    )
+    default_tenant_slug = (
+        getattr(default_tenant_for_policy, "slug", None)
+        if default_tenant_for_policy
+        else "default"
+    )
+
+    if not is_signup_email_allowed(
+        validated_data.email,
+        tenant_settings=default_tenant_settings,
+        tenant_slug=default_tenant_slug,
+    ):
         return (
             jsonify(
                 {

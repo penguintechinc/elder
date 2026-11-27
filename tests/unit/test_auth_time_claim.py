@@ -169,7 +169,7 @@ class TestEveryIssuingPathIsExplicit:
 
     @pytest.mark.parametrize(
         ("filename", "interactive", "carried"),
-        [("auth.py", 2, 1), ("portal_auth.py", 3, 1), ("sso.py", 2, 0)],
+        [("auth.py", 2, 1), ("portal_auth.py", 4, 1), ("sso.py", 2, 0)],
     )
     async def test_call_sites(self, filename, interactive, carried):
         source = (API_V1 / filename).read_text()
