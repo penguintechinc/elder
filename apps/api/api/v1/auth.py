@@ -534,31 +534,10 @@ async def refresh_token_endpoint():
 
 @bp.route("/captcha-challenge", methods=["GET"])
 def captcha_challenge():
-    """Generate ALTCHA proof-of-work challenge."""
-    import hashlib
-    import hmac
-    import secrets
+    """Generate a signed ALTCHA proof-of-work challenge with expiry."""
+    from apps.api.utils.altcha import create_altcha_challenge
 
-    maxnumber = 10000
-    salt = secrets.token_hex(12)
-    number = secrets.randbelow(maxnumber + 1)
-    secret = os.environ.get("CAPTCHA_SECRET", "elder-captcha-default")
-    challenge = hashlib.sha256(f"{salt}{number}".encode()).hexdigest()
-
-    # ALTCHA verifies HMAC-SHA256(secret, challenge)
-    signature = hmac.new(
-        secret.encode(), challenge.encode(), hashlib.sha256
-    ).hexdigest()
-
-    return jsonify(
-        {
-            "algorithm": "SHA-256",
-            "challenge": challenge,
-            "maxnumber": maxnumber,
-            "salt": salt,
-            "signature": signature,
-        }
-    )
+    return jsonify(create_altcha_challenge())
 
 
 def _create_audit_log_sync(
