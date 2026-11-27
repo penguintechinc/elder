@@ -181,6 +181,17 @@ hub-api:
     AI_RESEARCHER_MAX_STEPS: "6"
     ELDER_INTERNAL_API_URL: "http://127.0.0.1:5000"
     MCP_SERVER_URL: "http://hub-mcp:8080"
+    # Restrict self-service signups to penguintech.io in alpha values (not baked into code)
+    ALLOWED_SIGNUP_DOMAINS: "penguintech.io"
+    # SMTP relay (matches passbolt in dal2alpha; credentials injected via secretEnv)
+    SMTP_HOST: "smtp-relay.gmail.com"
+    SMTP_PORT: "587"
+    SMTP_USE_TLS: "true"
+    SMTP_USE_SSL: "false"
+    SMTP_FROM_EMAIL: "no-reply@penguintech.io"
+    SMTP_FROM_NAME: "Elder"
+    SMTP_EHLO_HOST: "elder-alpha.penguintech.cloud"
+    SMTP_TIMEOUT: "30"
   resources:
     requests:
       memory: "256Mi"

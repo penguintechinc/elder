@@ -25,7 +25,7 @@ Which env var maps to which Secret key is declared per component in
 | `DATABASE_URL` | yes (optional for hub-api) | svc-worker, svc-flows-invoker, hub-api |
 | `REDIS_URL` | yes | hub-api, svc-worker, svc-flows-invoker |
 | `ADMIN_PASSWORD` | yes | hub-api (bootstrap admin) |
-| `LICENSE_KEY`, `REDIS_PASSWORD`, `DATABASE_READ_URL`, `ELDER_API_KEY`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `LDAP_BIND_PASSWORD`, `GUEST_PASSWORD` | no | see `values.yaml` |
+| `LICENSE_KEY`, `REDIS_PASSWORD`, `DATABASE_READ_URL`, `ELDER_API_KEY`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `LDAP_BIND_PASSWORD`, `GUEST_PASSWORD`, `SMTP_USERNAME`, `SMTP_PASSWORD` | no | see `values.yaml` |
 
 A required key missing from the Secret keeps the pod in
 `CreateContainerConfigError` (fail closed) rather than starting with a default.

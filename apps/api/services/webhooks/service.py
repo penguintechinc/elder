@@ -1572,15 +1572,51 @@ class WebhookService:
     def _send_email_notification(
         self, config: dict[str, Any], payload: dict[str, Any]
     ) -> dict[str, Any]:
-        """Send email notification."""
-        # NOTE: In production, integrate with SMTP or email service (SendGrid, SES, etc.)
-        # For now, return success indicating email would be sent
-        return {
-            "success": True,
-            "channel": "email",
-            "recipients": config.get("recipients", []),
-            "message": "Email notification would be sent in production",
-        }
+        """Send email notification over configured SMTP relay."""
+        from apps.api.utils.email import (
+            EmailDeliveryError,
+            EmailNotConfiguredError,
+            send_email_sync,
+        )
+
+        recipients = [
+            r.strip()
+            for r in (config.get("recipients") or [])
+            if isinstance(r, str) and r.strip()
+        ]
+        if not recipients:
+            return {
+                "success": False,
+                "channel": "email",
+                "error": "No email recipients configured",
+            }
+
+        subject = str(
+            config.get("subject")
+            or payload.get("title")
+            or payload.get("event")
+            or "Elder Alert Notification"
+        )
+        body_text = json.dumps(payload, indent=2, default=str)
+
+        try:
+            delivery = send_email_sync(
+                to_addresses=recipients,
+                subject=subject,
+                body_text=body_text,
+            )
+            return {
+                "success": True,
+                "channel": "email",
+                "recipient_count": delivery["recipient_count"],
+                "smtp_host": delivery["smtp_host"],
+            }
+        except (EmailNotConfiguredError, EmailDeliveryError, ValueError) as exc:
+            return {
+                "success": False,
+                "channel": "email",
+                "error": str(exc),
+            }
 
     async def _post_notification(
         self,

@@ -28,6 +28,7 @@ from apps.api.services.webhooks.user_events import (
 )
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.signup_policy import is_signup_email_allowed
 from apps.api.utils.village_id import mint_village_id
 
 logger = structlog.get_logger(__name__)
@@ -75,6 +76,18 @@ async def register():
                 }
             )
         return jsonify({"error": "Validation failed", "details": errors}), 422
+
+    if not is_signup_email_allowed(validated_data.email):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Signups are restricted to approved email domains",
+                    "errorCode": "SIGNUP_DOMAIN_NOT_ALLOWED",
+                }
+            ),
+            403,
+        )
 
     # Capture request context before entering threadpool
     ip_address = request.remote_addr
