@@ -17,6 +17,7 @@ import jwt
 import structlog
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, make_response, request
+from werkzeug.security import generate_password_hash
 
 from apps.api.auth.jwt_handler import (
     PORTAL_ACCESS_TOKEN_TYPES,
@@ -37,6 +38,8 @@ from apps.api.models.schemas import PortalLoginRequest, PortalRegisterRequest
 from apps.api.services.portal_auth import (
     PortalAuthService,
     compute_user_mfa_status,
+    is_tenant_mfa_enforced,
+    parse_tenant_settings,
     user_has_mfa_enrolled,
 )
 from apps.api.utils.api_responses import ApiResponse
@@ -46,7 +49,20 @@ from apps.api.utils.email import (
     is_smtp_configured,
     send_email,
 )
-from apps.api.utils.signup_policy import is_signup_email_allowed
+from apps.api.utils.onboarding_emails import (
+    issue_email_verify_token,
+    send_verification_email,
+)
+from apps.api.utils.onboarding_tokens import (
+    PURPOSE_ADMIN_INVITE,
+    PURPOSE_EMAIL_VERIFY,
+    consume_onboarding_token,
+    peek_onboarding_token,
+)
+from apps.api.utils.signup_policy import (
+    is_email_verification_required,
+    is_signup_email_allowed,
+)
 
 logger = structlog.get_logger(__name__)
 bp = Blueprint("portal_auth", __name__)
@@ -389,18 +405,6 @@ async def register():
             )
         return jsonify({"error": "Validation failed", "details": errors}), 422
 
-    if not is_signup_email_allowed(validated_data.email):
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": "Signups are restricted to approved email domains",
-                    "errorCode": "SIGNUP_DOMAIN_NOT_ALLOWED",
-                }
-            ),
-            403,
-        )
-
     tenant_id = data.get("tenant_id")
     tenant_slug = validated_data.tenant
 
@@ -440,6 +444,25 @@ async def register():
             400,
         )
 
+    tenant_settings = parse_tenant_settings(getattr(tenant, "settings", None))
+    resolved_tenant_slug = getattr(tenant, "slug", None) or tenant_slug
+
+    if not is_signup_email_allowed(
+        validated_data.email,
+        tenant_settings=tenant_settings,
+        tenant_slug=resolved_tenant_slug,
+    ):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Signups are restricted to approved email domains",
+                    "errorCode": "SIGNUP_DOMAIN_NOT_ALLOWED",
+                }
+            ),
+            403,
+        )
+
     result = await PortalAuthService.create_portal_user(
         tenant_id=tenant_id,
         email=validated_data.email,
@@ -460,6 +483,48 @@ async def register():
                 }
             ),
             status_code,
+        )
+
+    if is_email_verification_required(tenant_settings=tenant_settings):
+        verify_token = issue_email_verify_token(result["id"], tenant_id)
+        try:
+            await send_verification_email(
+                to_email=validated_data.email,
+                token=verify_token,
+                tenant_name=getattr(tenant, "name", None),
+            )
+        except (EmailNotConfiguredError, EmailDeliveryError, ValueError) as exc:
+            logger.error(
+                "signup_verification_email_failed",
+                tenant_id=tenant_id,
+                error_type=type(exc).__name__,
+            )
+            # Clean up the unverified account so the caller can retry cleanly
+            try:
+                current_app.db(current_app.db.portal_users.id == result["id"]).delete()
+                current_app.db.commit()
+            except Exception as cleanup_exc:  # pragma: no cover - defensive
+                logger.warning(
+                    "signup_verification_cleanup_failed",
+                    tenant_id=tenant_id,
+                    error_type=type(cleanup_exc).__name__,
+                )
+            return ApiResponse.service_unavailable(
+                "Unable to send verification email. Please try again later."
+            )
+
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "verificationRequired": True,
+                    "message": (
+                        "Account created. Please check your email to verify "
+                        "your address before signing in."
+                    ),
+                }
+            ),
+            201,
         )
 
     if is_smtp_configured():
@@ -600,15 +665,17 @@ async def login():
     )
 
     if "error" in result:
+        status_code = result.get("status_code", 401)
+        error_code = result.get("error_code", "INVALID_CREDENTIALS")
         return (
             jsonify(
                 {
                     "success": False,
                     "error": result["error"],
-                    "errorCode": "INVALID_CREDENTIALS",
+                    "errorCode": error_code,
                 }
             ),
-            401,
+            status_code,
         )
 
     if result.get("mfa_required"):
@@ -1240,3 +1307,402 @@ async def assign_org_role():
         return jsonify(result), 400
 
     return jsonify(result), 200
+
+
+@bp.route("/verify-email", methods=["POST"])
+async def verify_email():
+    """Verify a portal user's email address using a one-time verification token.
+
+    Request body:
+        token: str - Single-use email verification token from the verification email
+
+    Returns:
+        200 on success, 400 if the token is missing, invalid, expired, or already used.
+    """
+    data = await request.get_json(silent=True)
+    if not isinstance(data, dict) or not data.get("token"):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Verification token is required",
+                    "errorCode": "INVALID_VERIFICATION_TOKEN",
+                }
+            ),
+            400,
+        )
+
+    token = str(data["token"]).strip()
+    payload = consume_onboarding_token(PURPOSE_EMAIL_VERIFY, token)
+    if not payload:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Invalid or expired verification link",
+                    "errorCode": "INVALID_VERIFICATION_TOKEN",
+                }
+            ),
+            400,
+        )
+
+    user_id = payload.get("user_id")
+    tenant_id = payload.get("tenant_id")
+    if not user_id or not tenant_id:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Invalid or expired verification link",
+                    "errorCode": "INVALID_VERIFICATION_TOKEN",
+                }
+            ),
+            400,
+        )
+
+    db = current_app.db
+    user = (
+        db(
+            (db.portal_users.id == int(user_id))
+            & (db.portal_users.tenant_id == int(tenant_id))
+        )
+        .select()
+        .first()
+    )
+    if not user:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Invalid or expired verification link",
+                    "errorCode": "INVALID_VERIFICATION_TOKEN",
+                }
+            ),
+            400,
+        )
+
+    db(
+        (db.portal_users.id == user.id) & (db.portal_users.tenant_id == user.tenant_id)
+    ).update(
+        email_verified=True,
+        updated_at=datetime.now(UTC),
+    )
+    db.commit()
+
+    return (
+        jsonify(
+            {
+                "success": True,
+                "message": "Email verified. You can now sign in.",
+            }
+        ),
+        200,
+    )
+
+
+@bp.route("/resend-verification", methods=["POST"])
+async def resend_verification():
+    """Resend a self-signup verification email (anti-enumeration).
+
+    Request body:
+        email: str - Email address
+        tenant: str (optional) - Tenant slug (or tenant_id)
+
+    Returns:
+        Always 200 with a generic message so account existence is never disclosed.
+    """
+    data = await request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("email"), str):
+        return ApiResponse.bad_request("email is required")
+
+    email = data["email"].strip().lower()
+    if not email:
+        return ApiResponse.bad_request("email is required")
+
+    generic_response = (
+        jsonify(
+            {
+                "success": True,
+                "message": (
+                    "If an unverified account exists for that email, "
+                    "a verification link has been sent."
+                ),
+            }
+        ),
+        200,
+    )
+
+    if not is_smtp_configured():
+        return generic_response
+
+    db = current_app.db
+    tenant_id = data.get("tenant_id")
+    tenant_slug = data.get("tenant")
+    tenant = None
+
+    if tenant_id:
+        tenant = db(db.tenants.id == tenant_id).select().first()
+    elif isinstance(tenant_slug, str) and tenant_slug.strip():
+        tenant = db(db.tenants.slug == tenant_slug.strip()).select().first()
+    else:
+        tenant = db(db.tenants.slug == "system").select().first()
+        if not tenant:
+            tenant = db(db.tenants.slug == "default").select().first()
+
+    if not tenant or not tenant.is_active:
+        return generic_response
+
+    user = (
+        db((db.portal_users.tenant_id == tenant.id) & (db.portal_users.email == email))
+        .select()
+        .first()
+    )
+    if not user or not user.is_active or bool(getattr(user, "email_verified", False)):
+        return generic_response
+
+    token = issue_email_verify_token(user.id, tenant.id)
+    try:
+        await send_verification_email(
+            to_email=email,
+            token=token,
+            tenant_name=getattr(tenant, "name", None),
+        )
+    except (EmailNotConfiguredError, EmailDeliveryError, ValueError) as exc:
+        logger.warning(
+            "resend_verification_email_failed",
+            tenant_id=tenant.id,
+            error_type=type(exc).__name__,
+        )
+
+    return generic_response
+
+
+@bp.route("/invite/<token>", methods=["GET"])
+def inspect_admin_invite(token: str):
+    """Validate a one-time admin onboarding invitation token without consuming it.
+
+    Returns:
+        200 with invited user/tenant metadata and MFA requirement flags, or
+        400 if the token is invalid or expired.
+    """
+    payload = peek_onboarding_token(PURPOSE_ADMIN_INVITE, token)
+    if not payload:
+        return (
+            jsonify(
+                {
+                    "valid": False,
+                    "error": "Invalid or expired invitation link",
+                }
+            ),
+            400,
+        )
+
+    user_id = payload.get("user_id")
+    tenant_id = payload.get("tenant_id")
+    if not user_id or not tenant_id:
+        return (
+            jsonify(
+                {
+                    "valid": False,
+                    "error": "Invalid or expired invitation link",
+                }
+            ),
+            400,
+        )
+
+    db = current_app.db
+    user = (
+        db(
+            (db.portal_users.id == int(user_id))
+            & (db.portal_users.tenant_id == int(tenant_id))
+        )
+        .select()
+        .first()
+    )
+    if not user or not user.is_active:
+        return (
+            jsonify(
+                {
+                    "valid": False,
+                    "error": "Invalid or expired invitation link",
+                }
+            ),
+            400,
+        )
+
+    tenant = db(db.tenants.id == int(tenant_id)).select().first()
+    mfa_enforced = is_tenant_mfa_enforced(int(tenant_id), db=db)
+
+    return (
+        _no_store(
+            jsonify(
+                {
+                    "valid": True,
+                    "email": user.email,
+                    "full_name": user.full_name,
+                    "tenant_name": tenant.name if tenant else None,
+                    "mfa_enforced": mfa_enforced,
+                    "mfa_optional": not mfa_enforced,
+                }
+            )
+        ),
+        200,
+    )
+
+
+@bp.route("/invite/complete", methods=["POST"])
+async def complete_admin_invite():
+    """Complete an admin onboarding invitation by setting password and optional/enforced MFA.
+
+    Request body:
+        token: str - Single-use admin invitation token
+        password: str - New password (minimum 8 characters)
+        setup_mfa: bool (optional, default false) - Whether user opts into MFA setup now
+
+    Returns:
+        200 with MFA enrollment-scoped token/cookies when MFA is enforced or requested,
+        or normal session tokens/cookies otherwise.
+    """
+    data = await request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return ApiResponse.bad_request("Request body must be JSON")
+
+    token = data.get("token")
+    password = data.get("password")
+    setup_mfa = bool(data.get("setup_mfa", False))
+
+    if not isinstance(token, str) or not token.strip():
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Invalid or expired invitation link",
+                    "errorCode": "INVALID_INVITE_TOKEN",
+                }
+            ),
+            400,
+        )
+
+    if (
+        not isinstance(password, str)
+        or len(password) < PortalAuthService.MIN_PASSWORD_LENGTH
+    ):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": (
+                        f"Password must be at least "
+                        f"{PortalAuthService.MIN_PASSWORD_LENGTH} characters"
+                    ),
+                    "errorCode": "WEAK_PASSWORD",
+                }
+            ),
+            400,
+        )
+
+    payload = consume_onboarding_token(PURPOSE_ADMIN_INVITE, token.strip())
+    if not payload:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Invalid or expired invitation link",
+                    "errorCode": "INVALID_INVITE_TOKEN",
+                }
+            ),
+            400,
+        )
+
+    user_id = payload.get("user_id")
+    tenant_id = payload.get("tenant_id")
+    if not user_id or not tenant_id:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Invalid or expired invitation link",
+                    "errorCode": "INVALID_INVITE_TOKEN",
+                }
+            ),
+            400,
+        )
+
+    db = current_app.db
+    user = (
+        db(
+            (db.portal_users.id == int(user_id))
+            & (db.portal_users.tenant_id == int(tenant_id))
+        )
+        .select()
+        .first()
+    )
+    if not user:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Invalid or expired invitation link",
+                    "errorCode": "INVALID_INVITE_TOKEN",
+                }
+            ),
+            400,
+        )
+
+    now = datetime.now(UTC)
+    db(
+        (db.portal_users.id == user.id) & (db.portal_users.tenant_id == user.tenant_id)
+    ).update(
+        password_hash=generate_password_hash(password),
+        email_verified=True,
+        password_changed_at=now,
+        is_active=True,
+        updated_at=now,
+    )
+    db.commit()
+
+    mfa_enforced = is_tenant_mfa_enforced(int(tenant_id), db=db)
+    user_dict = {
+        "id": user.id,
+        "email": user.email,
+        "tenant_id": user.tenant_id,
+        "tenant_role": user.tenant_role,
+        "global_role": user.global_role,
+        "full_name": user.full_name,
+    }
+    roles = [user.tenant_role] if user.tenant_role else []
+
+    if mfa_enforced or setup_mfa:
+        enrollment_token = PortalAuthService.issue_mfa_enrollment_token(user_dict)
+        max_age = PortalAuthService.MFA_ENROLLMENT_TOKEN_TTL_MINUTES * 60
+        response = await make_response(
+            jsonify(
+                {
+                    "success": True,
+                    "mfaSetupRequired": mfa_enforced,
+                    "mfaSetupOptional": not mfa_enforced,
+                    "mfaEnrollmentRequired": mfa_enforced,
+                    "enrollment_token": enrollment_token,
+                    "token_type": "Bearer",
+                    "expires_in": max_age,
+                    "user": {
+                        "id": str(user.id),
+                        "email": user.email,
+                        "name": user.full_name,
+                        "roles": roles,
+                    },
+                }
+            ),
+            200,
+        )
+        clear_portal_auth_cookies(response)
+        set_mfa_enrollment_cookies(
+            response,
+            enrollment_token,
+            max_age=max_age,
+            secure=not current_app.config.get("DEBUG", False),
+        )
+        return _no_store(response)
+
+    tokens = generate_tokens(user_dict, auth_time=interactive_auth_time())
+    return await _issue_token_response(user_dict, tokens, roles=roles)

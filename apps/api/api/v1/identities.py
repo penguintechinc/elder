@@ -33,6 +33,7 @@ from apps.api.services.webhooks.user_events import (
 )
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.onboarding_emails import ensure_portal_user_and_send_invite
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
@@ -332,6 +333,22 @@ async def create_identity(body: CreateIdentityRequest):
                 "user_created_webhook_schedule_failed",
                 user_id=identity.id,
                 error=str(exc)[:200],
+            )
+
+    if body.send_invite and identity and identity.email and identity.tenant_id:
+        try:
+            await ensure_portal_user_and_send_invite(
+                db=db,
+                tenant_id=identity.tenant_id,
+                email=identity.email,
+                full_name=identity.full_name,
+                tenant_role="reader",
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "create_identity_invite_failed",
+                identity_id=identity.id,
+                error_type=type(exc).__name__,
             )
 
     identity_dto = _identity_row_to_dto(identity)

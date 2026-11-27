@@ -2,6 +2,7 @@
 
 # flake8: noqa: E501
 
+import secrets
 from dataclasses import asdict
 from datetime import UTC, datetime, timezone
 
@@ -23,6 +24,7 @@ from apps.api.services.webhooks.user_events import (
 )
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.onboarding_emails import ensure_portal_user_and_send_invite
 from apps.api.utils.tenant_scoping import get_tenant_scoped
 from apps.api.utils.village_id import mint_village_id
 
@@ -113,8 +115,20 @@ async def create_user():
     if "username" not in data or not data["username"].strip():
         return ApiResponse.bad_request("Username is required")
 
-    if "password" not in data or not data["password"].strip():
+    raw_email = (data.get("email") or "").strip()
+    raw_password = (
+        (data.get("password") or "").strip()
+        if isinstance(data.get("password"), str)
+        else ""
+    )
+    should_send_invite = bool(raw_email) and (
+        bool(data.get("send_invite", False)) or not raw_password
+    )
+
+    if not raw_password and not should_send_invite:
         return ApiResponse.bad_request("Password is required")
+
+    effective_password = raw_password or secrets.token_urlsafe(48)
 
     # Privilege fields: role_required("admin") admits a tenant-scoped
     # portal_role=="admin" (gh-237), so only a verified superuser may create a
@@ -141,7 +155,7 @@ async def create_user():
     username = data["username"].strip()
     insert_data = {
         "username": username,
-        "password_hash": generate_password_hash(data["password"]),
+        "password_hash": generate_password_hash(effective_password),
         "identity_type": data.get("identity_type", "human"),
         "auth_provider": "local",
         "email": data.get("email"),
@@ -235,6 +249,32 @@ async def create_user():
                 error=str(exc)[:200],
             )
 
+    invite_sent: bool | None = None
+    if should_send_invite and user_row and user_row.email and user_row.tenant_id:
+        role_map = {
+            "admin": "admin",
+            "maintainer": "maintainer",
+            "editor": "maintainer",
+        }
+        mapped_role = role_map.get(str(user_row.portal_role or "").lower(), "reader")
+        try:
+            invite_result = await ensure_portal_user_and_send_invite(
+                db=db,
+                tenant_id=user_row.tenant_id,
+                email=user_row.email,
+                full_name=user_row.full_name,
+                tenant_role=mapped_role,
+                global_role="admin" if user_row.is_superuser else None,
+            )
+            invite_sent = bool(invite_result.get("invite_sent", False))
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "create_user_invite_failed",
+                user_id=user_row.id,
+                error_type=type(exc).__name__,
+            )
+            invite_sent = False
+
     # Convert to DTO -- IdentityAdminDTO (not IdentityDTO), since this
     # admin-only response includes is_superuser/portal_role.
     user_dto = IdentityAdminDTO(
@@ -255,7 +295,10 @@ async def create_user():
         updated_at=user_row.updated_at,
     )
 
-    return jsonify(asdict(user_dto)), 201
+    response_payload = asdict(user_dto)
+    if invite_sent is not None:
+        response_payload["invite_sent"] = invite_sent
+    return jsonify(response_payload), 201
 
 
 @bp.route("/<int:user_id>", methods=["PATCH"])

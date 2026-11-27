@@ -183,6 +183,7 @@ hub-api:
     MCP_SERVER_URL: "http://hub-mcp:8080"
     # Restrict self-service signups to penguintech.io in alpha values (not baked into code)
     ALLOWED_SIGNUP_DOMAINS: "penguintech.io"
+    REQUIRE_EMAIL_VERIFICATION: "true"
     # SMTP relay (matches passbolt in dal2alpha; credentials injected via secretEnv)
     SMTP_HOST: "smtp-relay.gmail.com"
     SMTP_PORT: "587"

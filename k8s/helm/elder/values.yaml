@@ -285,6 +285,8 @@ hub-api:
     # Optional comma-separated list of email domains permitted for self-service
     # signups (empty = no domain restriction; set in environment values, never baked in).
     ALLOWED_SIGNUP_DOMAINS: ""
+    # Require email verification on self-signup ("true"/"false"; empty auto-defaults to SMTP configured).
+    REQUIRE_EMAIL_VERIFICATION: ""
 
     # SMTP email delivery (credentials live in secretEnv: SMTP_USERNAME / SMTP_PASSWORD)
     SMTP_HOST: ""

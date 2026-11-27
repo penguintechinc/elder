@@ -115,12 +115,14 @@ class CreateIdentityRequest(RequestModel):
     mfa_enabled: bool = False
     organization_id: int | None = None
     tenant_id: int | None = None
+    send_invite: bool = False
 
     @model_validator(mode="after")
     def validate_local_auth_requires_password(self) -> "CreateIdentityRequest":
-        """Validate that local auth provider requires a password."""
+        """Validate that local auth provider requires a password unless sending an invite."""
         if self.auth_provider == "local" and not self.password:
-            raise ValueError("password is required for local auth provider")
+            if not (self.send_invite and self.email and self.email.strip()):
+                raise ValueError("password is required for local auth provider")
         return self
 
 

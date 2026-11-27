@@ -40,6 +40,7 @@ from apps.api.utils.mfa_crypto import (
     normalize_backup_code,
     open_totp_secret,
 )
+from apps.api.utils.signup_policy import is_email_verification_required
 from apps.api.utils.village_id import mint_village_id
 from shared.observability import get_meter, get_tracer
 
@@ -629,6 +630,22 @@ class PortalAuthService:
             current_app.db(current_app.db.portal_users.id == user.id).update(**updates)
             current_app.db.commit()
             return {"error": "Invalid credentials"}
+
+        # Enforce mandatory email verification when enabled for the tenant/deployment
+        tenant_row = (
+            current_app.db(current_app.db.tenants.id == user.tenant_id).select().first()
+        )
+        tenant_settings = parse_tenant_settings(
+            getattr(tenant_row, "settings", None) if tenant_row else None
+        )
+        if is_email_verification_required(tenant_settings=tenant_settings) and not bool(
+            getattr(user, "email_verified", False)
+        ):
+            return {
+                "error": "Please verify your email address before signing in.",
+                "error_code": "EMAIL_NOT_VERIFIED",
+                "status_code": 403,
+            }
 
         # Reset failed attempts on successful login
         current_app.db(current_app.db.portal_users.id == user.id).update(
