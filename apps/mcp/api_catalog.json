@@ -5941,6 +5941,17 @@
   },
   {
     "service": "portal-auth",
+    "operation": "complete_admin_invite",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/invite/complete",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Complete an admin onboarding invitation by setting password and optional/enforced MFA.",
+    "has_body": true,
+    "destructive": false
+  },
+  {
+    "service": "portal-auth",
     "operation": "confirm_mfa",
     "method": "POST",
     "path": "/api/v1/portal-auth/mfa/confirm",
@@ -5985,6 +5996,19 @@
   },
   {
     "service": "portal-auth",
+    "operation": "inspect_admin_invite",
+    "method": "GET",
+    "path": "/api/v1/portal-auth/invite/{token}",
+    "path_params": [
+      "token"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Validate a one-time admin onboarding invitation token without consuming it.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "portal-auth",
     "operation": "regenerate_mfa_backup_codes",
     "method": "POST",
     "path": "/api/v1/portal-auth/mfa/backup-codes/regenerate",
@@ -5996,6 +6020,17 @@
   },
   {
     "service": "portal-auth",
+    "operation": "resend_verification",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/resend-verification",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Resend a self-signup verification email (anti-enumeration).",
+    "has_body": true,
+    "destructive": false
+  },
+  {
+    "service": "portal-auth",
     "operation": "update_current_user",
     "method": "PATCH",
     "path": "/api/v1/portal-auth/me",
@@ -6004,6 +6039,17 @@
     "summary": "Update current authenticated portal user info.",
     "has_body": true,
     "destructive": true
+  },
+  {
+    "service": "portal-auth",
+    "operation": "verify_email",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/verify-email",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Verify a portal user's email address using a one-time verification token.",
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "privacy",
@@ -7887,6 +7933,19 @@
   },
   {
     "service": "tenants",
+    "operation": "create_tenant_user",
+    "method": "POST",
+    "path": "/api/v1/tenants/{tenant_id}/users",
+    "path_params": [
+      "tenant_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Create a portal user in a tenant and optionally send a one-time onboarding invite.",
+    "has_body": true,
+    "destructive": false
+  },
+  {
+    "service": "tenants",
     "operation": "delete_tenant",
     "method": "DELETE",
     "path": "/api/v1/tenants/{tenant_id}",
@@ -7925,6 +7984,17 @@
   },
   {
     "service": "tenants",
+    "operation": "get_current_tenant_signup_policy",
+    "method": "GET",
+    "path": "/api/v1/tenants/current/signup-policy",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Get the signup domain and email verification policy for the current tenant.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "tenants",
     "operation": "get_tenant",
     "method": "GET",
     "path": "/api/v1/tenants/{tenant_id}",
@@ -7933,6 +8003,19 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a tenant by ID.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "tenants",
+    "operation": "get_tenant_signup_policy",
+    "method": "GET",
+    "path": "/api/v1/tenants/{tenant_id}/signup-policy",
+    "path_params": [
+      "tenant_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Get the signup domain and email verification policy for a specific tenant.",
     "has_body": false,
     "destructive": false
   },
@@ -8012,6 +8095,17 @@
   },
   {
     "service": "tenants",
+    "operation": "update_current_tenant_signup_policy",
+    "method": "PUT",
+    "path": "/api/v1/tenants/current/signup-policy",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Update the signup domain and email verification policy for the current tenant.",
+    "has_body": true,
+    "destructive": true
+  },
+  {
+    "service": "tenants",
     "operation": "update_tenant",
     "method": "PUT",
     "path": "/api/v1/tenants/{tenant_id}",
@@ -8020,6 +8114,19 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a tenant.",
+    "has_body": true,
+    "destructive": true
+  },
+  {
+    "service": "tenants",
+    "operation": "update_tenant_signup_policy",
+    "method": "PUT",
+    "path": "/api/v1/tenants/{tenant_id}/signup-policy",
+    "path_params": [
+      "tenant_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Update the signup domain and email verification policy for a specific tenant.",
     "has_body": true,
     "destructive": true
   },
