@@ -205,6 +205,7 @@ class Config:
     )
     AI_RESEARCHER_MODEL = config("AI_RESEARCHER_MODEL", default="gemma4:e4b")
     AI_RESEARCHER_MAX_STEPS = config("AI_RESEARCHER_MAX_STEPS", default=6, cast=int)
+    AI_RESEARCHER_MAX_TOOLS = config("AI_RESEARCHER_MAX_TOOLS", default=12, cast=int)
     AI_RESEARCHER_TIMEOUT_SECONDS = config(
         "AI_RESEARCHER_TIMEOUT_SECONDS", default=95.0, cast=float
     )

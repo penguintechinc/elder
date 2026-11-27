@@ -19,10 +19,12 @@ from apps.api.common.modules.licensing import module_licensed
 from apps.api.common.modules.tenant_toggle import is_module_enabled
 from apps.api.modules import MODULES
 from apps.api.services.ai_researcher_mcp import (
+    DEFAULT_MAX_TOOLS_PER_CALL,
     McpToolError,
     McpUnavailableError,
     open_hub_mcp_client,
     select_readonly_tools,
+    select_relevant_tools,
     to_ollama_tools_from_mcp,
 )
 from apps.mcp.registry import TOOL_BY_NAME, ToolDefinition, get_tools
@@ -642,7 +644,17 @@ async def run_ai_research(
         # Allowlist is frozen here; tool output can never widen it.
         offered = select_readonly_tools(advertised, policy_tool_names)
         allowed_tool_names = {t["name"] for t in offered}
-        ollama_tools = to_ollama_tools_from_mcp(offered)
+        max_tools = int(
+            app.config.get("AI_RESEARCHER_MAX_TOOLS")
+            or os.getenv("AI_RESEARCHER_MAX_TOOLS")
+            or DEFAULT_MAX_TOOLS_PER_CALL
+        )
+        focused_tools = select_relevant_tools(
+            offered,
+            cleaned_query,
+            max_tools=max_tools,
+        )
+        ollama_tools = to_ollama_tools_from_mcp(focused_tools)
 
         for step_idx in range(1, step_limit + 1):
             payload = {

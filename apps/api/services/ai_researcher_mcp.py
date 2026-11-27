@@ -67,6 +67,129 @@ def select_readonly_tools(
     return [t for t in mcp_tools if is_readonly_mcp_tool(t) and t["name"] in allowed]
 
 
+DEFAULT_MAX_TOOLS_PER_CALL = 12
+
+_CORE_DISCOVERY_TOOLS: tuple[str, ...] = (
+    "universal_search",
+    "search_graph",
+    "resolve_ref",
+    "get_ref_backlinks",
+)
+
+_DOMAIN_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "server": ("entity", "entities", "infrastructure"),
+    "servers": ("entity", "entities", "infrastructure"),
+    "host": ("entity", "entities", "infrastructure"),
+    "hosts": ("entity", "entities", "infrastructure"),
+    "node": ("entity", "entities", "infrastructure"),
+    "nodes": ("entity", "entities", "infrastructure"),
+    "vm": ("entity", "entities", "infrastructure"),
+    "vms": ("entity", "entities", "infrastructure"),
+    "database": ("data", "store", "stores"),
+    "db": ("data", "store", "stores"),
+    "ticket": ("helpdesk", "tickets"),
+    "tickets": ("helpdesk", "tickets"),
+    "cve": ("vulnerability", "vulnerabilities", "sbom"),
+    "vuln": ("vulnerability", "vulnerabilities"),
+    "vulns": ("vulnerability", "vulnerabilities"),
+    "security": ("vulnerability", "vulnerabilities", "access", "secrets"),
+    "doc": ("document", "documents", "page", "pages"),
+    "docs": ("document", "documents", "page", "pages"),
+    "wiki": ("document", "documents", "page", "pages"),
+    "user": ("identity", "identities"),
+    "users": ("identity", "identities"),
+    "team": ("organization", "organizations", "identity", "identities"),
+    "org": ("organization", "organizations"),
+    "ip": ("ipam", "address", "addresses", "prefix", "prefixes", "network"),
+    "subnet": ("ipam", "prefix", "prefixes", "network"),
+    "vlan": ("ipam", "vlan", "vlans", "network"),
+    "cert": ("certificate", "certificates"),
+    "tls": ("certificate", "certificates"),
+    "ssl": ("certificate", "certificates"),
+    "pipeline": ("flow", "flows"),
+    "pipelines": ("flow", "flows"),
+    "ci": ("flow", "flows"),
+    "workflow": ("stream", "streams"),
+    "workflows": ("stream", "streams"),
+    "hook": ("webhook", "webhooks"),
+    "alert": ("webhook", "webhooks", "oncall"),
+    "key": ("kms", "secrets"),
+    "keys": ("kms", "secrets"),
+}
+
+
+def _tokenize_text(text: str) -> set[str]:
+    """Split text into lowercase alphanumeric tokens (length >= 2)."""
+    tokens: set[str] = set()
+    cur: list[str] = []
+    for ch in text.lower():
+        if ch.isalnum():
+            cur.append(ch)
+        elif cur:
+            tok = "".join(cur)
+            if len(tok) >= 2:
+                tokens.add(tok)
+            cur = []
+    if cur:
+        tok = "".join(cur)
+        if len(tok) >= 2:
+            tokens.add(tok)
+    return tokens
+
+
+def select_relevant_tools(
+    tools: list[dict[str, Any]],
+    query: str,
+    *,
+    max_tools: int = DEFAULT_MAX_TOOLS_PER_CALL,
+) -> list[dict[str, Any]]:
+    """Select up to *max_tools* most query-relevant tools to avoid LLM prompt bloat.
+
+    Always preserves core discovery tools (``universal_search``, ``search_graph``,
+    ``resolve_ref``, ``get_ref_backlinks``) when present, then ranks remaining
+    tools by lexical overlap with *query* (including common domain synonyms).
+    When ``len(tools) <= max_tools`` (or ``max_tools <= 0``), returns *tools* as-is.
+    """
+    if max_tools <= 0 or len(tools) <= max_tools:
+        return list(tools)
+
+    by_name = {t["name"]: t for t in tools if isinstance(t.get("name"), str)}
+    selected: list[dict[str, Any]] = []
+    selected_names: set[str] = set()
+
+    for core_name in _CORE_DISCOVERY_TOOLS:
+        if core_name in by_name and len(selected) < max_tools:
+            selected.append(by_name[core_name])
+            selected_names.add(core_name)
+
+    query_tokens = _tokenize_text(query)
+    expanded_tokens = set(query_tokens)
+    for tok in query_tokens:
+        expanded_tokens.update(_DOMAIN_SYNONYMS.get(tok, ()))
+
+    scored: list[tuple[int, int, dict[str, Any]]] = []
+    for idx, tool in enumerate(tools):
+        name = str(tool.get("name") or "")
+        if name in selected_names:
+            continue
+        name_tokens = _tokenize_text(name.replace("_", " "))
+        desc_tokens = _tokenize_text(str(tool.get("description") or ""))
+        score = 3 * len(expanded_tokens & name_tokens) + len(
+            expanded_tokens & desc_tokens
+        )
+        # Prefer broad list_/search_ tools slightly over get_ when tied on score > 0
+        if score > 0 and (name.startswith("list_") or name.startswith("search_")):
+            score += 1
+        scored.append((score, -idx, tool))
+
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    remaining_slots = max_tools - len(selected)
+    for _, _, tool in scored[:remaining_slots]:
+        selected.append(tool)
+
+    return selected
+
+
 def _compact_description(raw: Any, max_len: int = 96) -> str:
     """Keep a concise single-sentence description to minimize LLM prompt tokens."""
     text = " ".join(str(raw or "").split())
